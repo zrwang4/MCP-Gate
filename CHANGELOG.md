@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 新增 GitHub Actions CI：自动运行 Core tests、全仓 typecheck 和 TypeScript/Web build。
+- CI 固定 Node.js 22 与 pnpm 10.17.1；提交 pnpm-lock.yaml 后可切换 frozen lockfile 安装。
+
+
 - 桌面端新增 Tool 测试器，可手工输入 JSON arguments 并查看调用结果。
 - 新增 Management API `POST /api/tools/:publicName/call` 供本地调试使用。
 - `core:gateway-smoke` 支持通过 `MCP_GATE_SMOKE_TOOL` 和 `MCP_GATE_SMOKE_ARGS` 显式执行端到端 `tools/call`。
