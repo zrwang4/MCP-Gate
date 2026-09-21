@@ -273,15 +273,19 @@ export class ManagementServer {
       try {
         const body = await readJsonBody(req) as {
           name?: unknown;
+          transport?: unknown;
           command?: unknown;
           args?: unknown;
           cwd?: unknown;
+          url?: unknown;
         };
         const server = await this.#registry.create({
           name: body.name as string,
-          command: body.command as string,
+          transport: body.transport === "http" ? "http" : "stdio",
+          command: typeof body.command === "string" ? body.command : undefined,
           args: Array.isArray(body.args) ? body.args as string[] : [],
           cwd: typeof body.cwd === "string" ? body.cwd : undefined,
+          url: typeof body.url === "string" ? body.url : undefined,
         });
         this.#upstreams.syncConfigs();
         json(res, 201, { server });
@@ -300,9 +304,11 @@ export class ManagementServer {
       try {
         const body = await readJsonBody(req) as {
           name?: unknown;
+          transport?: unknown;
           command?: unknown;
           args?: unknown;
           cwd?: unknown;
+          url?: unknown;
         };
 
         await this.#upstreams
@@ -313,9 +319,11 @@ export class ManagementServer {
           configEditMatch[1],
           {
             name: body.name as string,
-            command: body.command as string,
+            transport: body.transport === "http" ? "http" : undefined,
+            command: typeof body.command === "string" ? body.command : undefined,
             args: Array.isArray(body.args) ? body.args as string[] : [],
             cwd: typeof body.cwd === "string" ? body.cwd : undefined,
+            url: typeof body.url === "string" ? body.url : undefined,
           },
         );
 

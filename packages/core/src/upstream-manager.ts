@@ -1,6 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/client";
 import type { CoreLogger } from "./logger.ts";
-import type { ServerRegistry, StdioServerConfig } from "./server-registry.ts";
+import type { McpServerConfig, ServerRegistry } from "./server-registry.ts";
 import type { McpToolDefinition, ToolRegistry } from "./tool-registry.ts";
 
 export type UpstreamStatus =
@@ -19,20 +19,21 @@ export interface UpstreamClient {
 }
 
 export type UpstreamFactory = (
-  config: StdioServerConfig,
+  config: McpServerConfig,
 ) => Promise<UpstreamClient> | UpstreamClient;
 
 export interface UpstreamSnapshot {
   id: string;
   name: string;
   alias: string;
+  transport: "stdio" | "http";
   status: UpstreamStatus;
   toolCount: number;
   lastError: string | null;
 }
 
 interface Runtime {
-  config: StdioServerConfig;
+  config: McpServerConfig;
   status: UpstreamStatus;
   client: UpstreamClient | null;
   toolCount: number;
@@ -96,6 +97,7 @@ export class UpstreamManager {
         id: runtime.config.id,
         name: runtime.config.name,
         alias: runtime.config.alias,
+        transport: runtime.config.transport,
         status: runtime.status,
         toolCount: runtime.toolCount,
         lastError: runtime.lastError,
@@ -243,6 +245,7 @@ export class UpstreamManager {
       id: runtime.config.id,
       name: runtime.config.name,
       alias: runtime.config.alias,
+      transport: runtime.config.transport,
       status: runtime.status,
       toolCount: runtime.toolCount,
       lastError: runtime.lastError,

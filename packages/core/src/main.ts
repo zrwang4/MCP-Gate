@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { loadConfig } from "./config.ts";
 import { CoreLogger } from "./logger.ts";
 import { GatewayServer } from "./gateway-server.ts";
+import { HttpUpstreamClient } from "./http-upstream-client.ts";
 import { ManagementServer } from "./management-server.ts";
 import { ServerRegistry } from "./server-registry.ts";
 import { ToolPolicyStore } from "./tool-policy-store.ts";
@@ -25,7 +26,10 @@ async function main(): Promise<void> {
   const upstreams = new UpstreamManager(
     registry,
     toolRegistry,
-    (serverConfig) => new StdioUpstreamClient(serverConfig),
+    (serverConfig) =>
+      serverConfig.transport === "http"
+        ? new HttpUpstreamClient(serverConfig)
+        : new StdioUpstreamClient(serverConfig),
     logger,
   );
   upstreams.syncConfigs();

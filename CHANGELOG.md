@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 新增 HTTP MCP upstream：Server Registry 支持 `transport: "http"` 与远端 MCP URL。
+- 新增 `HttpUpstreamClient`，使用 MCP SDK v2 `StreamableHTTPClientTransport` 和自动协议协商。
+- stdio / HTTP upstream 共用 UpstreamManager、ToolRegistry、统一 `/mcp` 与 autoStart 生命周期。
+- 桌面端添加/编辑 MCP 可选择“本地命令（stdio）”或“远端 MCP（HTTP）”。
+- HTTP 配置当前只持久化 URL，不保存 Authorization/Header secret；鉴权留给 Keychain 阶段。
+- 新增 HTTP Registry URL 校验测试。
+
+
 - ToolRegistry 新增变更事件；upstream Tools、Tool 开关或 Server 移除时只在实际列表变化时触发。
 - GatewayServer 订阅 ToolRegistry 变化，并通过 `handler.notify.toolsChanged()` 向已订阅客户端发布 `notifications/tools/list_changed`。
 - Gateway 停止时自动取消 ToolRegistry 订阅，避免重复通知和泄漏。

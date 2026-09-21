@@ -24,6 +24,7 @@ interface UpstreamInfo {
   id: string;
   name: string;
   alias: string;
+  transport: "stdio" | "http";
   status: "configured" | "connecting" | "running" | "stopping" | "stopped" | "error";
   toolCount: number;
   lastError: string | null;
@@ -33,10 +34,11 @@ interface ServerConfigInfo {
   id: string;
   name: string;
   alias: string;
-  transport: "stdio";
-  command: string;
-  args: string[];
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
   cwd?: string;
+  url?: string;
   enabled: boolean;
   autoStart: boolean;
 }
@@ -159,9 +161,11 @@ export function App() {
   const [showAddServer, setShowAddServer] = useState(false);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [newServerName, setNewServerName] = useState("");
+  const [newServerTransport, setNewServerTransport] = useState<"stdio" | "http">("stdio");
   const [newServerCommand, setNewServerCommand] = useState("");
   const [newServerArgs, setNewServerArgs] = useState("");
   const [newServerCwd, setNewServerCwd] = useState("");
+  const [newServerUrl, setNewServerUrl] = useState("");
   const [configBusy, setConfigBusy] = useState(false);
   const [testTool, setTestTool] = useState<ToolInfo | null>(null);
   const [testToolArgs, setTestToolArgs] = useState("{}");
@@ -214,18 +218,22 @@ export function App() {
   function openCreateServer() {
     setEditingServerId(null);
     setNewServerName("");
+    setNewServerTransport("stdio");
     setNewServerCommand("");
     setNewServerArgs("");
     setNewServerCwd("");
+    setNewServerUrl("");
     setShowAddServer(true);
   }
 
   function openEditServer(server: ServerConfigInfo) {
     setEditingServerId(server.id);
     setNewServerName(server.name);
-    setNewServerCommand(server.command);
-    setNewServerArgs(server.args.join("\n"));
+    setNewServerTransport(server.transport);
+    setNewServerCommand(server.command ?? "");
+    setNewServerArgs((server.args ?? []).join("\n"));
     setNewServerCwd(server.cwd ?? "");
+    setNewServerUrl(server.url ?? "");
     setShowAddServer(true);
   }
 
@@ -237,17 +245,23 @@ export function App() {
         method: "POST",
         body: JSON.stringify({
           name: newServerName,
-          command: newServerCommand,
-          args: newServerArgs.split("\n").map((value) => value.trim()).filter(Boolean),
-          cwd: newServerCwd.trim() || undefined,
+          transport: newServerTransport,
+          command: newServerTransport === "stdio" ? newServerCommand : undefined,
+          args: newServerTransport === "stdio"
+            ? newServerArgs.split("\n").map((value) => value.trim()).filter(Boolean)
+            : undefined,
+          cwd: newServerTransport === "stdio" ? (newServerCwd.trim() || undefined) : undefined,
+          url: newServerTransport === "http" ? newServerUrl.trim() : undefined,
         }),
       });
       setShowAddServer(false);
       setEditingServerId(null);
       setNewServerName("");
+      setNewServerTransport("stdio");
       setNewServerCommand("");
       setNewServerArgs("");
       setNewServerCwd("");
+      setNewServerUrl("");
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -474,8 +488,13 @@ export function App() {
                         {upstreamStatusLabel(upstreamStatus)}
                       </span>
                     </div>
-                    <span>{server.command} {server.args.join(" ")}</span>
+                    <span>
+                      {server.transport === "http"
+                        ? server.url
+                        : `${server.command ?? ""} ${(server.args ?? []).join(" ")}`}
+                    </span>
                     <div className="serverMeta">
+                      <span>{server.transport.toUpperCase()}</span>
                       <span>{server.alias}</span>
                       <span>{upstream?.toolCount ?? 0} 个工具</span>
                       <span>{server.cwd || "默认工作目录"}</span>
@@ -655,6 +674,18 @@ export function App() {
               <input value={newServerName} onChange={(event) => setNewServerName(event.target.value)} placeholder="例如 GitHub" />
             </label>
             <label className="field">
+              <span>类型</span>
+              <select
+                value={newServerTransport}
+                onChange={(event) => setNewServerTransport(event.target.value as "stdio" | "http")}
+              >
+                <option value="stdio">本地命令（stdio）</option>
+                <option value="http">远端 MCP（HTTP）</option>
+              </select>
+            </label>
+            {newServerTransport === "stdio" ? (
+              <>
+            <label className="field">
               <span>命令</span>
               <input value={newServerCommand} onChange={(event) => setNewServerCommand(event.target.value)} placeholder="例如 npx" />
             </label>
@@ -666,6 +697,18 @@ export function App() {
               <span>工作目录（可选）</span>
               <input value={newServerCwd} onChange={(event) => setNewServerCwd(event.target.value)} placeholder="/Users/me/project" />
             </label>
+              </>
+            ) : (
+              <label className="field">
+                <span>MCP URL</span>
+                <input
+                  value={newServerUrl}
+                  onChange={(event) => setNewServerUrl(event.target.value)}
+                  placeholder="https://example.com/mcp"
+                />
+                <small>当前版本暂不保存 Authorization/Header；鉴权会接入 Keychain。</small>
+              </label>
+            )}
             <div className="modalActions">
               <button className="secondaryButton" onClick={() => {
                 setShowAddServer(false);
@@ -673,7 +716,13 @@ export function App() {
               }}>取消</button>
               <button
                 className="actionButton primary"
-                disabled={configBusy || !newServerName.trim() || !newServerCommand.trim()}
+                disabled={
+                  configBusy ||
+                  !newServerName.trim() ||
+                  (newServerTransport === "stdio"
+                    ? !newServerCommand.trim()
+                    : !newServerUrl.trim())
+                }
                 onClick={() => void saveServerConfig()}
               >
                 {configBusy ? "保存中…" : editingServerId ? "保存修改" : "保存配置"}
