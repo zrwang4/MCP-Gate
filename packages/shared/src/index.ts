@@ -12,6 +12,8 @@ export interface GatewayInfo {
   authRequired?: boolean;
   authReady?: boolean;
   authError?: string | null;
+  lanEnabled?: boolean;
+  lanEndpoints?: string[];
 }
 
 export interface ManagedServerInfo {

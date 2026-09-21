@@ -22,6 +22,7 @@ test("gateway access key is persisted only as an opaque secret id", async () => 
       enabled: false,
       ready: true,
       lastError: null,
+      lanEnabled: false,
     });
     assert.equal(access.authorize(undefined).allowed, true);
 
@@ -84,6 +85,74 @@ test("configured but missing gateway key fails closed", async () => {
     const result = reloaded.authorize(`Bearer ${rotated.apiKey}`);
     assert.equal(result.allowed, false);
     if (!result.allowed) assert.equal(result.status, 503);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+
+test("LAN access requires a usable API key and persists safely", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-access-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const file = join(dir, "gateway-access.json");
+    const secrets = new MemorySecretStore();
+
+    const access = new GatewayAccessController(file, secrets, logger);
+    await access.init();
+
+    await assert.rejects(
+      access.setLanEnabled(true),
+      /API Key must be enabled/,
+    );
+
+    const rotated = await access.rotate();
+    await access.setLanEnabled(true);
+    assert.equal(access.snapshot().lanEnabled, true);
+
+    const reloaded = new GatewayAccessController(file, secrets, logger);
+    await reloaded.init();
+    assert.equal(reloaded.snapshot().lanEnabled, true);
+    assert.equal(
+      reloaded.authorize(`Bearer ${rotated.apiKey}`).allowed,
+      true,
+    );
+
+    await reloaded.disable();
+    assert.equal(reloaded.snapshot().lanEnabled, false);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("LAN mode is disabled on startup when the Keychain key is missing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-access-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const file = join(dir, "gateway-access.json");
+    const secrets = new MemorySecretStore();
+
+    const access = new GatewayAccessController(file, secrets, logger);
+    await access.init();
+    await access.rotate();
+    await access.setLanEnabled(true);
+
+    const raw = JSON.parse(await readFile(file, "utf8")) as {
+      apiKeySecretId: string;
+    };
+    await secrets.delete(raw.apiKeySecretId);
+
+    const reloaded = new GatewayAccessController(file, secrets, logger);
+    await reloaded.init();
+    assert.equal(reloaded.snapshot().enabled, true);
+    assert.equal(reloaded.snapshot().ready, false);
+    assert.equal(reloaded.snapshot().lanEnabled, false);
   } finally {
     await logger?.flush();
     await rm(dir, { recursive: true, force: true });

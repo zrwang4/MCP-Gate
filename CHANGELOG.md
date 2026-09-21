@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- 新增安全 LAN 模式，默认关闭；仅当 Gateway API Key 已启用且可从 Keychain 读取时允许开启。
+- LAN 模式仅把公开 MCP Gateway 从 localhost 热重绑到 IPv4 `0.0.0.0`；Management API 始终保持 `127.0.0.1:24889`。
+- LAN 请求继续使用 MCP SDK v2 `hostHeaderValidation` / `originValidation`，allowlist 自动包含 localhost、机器 hostname 和当前非 internal IPv4，保留 DNS rebinding 防护。
+- 关闭 Gateway API Key 时若 LAN 正在运行，会自动退回 localhost，避免无认证暴露。
+- Keychain API Key 丢失时启动阶段自动关闭持久化 LAN 设置；公开 Gateway fail-safe 回到 localhost。
+- Management API 新增 `POST /api/gateway-access/lan`，切换时只重启 Gateway listener，不重启整个 Core。
+- Gateway status / 诊断快照新增 `lanEnabled` 和可连接的 `lanEndpoints`。
+- 桌面设置新增局域网访问开关和 LAN endpoint 展示。
+- 新增 LAN 必须依赖 API Key、持久化和缺失 Secret 自动关闭测试。
+
+
 - 运行日志新增关键字搜索、source 筛选和等级组合筛选。
 - 日志工具栏显示“命中数 / 当前缓存数”，并支持一键复制当前筛选结果。
 - 桌面端每次读取最近 500 条内存日志，面板最多渲染最后 120 条命中记录，避免长列表拖慢 UI。

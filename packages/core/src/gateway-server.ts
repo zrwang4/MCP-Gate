@@ -1,4 +1,5 @@
 import { createServer, type Server as HttpServer } from "node:http";
+import { hostname, networkInterfaces } from "node:os";
 import {
   createMcpHandler,
   fromJsonSchema,
@@ -6,8 +7,10 @@ import {
   type CallToolResult,
 } from "@modelcontextprotocol/server";
 import {
+  hostHeaderValidation,
   localhostHostValidation,
   localhostOriginValidation,
+  originValidation,
   toNodeHandler,
 } from "@modelcontextprotocol/node";
 import type { CoreConfig } from "./config.ts";
@@ -58,6 +61,7 @@ export class GatewayServer {
   #unsubscribeToolChanges: (() => void) | null = null;
   #status: "starting" | "running" | "stopping" | "stopped" | "error" = "stopped";
   #lastError: string | null = null;
+  #boundHost: string | null = null;
 
   constructor(
     config: CoreConfig,
@@ -74,15 +78,24 @@ export class GatewayServer {
   }
 
   snapshot() {
+    const access = this.#access.snapshot();
+    const lanEnabled = this.#boundHost === "0.0.0.0";
+
     return {
       endpoint: `http://${this.#config.host}:${this.#config.port}/mcp`,
       healthEndpoint: `http://${this.#config.host}:${this.#config.port}/ping`,
       status: this.#status,
       toolCount: this.#tools.list().length,
       lastError: this.#lastError,
-      authRequired: this.#access.snapshot().enabled,
-      authReady: this.#access.snapshot().ready,
-      authError: this.#access.snapshot().lastError,
+      authRequired: access.enabled,
+      authReady: access.ready,
+      authError: access.lastError,
+      lanEnabled,
+      lanEndpoints: lanEnabled
+        ? discoverLanIPv4Addresses().map(
+            (address) => `http://${address}:${this.#config.port}/mcp`,
+          )
+        : [],
     };
   }
 
@@ -93,8 +106,19 @@ export class GatewayServer {
 
     const handler = createMcpHandler(() => this.#buildMcpServer());
     const nodeHandler = toNodeHandler(handler);
-    const validateHost = localhostHostValidation();
-    const validateOrigin = localhostOriginValidation();
+    const access = this.#access.snapshot();
+    const lanEnabled =
+      access.lanEnabled && access.enabled && access.ready;
+    const bindHost = lanEnabled ? "0.0.0.0" : this.#config.host;
+    const allowedHostnames = lanEnabled
+      ? discoverAllowedGatewayHostnames()
+      : [];
+    const validateHost = lanEnabled
+      ? hostHeaderValidation(allowedHostnames)
+      : localhostHostValidation();
+    const validateOrigin = lanEnabled
+      ? originValidation(allowedHostnames)
+      : localhostOriginValidation();
 
     const server = createServer((req, res) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -146,7 +170,7 @@ export class GatewayServer {
     try {
       await new Promise<void>((resolve, reject) => {
         server.once("error", reject);
-        server.listen(this.#config.port, this.#config.host, () => {
+        server.listen(this.#config.port, bindHost, () => {
           server.off("error", reject);
           resolve();
         });
@@ -154,6 +178,7 @@ export class GatewayServer {
 
       this.#server = server;
       this.#handler = handler;
+      this.#boundHost = bindHost;
       this.#unsubscribeToolChanges = this.#tools.onChanged(() => {
         Promise.resolve(handler.notify.toolsChanged()).catch((error) => {
           this.#logger.warn(
@@ -165,7 +190,7 @@ export class GatewayServer {
       this.#status = "running";
       this.#logger.info(
         "gateway",
-        `listening on http://${this.#config.host}:${this.#config.port}/mcp`,
+        `listening on ${bindHost}:${this.#config.port}/mcp${lanEnabled ? `; allowed hosts=${allowedHostnames.join(",")}` : ""}`,
       );
     } catch (error) {
       this.#status = "error";
@@ -184,6 +209,7 @@ export class GatewayServer {
 
     const server = this.#server;
     this.#server = null;
+    this.#boundHost = null;
 
     if (server) {
       await new Promise<void>((resolve, reject) => {
@@ -239,4 +265,46 @@ function schemaFromRoute(route: ToolRoute) {
     type: "object",
     additionalProperties: true,
   });
+}
+
+
+export function discoverLanIPv4Addresses(): string[] {
+  const addresses = new Set<string>();
+
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (
+        entry.family === "IPv4" &&
+        !entry.internal &&
+        entry.address !== "0.0.0.0"
+      ) {
+        addresses.add(entry.address);
+      }
+    }
+  }
+
+  return [...addresses].sort();
+}
+
+export function discoverAllowedGatewayHostnames(): string[] {
+  const allowed = new Set<string>([
+    "localhost",
+    "127.0.0.1",
+    "[::1]",
+    "0.0.0.0",
+  ]);
+
+  const machine = hostname().trim().toLowerCase();
+  if (machine) {
+    allowed.add(machine);
+    if (!machine.endsWith(".local")) {
+      allowed.add(`${machine}.local`);
+    }
+  }
+
+  for (const address of discoverLanIPv4Addresses()) {
+    allowed.add(address);
+  }
+
+  return [...allowed].sort();
 }

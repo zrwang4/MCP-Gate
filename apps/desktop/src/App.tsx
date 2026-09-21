@@ -209,6 +209,8 @@ interface StatusResponse {
     authRequired?: boolean;
     authReady?: boolean;
     authError?: string | null;
+    lanEnabled?: boolean;
+    lanEndpoints?: string[];
   };
 }
 
@@ -349,6 +351,7 @@ export function App() {
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [gatewayKeyBusy, setGatewayKeyBusy] = useState(false);
+  const [lanAccessBusy, setLanAccessBusy] = useState(false);
   const [generatedGatewayKey, setGeneratedGatewayKey] = useState<string | null>(null);
   const [gatewayKeyCopied, setGatewayKeyCopied] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -525,6 +528,28 @@ export function App() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setGatewayKeyBusy(false);
+    }
+  }
+
+  async function toggleLanAccess() {
+    const nextEnabled = !Boolean(status?.gateway.lanEnabled);
+    setLanAccessBusy(true);
+    setError(null);
+    try {
+      await api(
+        "/api/gateway-access/lan",
+        {
+          method: "POST",
+          body: JSON.stringify({ enabled: nextEnabled }),
+        },
+        20_000,
+      );
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      await refresh();
+    } finally {
+      setLanAccessBusy(false);
     }
   }
 
@@ -1819,6 +1844,36 @@ export function App() {
                 </button>
               )}
             </div>
+          </div>
+
+          <div className="settingsRow">
+            <div>
+              <strong>局域网访问</strong>
+              <span>
+                {status?.gateway.lanEnabled
+                  ? `已监听局域网；${status.gateway.lanEndpoints?.join(" · ") || "等待网卡地址"}`
+                  : status?.gateway.authRequired && status.gateway.authReady
+                    ? "当前仅 localhost。开启后会监听 0.0.0.0，并强制 Bearer API Key。"
+                    : "需先启用可用的 Gateway API Key，才能开放局域网访问。"}
+              </span>
+            </div>
+            <button
+              className={`toolToggle ${status?.gateway.lanEnabled ? "enabled" : ""}`}
+              disabled={
+                lanAccessBusy ||
+                !managementConnected ||
+                (!status?.gateway.lanEnabled &&
+                  (!status?.gateway.authRequired || !status?.gateway.authReady))
+              }
+              onClick={() => void toggleLanAccess()}
+              aria-pressed={status?.gateway.lanEnabled === true}
+            >
+              {lanAccessBusy
+                ? "切换中…"
+                : status?.gateway.lanEnabled
+                  ? "关闭 LAN"
+                  : "开启 LAN"}
+            </button>
           </div>
 
           {generatedGatewayKey && (

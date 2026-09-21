@@ -215,6 +215,45 @@ export class ManagementServer {
 
     if (
       req.method === "POST" &&
+      url.pathname === "/api/gateway-access/lan"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const previous = this.#gatewayAccess.snapshot().lanEnabled;
+      try {
+        const body = await readJsonBody(req) as { enabled?: unknown };
+        if (typeof body.enabled !== "boolean") {
+          throw new Error("enabled must be a boolean");
+        }
+
+        await this.#gatewayAccess.setLanEnabled(body.enabled);
+        await this.#gateway.stop();
+        await this.#gateway.start();
+
+        json(res, 200, {
+          access: this.#gatewayAccess.snapshot(),
+          gateway: this.#gateway.snapshot(),
+        });
+      } catch (error) {
+        const current = this.#gatewayAccess.snapshot().lanEnabled;
+        if (current !== previous) {
+          await this.#gatewayAccess
+            .setLanEnabled(previous)
+            .catch(() => undefined);
+          await this.#gateway.stop().catch(() => undefined);
+          await this.#gateway.start().catch(() => undefined);
+        }
+
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+          gateway: this.#gateway.snapshot(),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
       url.pathname === "/api/gateway-access/rotate"
     ) {
       if (!requireDesktopClient(req, res)) return;
@@ -240,8 +279,18 @@ export class ManagementServer {
       if (!requireDesktopClient(req, res)) return;
 
       try {
+        const wasLanEnabled = this.#gatewayAccess.snapshot().lanEnabled;
         const access = await this.#gatewayAccess.disable();
-        json(res, 200, { access });
+
+        if (wasLanEnabled) {
+          await this.#gateway.stop();
+          await this.#gateway.start();
+        }
+
+        json(res, 200, {
+          access,
+          gateway: this.#gateway.snapshot(),
+        });
       } catch (error) {
         json(res, 500, {
           error: error instanceof Error ? error.message : String(error),

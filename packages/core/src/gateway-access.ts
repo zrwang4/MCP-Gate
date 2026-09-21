@@ -8,12 +8,14 @@ import type { SecretStore } from "./secret-store.ts";
 interface GatewayAccessFile {
   version: 1;
   apiKeySecretId: string | null;
+  lanEnabled?: boolean;
 }
 
 export interface GatewayAccessSnapshot {
   enabled: boolean;
   ready: boolean;
   lastError: string | null;
+  lanEnabled: boolean;
 }
 
 export type GatewayAuthorizationResult =
@@ -27,6 +29,7 @@ export class GatewayAccessController {
   #secretId: string | null = null;
   #apiKey: string | null = null;
   #lastError: string | null = null;
+  #lanEnabled = false;
 
   constructor(
     filePath: string,
@@ -48,12 +51,15 @@ export class GatewayAccessController {
         parsed.version !== 1 ||
         !Object.prototype.hasOwnProperty.call(parsed, "apiKeySecretId") ||
         (parsed.apiKeySecretId !== null &&
-          typeof parsed.apiKeySecretId !== "string")
+          typeof parsed.apiKeySecretId !== "string") ||
+        (parsed.lanEnabled !== undefined &&
+          typeof parsed.lanEnabled !== "boolean")
       ) {
         throw new Error("unsupported gateway access format");
       }
 
       this.#secretId = parsed.apiKeySecretId ?? null;
+      this.#lanEnabled = parsed.lanEnabled === true;
       if (this.#secretId) {
         try {
           this.#apiKey = await this.#secrets.get(this.#secretId);
@@ -72,10 +78,22 @@ export class GatewayAccessController {
           );
         }
       }
+
+      if (
+        this.#lanEnabled &&
+        (!this.#secretId || !this.#apiKey)
+      ) {
+        this.#lanEnabled = false;
+        await this.#persist(this.#secretId, false);
+        this.#logger.warn(
+          "gateway-access",
+          "LAN mode was disabled because a usable Gateway API Key is required",
+        );
+      }
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT") {
-        await this.#persist(null);
+        await this.#persist(null, false);
         return;
       }
 
@@ -84,7 +102,8 @@ export class GatewayAccessController {
       this.#secretId = null;
       this.#apiKey = null;
       this.#lastError = null;
-      await this.#persist(null);
+      this.#lanEnabled = false;
+      await this.#persist(null, false);
       this.#logger.warn(
         "gateway-access",
         `invalid gateway access config reset; backup: ${backup}; reason: ${error instanceof Error ? error.message : String(error)}`,
@@ -97,6 +116,7 @@ export class GatewayAccessController {
       enabled: this.#secretId !== null,
       ready: this.#secretId === null || this.#apiKey !== null,
       lastError: this.#lastError,
+      lanEnabled: this.#lanEnabled,
     };
   }
 
@@ -138,7 +158,7 @@ export class GatewayAccessController {
     await this.#secrets.set(secretId, apiKey);
 
     try {
-      await this.#persist(secretId);
+      await this.#persist(secretId, this.#lanEnabled);
     } catch (error) {
       await this.#secrets.delete(secretId).catch(() => false);
       throw error;
@@ -159,13 +179,30 @@ export class GatewayAccessController {
     };
   }
 
+  async setLanEnabled(enabled: boolean): Promise<GatewayAccessSnapshot> {
+    if (enabled && (!this.#secretId || !this.#apiKey)) {
+      throw new Error(
+        "Gateway API Key must be enabled and available before LAN access can be enabled",
+      );
+    }
+
+    await this.#persist(this.#secretId, enabled);
+    this.#lanEnabled = enabled;
+    this.#logger.info(
+      "gateway-access",
+      `LAN access ${enabled ? "enabled" : "disabled"}`,
+    );
+    return this.snapshot();
+  }
+
   async disable(): Promise<GatewayAccessSnapshot> {
     const previousSecretId = this.#secretId;
 
-    await this.#persist(null);
+    await this.#persist(null, false);
     this.#secretId = null;
     this.#apiKey = null;
     this.#lastError = null;
+    this.#lanEnabled = false;
 
     if (previousSecretId) {
       await this.#secrets.delete(previousSecretId).catch(() => false);
@@ -175,10 +212,14 @@ export class GatewayAccessController {
     return this.snapshot();
   }
 
-  async #persist(secretId: string | null): Promise<void> {
+  async #persist(
+    secretId: string | null,
+    lanEnabled = this.#lanEnabled,
+  ): Promise<void> {
     const payload: GatewayAccessFile = {
       version: 1,
       apiKeySecretId: secretId,
+      lanEnabled,
     };
 
     const tempPath = `${this.#filePath}.tmp-${process.pid}`;

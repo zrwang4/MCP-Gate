@@ -15,6 +15,8 @@ export interface DiagnosticGatewaySnapshot {
   authRequired?: boolean;
   authReady?: boolean;
   authError?: string | null;
+  lanEnabled?: boolean;
+  lanEndpoints?: string[];
 }
 
 export interface DiagnosticSnapshotInput {
@@ -50,6 +52,8 @@ export function buildDiagnosticSnapshot(input: DiagnosticSnapshotInput) {
       authRequired: Boolean(input.gateway.authRequired),
       authReady: input.gateway.authReady ?? true,
       authError: sanitizeText(input.gateway.authError ?? null),
+      lanEnabled: Boolean(input.gateway.lanEnabled),
+      lanEndpoints: [...(input.gateway.lanEndpoints ?? [])],
     },
     profiles: {
       activeProfileId: input.activeProfileId,
