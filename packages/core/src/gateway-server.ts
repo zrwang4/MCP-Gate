@@ -173,49 +173,65 @@ export class GatewayServer {
   }
 
   #createProtocolServer(): Server {
-    const server = new Server(
-      {
-        name: "mcp-gate",
-        version: CORE_VERSION,
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      },
+    return createGatewayProtocolServer(
+      this.#tools,
+      this.#upstreams,
+      this.#logger,
     );
-
-    server.setRequestHandler("tools/list", async () => ({
-      tools: this.#tools.list().map((route) => ({
-        name: route.publicName,
-        description: route.definition.description,
-        inputSchema: normalizeInputSchema(route.definition.inputSchema),
-      })),
-    }));
-
-    server.setRequestHandler("tools/call", async (request): Promise<CallToolResult> => {
-      try {
-        return await this.#upstreams.callTool(
-          request.params.name,
-          request.params.arguments ?? {},
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.#logger.warn("gateway", `tool ${request.params.name} failed: ${message}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: message,
-            },
-          ],
-          isError: true,
-        };
-      }
-    });
-
-    return server;
   }
+}
+
+export interface GatewayToolCaller {
+  callTool(publicName: string, args: unknown): Promise<CallToolResult>;
+}
+
+export function createGatewayProtocolServer(
+  tools: ToolRegistry,
+  caller: GatewayToolCaller,
+  logger: CoreLogger,
+): Server {
+  const server = new Server(
+    {
+      name: "mcp-gate",
+      version: CORE_VERSION,
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    },
+  );
+
+  server.setRequestHandler("tools/list", async () => ({
+    tools: tools.list().map((route) => ({
+      name: route.publicName,
+      description: route.definition.description,
+      inputSchema: normalizeInputSchema(route.definition.inputSchema),
+    })),
+  }));
+
+  server.setRequestHandler("tools/call", async (request): Promise<CallToolResult> => {
+    try {
+      return await caller.callTool(
+        request.params.name,
+        request.params.arguments ?? {},
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn("gateway", `tool ${request.params.name} failed: ${message}`);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  return server;
 }
 
 function normalizeInputSchema(value: unknown): Tool["inputSchema"] {

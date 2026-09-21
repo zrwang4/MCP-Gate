@@ -14,6 +14,7 @@
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r build",
     "core:management-smoke": "pnpm --filter @mcp-gate/core management:smoke",
-    "test": "pnpm --filter @mcp-gate/core test"
+    "test": "pnpm --filter @mcp-gate/core test",
+    "core:gateway-smoke": "pnpm --filter @mcp-gate/core gateway:smoke"
   }
 }

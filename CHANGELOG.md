@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 新增统一 Gateway 协议测试，使用 MCP SDK Client + InMemoryTransport 验证动态 `tools/list` 与 `tools/call`。
+- 新增 `pnpm core:gateway-smoke`，通过真实 Streamable HTTP 连接 `/mcp` 并执行 `tools/list`。
+- HTTP smoke 使用 SDK v2 version negotiation auto 模式，同时覆盖现代协议协商路径。
+
+
 - 桌面端新增 Tools 管理区，可直接启用/禁用聚合 Tool。
 - 新增 Tool enable/disable Management API；禁用 Tool 会立即从 Gateway `tools/list` 隐藏并拒绝调用。
 - upstream 刷新 `tools/list` 时保留当前进程内的 Tool 开关状态。
