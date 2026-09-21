@@ -1644,3 +1644,57 @@ footer {
     color: #ef8d88;
   }
 }
+
+.logSearch {
+  min-width: 150px;
+  max-width: 220px;
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 9px;
+  padding: 7px 9px;
+  background: rgba(255,255,255,.72);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  outline: none;
+}
+
+.logSearch:focus {
+  border-color: rgba(34,160,107,.45);
+  box-shadow: 0 0 0 3px rgba(34,160,107,.07);
+}
+
+.logResultCount {
+  min-width: 46px;
+  color: #858580;
+  font: 10px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-align: right;
+}
+
+.logToolbar .ghostButton:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+@media (prefers-color-scheme: dark) {
+  .logSearch {
+    background: #2c2c29;
+    border-color: rgba(255,255,255,.10);
+    color: #f2f2f0;
+  }
+
+  .logResultCount {
+    color: #999;
+  }
+}
+
+@media (max-width: 760px) {
+  .logToolbar {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .logSearch {
+    min-width: 130px;
+    flex: 1 1 160px;
+  }
+}

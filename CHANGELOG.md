@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 运行日志新增关键字搜索、source 筛选和等级组合筛选。
+- 日志工具栏显示“命中数 / 当前缓存数”，并支持一键复制当前筛选结果。
+- 桌面端每次读取最近 500 条内存日志，面板最多渲染最后 120 条命中记录，避免长列表拖慢 UI。
+- 搜索匹配 message、source 和 level；日志 JSONL 格式和 Core Logger 无需迁移。
+
+
 - 修复 AuditLogger options 误传给 GatewayAccessController、未传给 UpstreamManager 的接线错误。
 
 

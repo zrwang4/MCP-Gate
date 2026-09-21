@@ -354,6 +354,9 @@ export function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [logLevel, setLogLevel] = useState<"all" | LogLevel>("all");
+  const [logSource, setLogSource] = useState("all");
+  const [logQuery, setLogQuery] = useState("");
+  const [logsCopied, setLogsCopied] = useState(false);
   const [managementConnected, setManagementConnected] = useState(false);
   const [coreRuntime, setCoreRuntime] = useState<CoreRuntimeStatus | null>(null);
   const [coreRestarting, setCoreRestarting] = useState(false);
@@ -424,7 +427,7 @@ export function App() {
         api<{ upstreams: UpstreamInfo[] }>("/api/upstreams"),
         api<{ profiles: ProfileInfo[]; activeProfileId: string | null }>("/api/profiles"),
         api<{ tools: ToolInfo[] }>("/api/tools"),
-        api<{ entries: LogEntry[] }>("/api/logs?limit=250"),
+        api<{ entries: LogEntry[] }>("/api/logs?limit=500"),
         api<{ entries: AuditEntry[] }>("/api/audit?limit=120"),
       ]);
       setStatus(statusResult);
@@ -456,7 +459,7 @@ export function App() {
     const el = logPanelRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [logs, logLevel]);
+  }, [logs, logLevel, logSource, logQuery]);
 
   const gatewayUrl = status?.gateway.endpoint ?? DEFAULT_GATEWAY_URL;
 
@@ -1176,10 +1179,41 @@ export function App() {
   const profileSwitchBusy = busy?.startsWith("profile:") ?? false;
   const runningCount = upstreams.filter((upstream) => upstream.status === "running").length;
   const enabledToolCount = tools.filter((tool) => tool.enabled).length;
-  const visibleLogs = useMemo(
-    () => (logLevel === "all" ? logs : logs.filter((entry) => entry.level === logLevel)),
-    [logs, logLevel],
+  const logSources = useMemo(
+    () =>
+      [...new Set(logs.map((entry) => entry.source))]
+        .sort((a, b) => a.localeCompare(b)),
+    [logs],
   );
+
+  const visibleLogs = useMemo(() => {
+    const query = logQuery.trim().toLowerCase();
+
+    return logs.filter((entry) => {
+      if (logLevel !== "all" && entry.level !== logLevel) return false;
+      if (logSource !== "all" && entry.source !== logSource) return false;
+      if (!query) return true;
+
+      return (
+        entry.message.toLowerCase().includes(query) ||
+        entry.source.toLowerCase().includes(query) ||
+        entry.level.toLowerCase().includes(query)
+      );
+    });
+  }, [logs, logLevel, logSource, logQuery]);
+
+  async function copyVisibleLogs() {
+    const text = visibleLogs
+      .map(
+        (entry) =>
+          `[${entry.timestamp}] ${entry.level.toUpperCase()} ${entry.source} ${entry.message}`,
+      )
+      .join("\n");
+
+    await navigator.clipboard.writeText(text);
+    setLogsCopied(true);
+    window.setTimeout(() => setLogsCopied(false), 1400);
+  }
 
   return (
     <main className="shell">
@@ -1578,13 +1612,48 @@ export function App() {
             <p>{status?.core.logFile ?? "~/Library/Logs/MCP Gate/core.jsonl"}</p>
           </div>
           <div className="logToolbar">
-            <select value={logLevel} onChange={(event) => setLogLevel(event.target.value as typeof logLevel)}>
-              <option value="all">全部</option>
+            <input
+              className="logSearch"
+              value={logQuery}
+              onChange={(event) => setLogQuery(event.target.value)}
+              placeholder="搜索日志…"
+              aria-label="搜索日志"
+            />
+            <select
+              value={logSource}
+              onChange={(event) => setLogSource(event.target.value)}
+              aria-label="按来源筛选日志"
+            >
+              <option value="all">全部来源</option>
+              {logSources.map((source) => (
+                <option value={source} key={source}>
+                  {source}
+                </option>
+              ))}
+            </select>
+            <select
+              value={logLevel}
+              onChange={(event) =>
+                setLogLevel(event.target.value as typeof logLevel)
+              }
+              aria-label="按等级筛选日志"
+            >
+              <option value="all">全部等级</option>
               <option value="info">Info</option>
               <option value="warn">Warn</option>
               <option value="error">Error</option>
               <option value="debug">Debug</option>
             </select>
+            <span className="logResultCount">
+              {visibleLogs.length}/{logs.length}
+            </span>
+            <button
+              className="ghostButton"
+              disabled={visibleLogs.length === 0}
+              onClick={() => void copyVisibleLogs()}
+            >
+              <Copy size={14} /> {logsCopied ? "已复制" : "复制结果"}
+            </button>
             <button className="ghostButton" onClick={() => void refresh()}>
               <RefreshCw size={14} /> 刷新
             </button>
@@ -1597,7 +1666,7 @@ export function App() {
               <FileText size={18} /> 暂无日志
             </div>
           ) : (
-            visibleLogs.slice(-80).map((entry) => (
+            visibleLogs.slice(-120).map((entry) => (
               <div className="logRow" key={entry.seq}>
                 <time>{formatTime(entry.timestamp)}</time>
                 <span className={`logLevel ${entry.level}`}>{entry.level.toUpperCase()}</span>
