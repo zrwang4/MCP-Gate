@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 修复 upstream 初始化失败时的 transport 清理：stdio/HTTP client 在 connect 前记录生命周期引用，失败后显式 close。
+- stdio connect 失败会调用 Client.close，确保 SDK 按 stdin → SIGTERM → SIGKILL 顺序回收子进程。
+- HTTP connect 失败会先 terminateSession，再 close Client；无 session 时 terminateSession 安全返回。
+- 简化保存前连接测试的 finally，统一调用 disconnect 做 best-effort 清理。
+
+
 - MCP 添加/编辑弹窗新增“测试连接”，保存前可验证 stdio/HTTP 的 initialize + tools/list。
 - 测试成功显示 Tool 数量、耗时和最多 12 个 Tool 名称；失败信息只显示在弹窗内，不覆盖当前已保存配置。
 - 编辑已有 stdio/HTTP 时继续支持留空复用 Keychain Secret，测试不会写入 Registry 或替换 Secret。

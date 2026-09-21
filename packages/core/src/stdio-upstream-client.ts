@@ -44,9 +44,17 @@ export class StdioUpstreamClient implements UpstreamClient {
       ...(env ? { env } : {}),
     });
 
-    await client.connect(transport);
     this.#client = client;
     this.#transport = transport;
+
+    try {
+      await client.connect(transport);
+    } catch (error) {
+      this.#client = null;
+      this.#transport = null;
+      await client.close().catch(() => transport.close().catch(() => undefined));
+      throw error;
+    }
   }
 
   async disconnect(): Promise<void> {

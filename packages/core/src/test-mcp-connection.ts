@@ -83,11 +83,8 @@ export async function testMcpConnection(
   }
 
   const client = await factory(config, temporarySecrets);
-  let connected = false;
-
   try {
     await client.connect();
-    connected = true;
     const tools = await client.listTools();
     const result: McpConnectionTestResult = {
       transport,
@@ -109,11 +106,7 @@ export async function testMcpConnection(
     );
     throw error;
   } finally {
-    if (connected) {
-      await client.disconnect().catch(() => undefined);
-    } else {
-      await client.disconnect().catch(() => undefined);
-    }
+    await client.disconnect().catch(() => undefined);
   }
 }
 
