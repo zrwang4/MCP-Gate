@@ -73,6 +73,47 @@ interface ProfileApplyResult {
   failed: ProfileApplyFailure[];
 }
 
+interface McpImportIssue {
+  sourceName?: string;
+  message: string;
+}
+
+interface McpImportPreviewCandidate {
+  sourceName: string;
+  name: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  url?: string;
+  plainEnvKeys: string[];
+  secretEnvKeys: string[];
+  hasAuthorization: boolean;
+  warnings: string[];
+}
+
+interface McpImportPreview {
+  candidates: McpImportPreviewCandidate[];
+  issues: McpImportIssue[];
+}
+
+interface McpImportApplyResult {
+  imported: Array<{
+    sourceName: string;
+    serverId: string;
+    name: string;
+  }>;
+  skipped: Array<{
+    sourceName: string;
+    reason: string;
+  }>;
+  failed: Array<{
+    sourceName: string;
+    error: string;
+  }>;
+  issues: McpImportIssue[];
+}
+
 interface ToolInfo {
   publicName: string;
   serverId: string;
@@ -259,6 +300,11 @@ export function App() {
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null);
   const [autostartBusy, setAutostartBusy] = useState(false);
   const [showAddServer, setShowAddServer] = useState(false);
+  const [showImportConfig, setShowImportConfig] = useState(false);
+  const [importConfigText, setImportConfigText] = useState("");
+  const [importPreview, setImportPreview] = useState<McpImportPreview | null>(null);
+  const [importApplyResult, setImportApplyResult] = useState<McpImportApplyResult | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileName, setProfileName] = useState("");
@@ -384,6 +430,81 @@ export function App() {
     await navigator.clipboard.writeText(gatewayUrl);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  function openImportConfig() {
+    setImportConfigText("");
+    setImportPreview(null);
+    setImportApplyResult(null);
+    setShowImportConfig(true);
+  }
+
+  function parseImportConfig(): unknown {
+    if (!importConfigText.trim()) {
+      throw new Error("请粘贴 MCP JSON 配置");
+    }
+    try {
+      return JSON.parse(importConfigText) as unknown;
+    } catch (cause) {
+      throw new Error(
+        `JSON 格式错误：${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    }
+  }
+
+  async function previewImportConfig() {
+    setImportBusy(true);
+    setError(null);
+    setImportApplyResult(null);
+    try {
+      const config = parseImportConfig();
+      const response = await api<{ preview: McpImportPreview }>(
+        "/api/import/mcp-config/preview",
+        {
+          method: "POST",
+          body: JSON.stringify({ config }),
+        },
+        15_000,
+      );
+      setImportPreview(response.preview);
+    } catch (cause) {
+      setImportPreview(null);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  async function applyImportConfig() {
+    setImportBusy(true);
+    setError(null);
+    try {
+      const config = parseImportConfig();
+      const response = await api<{ result: McpImportApplyResult }>(
+        "/api/import/mcp-config/apply",
+        {
+          method: "POST",
+          body: JSON.stringify({ config }),
+        },
+        60_000,
+      );
+
+      setImportApplyResult(response.result);
+      await refresh();
+
+      if (
+        response.result.failed.length === 0 &&
+        response.result.issues.length === 0
+      ) {
+        setShowImportConfig(false);
+        setImportPreview(null);
+        setImportApplyResult(null);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setImportBusy(false);
+    }
   }
 
   function openCreateProfile() {
@@ -880,9 +1001,14 @@ export function App() {
             <h2>MCP 管理</h2>
             <p>配置并连接本机 stdio MCP Server</p>
           </div>
-          <button className="secondaryButton" onClick={openCreateServer}>
-            <Plus size={14} /> 添加 MCP
-          </button>
+          <div className="sectionActions">
+            <button className="secondaryButton" onClick={openImportConfig}>
+              <FileText size={14} /> 导入配置
+            </button>
+            <button className="secondaryButton" onClick={openCreateServer}>
+              <Plus size={14} /> 添加 MCP
+            </button>
+          </div>
         </div>
 
         {serverConfigs.length === 0 ? (
@@ -1378,6 +1504,163 @@ export function App() {
                 onClick={() => void saveProfile()}
               >
                 {profileBusy ? "保存中…" : editingProfileId ? "保存修改" : "创建 Profile"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showImportConfig && (
+        <div
+          className="modalBackdrop"
+          role="presentation"
+          onMouseDown={() => {
+            if (importBusy) return;
+            setShowImportConfig(false);
+            setImportPreview(null);
+            setImportApplyResult(null);
+          }}
+        >
+          <section
+            className="modalCard importConfigCard"
+            role="dialog"
+            aria-modal="true"
+            aria-label="导入 MCP 配置"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modalHeader">
+              <div>
+                <h2>导入 MCP 配置</h2>
+                <p>
+                  支持 Claude / Cursor 风格 mcpServers JSON。先预览，再写入 Registry 和 Keychain。
+                </p>
+              </div>
+              <button
+                className="iconButton"
+                disabled={importBusy}
+                onClick={() => {
+                  setShowImportConfig(false);
+                  setImportPreview(null);
+                  setImportApplyResult(null);
+                }}
+                aria-label="关闭"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <label className="field">
+              <span>JSON 配置</span>
+              <textarea
+                className="importConfigText"
+                value={importConfigText}
+                onChange={(event) => {
+                  setImportConfigText(event.target.value);
+                  setImportPreview(null);
+                  setImportApplyResult(null);
+                }}
+                rows={10}
+                spellCheck={false}
+                placeholder={'{\n  "mcpServers": {\n    "github": {\n      "command": "npx",\n      "args": ["-y", "server-package"],\n      "env": { "GITHUB_TOKEN": "..." }\n    }\n  }\n}'}
+              />
+              <small>
+                Preview 不回显 Secret 值；敏感 env 和 HTTP Authorization 在导入时写入 macOS Keychain。
+              </small>
+            </label>
+
+            {importPreview && (
+              <div className="importPreview">
+                <div className="importPreviewHeader">
+                  <strong>{importPreview.candidates.length} 个可导入</strong>
+                  <span>{importPreview.issues.length} 个问题</span>
+                </div>
+
+                {importPreview.candidates.map((candidate) => (
+                  <div className="importCandidate" key={candidate.sourceName}>
+                    <div className="importCandidateHeader">
+                      <strong>{candidate.name}</strong>
+                      <span className="toolSource">{candidate.transport.toUpperCase()}</span>
+                    </div>
+                    <code>
+                      {candidate.transport === "stdio"
+                        ? `${candidate.command ?? ""} ${(candidate.args ?? []).join(" ")}`
+                        : candidate.url}
+                    </code>
+                    <div className="importMeta">
+                      {candidate.plainEnvKeys.length > 0 && (
+                        <span>Env: {candidate.plainEnvKeys.join(", ")}</span>
+                      )}
+                      {candidate.secretEnvKeys.length > 0 && (
+                        <span>Keychain: {candidate.secretEnvKeys.join(", ")}</span>
+                      )}
+                      {candidate.hasAuthorization && <span>Authorization → Keychain</span>}
+                    </div>
+                    {candidate.warnings.map((warning) => (
+                      <div className="importWarning" key={warning}>{warning}</div>
+                    ))}
+                  </div>
+                ))}
+
+                {importPreview.issues.map((issue, index) => (
+                  <div
+                    className="importIssue"
+                    key={`${issue.sourceName ?? "config"}:${index}`}
+                  >
+                    <strong>{issue.sourceName ?? "配置"}</strong>
+                    <span>{issue.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {importApplyResult && (
+              <div className="importResult">
+                <strong>导入结果</strong>
+                <span>
+                  已导入 {importApplyResult.imported.length} ·
+                  跳过 {importApplyResult.skipped.length} ·
+                  失败 {importApplyResult.failed.length}
+                </span>
+                {importApplyResult.failed.map((item) => (
+                  <div className="importIssue" key={`failed:${item.sourceName}`}>
+                    <strong>{item.sourceName}</strong>
+                    <span>{item.error}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="modalActions">
+              <button
+                className="secondaryButton"
+                disabled={importBusy}
+                onClick={() => {
+                  setShowImportConfig(false);
+                  setImportPreview(null);
+                  setImportApplyResult(null);
+                }}
+              >
+                关闭
+              </button>
+              <button
+                className="secondaryButton"
+                disabled={importBusy || !importConfigText.trim()}
+                onClick={() => void previewImportConfig()}
+              >
+                {importBusy ? "处理中…" : "预览"}
+              </button>
+              <button
+                className="actionButton primary"
+                disabled={
+                  importBusy ||
+                  !importPreview ||
+                  importPreview.candidates.length === 0
+                }
+                onClick={() => void applyImportConfig()}
+              >
+                {importBusy
+                  ? "导入中…"
+                  : `导入 ${importPreview?.candidates.length ?? 0} 个`}
               </button>
             </div>
           </section>

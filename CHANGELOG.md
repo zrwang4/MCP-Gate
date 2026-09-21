@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 桌面端 MCP 管理新增“导入配置”入口，支持粘贴 Claude/Cursor 风格 JSON。
+- 导入采用“粘贴 → 预览 → 应用”两阶段流程，预览列表显示 transport、启动目标、普通 env key、Keychain key 和 warnings。
+- 预览区不回显 Secret 值；不支持项逐条显示 issue，不会阻止其它合法 Server 预览。
+- 批量导入支持 imported/skipped/failed 结果；全部成功时自动关闭弹窗并刷新 MCP 列表，部分失败时保留结果供排查。
+
+
 - 新增 Claude/Cursor 风格 MCP JSON 导入解析，支持顶层 `mcpServers` 与直接 server map。
 - 新增 `POST /api/import/mcp-config/preview`：只返回可导入项、Secret key 和问题，不回显 Secret 值。
 - 新增 `POST /api/import/mcp-config/apply`：批量写入 Server Registry，并把敏感 env / HTTP Authorization 保存到 Keychain。
