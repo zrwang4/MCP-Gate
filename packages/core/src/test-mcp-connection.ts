@@ -446,11 +446,6 @@ async function withTimeout<T>(
       void onTimeout().catch(() => undefined);
     }, timeoutMs);
 
-    const unrefTimer = timer as ReturnType<typeof setTimeout> & {
-      unref?: () => void;
-    };
-    unrefTimer.unref?.();
-
     operation.then(
       (value) => {
         if (settled) return;

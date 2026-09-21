@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 连接测试 timeout timer 不再 `unref()`，确保即使被测试操作本身不占用事件循环，Core 也会等待硬超时并执行主动断开。
+- 修复 timeout 单元测试在 Node test runner 中被 `cancelledByParent` 的问题。
+
+
 - 保存前连接测试新增 Core 侧硬超时：connect 默认 60 秒，tools/list 默认 20 秒。
 - 超时后 Core 主动 disconnect 临时 client，不依赖 WebView 的 fetch abort 来回收 stdio 子进程或 HTTP session。
 - 新增可注入超时配置用于单元测试，并覆盖 connect 永久挂起时的主动断开路径。
