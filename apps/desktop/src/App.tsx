@@ -18,6 +18,15 @@ interface ServerInfo {
   root?: string;
 }
 
+interface UpstreamInfo {
+  id: string;
+  name: string;
+  alias: string;
+  status: "configured" | "connecting" | "running" | "stopping" | "stopped" | "error";
+  toolCount: number;
+  lastError: string | null;
+}
+
 interface ServerConfigInfo {
   id: string;
   name: string;
@@ -107,6 +116,7 @@ export function App() {
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [serverConfigs, setServerConfigs] = useState<ServerConfigInfo[]>([]);
+  const [upstreams, setUpstreams] = useState<UpstreamInfo[]>([]);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,15 +132,17 @@ export function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [statusResult, serversResult, configsResult, logsResult] = await Promise.all([
+      const [statusResult, serversResult, configsResult, upstreamsResult, logsResult] = await Promise.all([
         api<StatusResponse>("/api/status"),
         api<{ servers: ServerInfo[] }>("/api/servers"),
         api<{ servers: ServerConfigInfo[] }>("/api/server-configs"),
+        api<{ upstreams: UpstreamInfo[] }>("/api/upstreams"),
         api<{ entries: LogEntry[] }>("/api/logs?limit=250"),
       ]);
       setStatus(statusResult);
       setServers(serversResult.servers);
       setServerConfigs(configsResult.servers);
+      setUpstreams(upstreamsResult.upstreams);
       setLogs(logsResult.entries);
       setManagementConnected(true);
       setError(null);
@@ -201,6 +213,26 @@ export function App() {
     }
   }
 
+  async function upstreamAction(
+    serverId: string,
+    action: "connect" | "disconnect" | "refresh-tools",
+  ) {
+    setBusy(`${serverId}:${action}`);
+    setError(null);
+    try {
+      await api(`/api/upstreams/${serverId}/${action}`, {
+        method: "POST",
+        body: "{}",
+      });
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function removeServerConfig(serverId: string) {
     setConfigBusy(true);
     setError(null);
@@ -215,7 +247,9 @@ export function App() {
   }
 
   const gatewayState = managementConnected ? (status?.gateway.status ?? "stopped") : "error";
-  const runningCount = servers.filter((server) => server.status === "running").length;
+  const runningCount =
+    servers.filter((server) => server.status === "running").length +
+    upstreams.filter((upstream) => upstream.status === "running").length;
   const visibleLogs = useMemo(
     () => (logLevel === "all" ? logs : logs.filter((entry) => entry.level === logLevel)),
     [logs, logLevel],
@@ -341,34 +375,71 @@ export function App() {
 
         {serverConfigs.length > 0 && (
           <div className="configuredServers">
-            <div className="configuredHeading">已保存配置 · 聚合运行时将在下一阶段接入</div>
-            {serverConfigs.map((server) => (
-              <article className="serverCard configuredCard" key={server.id}>
-                <div className="serverIcon">
-                  <Terminal size={19} />
-                </div>
-                <div className="serverInfo">
-                  <div className="serverNameRow">
-                    <strong>{server.name}</strong>
-                    <span className="pill configured">已配置</span>
+            <div className="configuredHeading">已保存配置 · 可连接 stdio MCP 并发现 Tools</div>
+            {serverConfigs.map((server) => {
+              const upstream = upstreams.find((item) => item.id === server.id);
+              const upstreamStatus = upstream?.status ?? "configured";
+              const changing = busy?.startsWith(`${server.id}:`) ?? false;
+              const connected = upstreamStatus === "running" || upstreamStatus === "connecting";
+
+              return (
+                <article className="serverCard configuredCard" key={server.id}>
+                  <div className="serverIcon">
+                    <Terminal size={19} />
                   </div>
-                  <span>{server.command} {server.args.join(" ")}</span>
-                  <div className="serverMeta">
-                    <span>{server.alias}</span>
-                    <span>{server.cwd || "默认工作目录"}</span>
+                  <div className="serverInfo">
+                    <div className="serverNameRow">
+                      <strong>{server.name}</strong>
+                      <span className={`pill ${upstreamStatus === "configured" ? "configured" : upstreamStatus}`}>
+                        {upstreamStatus === "configured" ? "已配置" : statusLabel(upstreamStatus as ServerStatus)}
+                      </span>
+                    </div>
+                    <span>{server.command} {server.args.join(" ")}</span>
+                    <div className="serverMeta">
+                      <span>{server.alias}</span>
+                      <span>{upstream?.toolCount ?? 0} 个工具</span>
+                      <span>{server.cwd || "默认工作目录"}</span>
+                    </div>
+                    {upstream?.lastError && <div className="serverError">{upstream.lastError}</div>}
                   </div>
-                </div>
-                <div className="serverActions">
-                  <button
-                    className="actionButton danger"
-                    disabled={configBusy}
-                    onClick={() => void removeServerConfig(server.id)}
-                  >
-                    <Trash2 size={14} /> 删除
-                  </button>
-                </div>
-              </article>
-            ))}
+                  <div className="serverActions">
+                    {connected ? (
+                      <button
+                        className="actionButton"
+                        disabled={changing}
+                        onClick={() => void upstreamAction(server.id, "disconnect")}
+                      >
+                        <Square size={14} /> 断开
+                      </button>
+                    ) : (
+                      <button
+                        className="actionButton primary"
+                        disabled={changing}
+                        onClick={() => void upstreamAction(server.id, "connect")}
+                      >
+                        <Play size={14} /> 连接
+                      </button>
+                    )}
+                    {upstreamStatus === "running" && (
+                      <button
+                        className="actionButton"
+                        disabled={changing}
+                        onClick={() => void upstreamAction(server.id, "refresh-tools")}
+                      >
+                        <RefreshCw size={14} /> 工具
+                      </button>
+                    )}
+                    <button
+                      className="actionButton danger"
+                      disabled={configBusy || changing}
+                      onClick={() => void removeServerConfig(server.id)}
+                    >
+                      <Trash2 size={14} /> 删除
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
@@ -417,7 +488,7 @@ export function App() {
             <div className="modalHeader">
               <div>
                 <h2>添加 MCP</h2>
-                <p>先保存 stdio 配置；统一聚合运行时将在下一阶段接入。</p>
+                <p>保存后可直接连接 stdio MCP；Tools 会注册到聚合层。</p>
               </div>
               <button className="iconButton" onClick={() => setShowAddServer(false)} aria-label="关闭">
                 <X size={17} />

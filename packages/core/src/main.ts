@@ -4,6 +4,7 @@ import { CoreLogger } from "./logger.ts";
 import { ManagementServer } from "./management-server.ts";
 import { ServerRegistry } from "./server-registry.ts";
 import { ToolRegistry } from "./tool-registry.ts";
+import { StdioUpstreamClient } from "./stdio-upstream-client.ts";
 import { UpstreamManager } from "./upstream-manager.ts";
 import { McpProxyProcess } from "./proxy-process.ts";
 
@@ -22,9 +23,7 @@ async function main(): Promise<void> {
   const upstreams = new UpstreamManager(
     registry,
     toolRegistry,
-    () => {
-      throw new Error("stdio upstream adapter is not connected yet");
-    },
+    (serverConfig) => new StdioUpstreamClient(serverConfig),
     logger,
   );
   upstreams.syncConfigs();

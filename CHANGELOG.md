@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 接入 MCP TypeScript SDK v2 客户端 `@modelcontextprotocol/client@2.0.0`。
+- 新增真实 `StdioUpstreamClient`，通过 stdio 启动并初始化已保存 MCP Server。
+- 已配置 MCP 支持连接、断开、刷新 Tools。
+- 连接成功后自动执行 `tools/list` 并写入 ToolRegistry。
+- Management API 新增 upstream connect/disconnect/refresh-tools 操作。
+
+
 - 新增 ToolRegistry：显式维护 public tool → upstream/original tool 映射。
 - Tool namespace 支持冲突规避，不依赖字符串 split 进行反向路由。
 - 新增 UpstreamManager：管理 configured/connecting/running/error 状态、工具缓存和调用路由。

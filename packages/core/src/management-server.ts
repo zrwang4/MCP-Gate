@@ -179,6 +179,31 @@ export class ManagementServer {
       return;
     }
 
+    const upstreamActionMatch = url.pathname.match(
+      /^\/api\/upstreams\/([0-9a-f-]+)\/(connect|disconnect|refresh-tools)$/i,
+    );
+    if (req.method === "POST" && upstreamActionMatch) {
+      if (!requireDesktopClient(req, res)) return;
+      const [, upstreamId, action] = upstreamActionMatch;
+
+      try {
+        const upstream =
+          action === "connect"
+            ? await this.#upstreams.connect(upstreamId)
+            : action === "disconnect"
+              ? await this.#upstreams.disconnect(upstreamId)
+              : await this.#upstreams.refreshTools(upstreamId);
+
+        json(res, 200, { upstream });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+
     if (req.method === "POST" && url.pathname === "/api/server-configs") {
       if (!requireDesktopClient(req, res)) return;
       try {
@@ -205,6 +230,7 @@ export class ManagementServer {
     const configDeleteMatch = url.pathname.match(/^\/api\/server-configs\/([0-9a-f-]+)$/i);
     if (req.method === "DELETE" && configDeleteMatch) {
       if (!requireDesktopClient(req, res)) return;
+      await this.#upstreams.disconnect(configDeleteMatch[1]).catch(() => undefined);
       const removed = await this.#registry.remove(configDeleteMatch[1]);
       this.#upstreams.syncConfigs();
       if (!removed) {
