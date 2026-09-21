@@ -807,6 +807,17 @@ footer {
   width: min(640px, 100%);
 }
 
+.confirmCard {
+  width: min(360px, 100%);
+}
+
+.confirmText {
+  margin: 14px 0 18px;
+  color: #383835;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .toolResult {
   margin: 0;
   max-height: 260px;
@@ -824,6 +835,15 @@ footer {
   .toolResult {
     background: #181817;
     border-color: rgba(255,255,255,.08);
+    color: #e8e8e4;
+  }
+
+  .confirmCard {
+    background: #20201e;
+    border-color: rgba(255,255,255,.10);
+  }
+
+  .confirmText {
     color: #e8e8e4;
   }
 }
