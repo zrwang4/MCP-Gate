@@ -11,7 +11,8 @@
     "smoke": "node --experimental-strip-types src/smoke.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "management:smoke": "node --experimental-strip-types src/management-smoke.ts"
+    "management:smoke": "node --experimental-strip-types src/management-smoke.ts",
+    "test": "node --experimental-strip-types --test src/logger.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server-filesystem": "2026.8.31",

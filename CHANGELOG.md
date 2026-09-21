@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- 修复 MCP 子进程启动失败或 readiness 超时时长期停留在“启动中”的问题。
+- 防止并发 start/stop/restart 操作互相覆盖。
+- Core 版本改为从 package 元数据读取，统一 Desktop/Tauri 版本为 0.2.0。
+- Core build 启用 TypeScript 相对扩展重写与 noEmitOnError。
+- Core 退出前等待日志写入完成。
+- 加强日志 Secret 脱敏，并增加 Node 内置测试。
+- UI 在 Management API 断线时不再继续显示旧的“运行中”状态。
+- UI 使用 Core 返回的实际 Gateway URL，支持非默认 Gateway 端口。
+- 启用受限 Tauri CSP，仅允许必要的本地 IPC/Management API/HMR 连接。
+
 ## 0.2.0
 
 - 新增本地 Management API（默认 `127.0.0.1:24889`）。

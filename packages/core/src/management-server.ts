@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { CoreConfig } from "./config.ts";
-import { waitForGateway } from "./health.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
 import type { McpProxyProcess } from "./proxy-process.ts";
+import { CORE_VERSION } from "./version.ts";
 
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:1420",
@@ -27,6 +27,7 @@ function setCors(req: IncomingMessage, res: ServerResponse): boolean {
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(body));
 }
 
@@ -44,6 +45,7 @@ export class ManagementServer {
   #logger: CoreLogger;
   #server: ReturnType<typeof createServer> | null = null;
   #startedAt = new Date().toISOString();
+  #actionInFlight = false;
 
   constructor(config: CoreConfig, proxy: McpProxyProcess, logger: CoreLogger) {
     this.#config = config;
@@ -109,7 +111,7 @@ export class ManagementServer {
       const server = this.#proxy.snapshot(this.#config);
       json(res, 200, {
         core: {
-          version: "0.2.0-dev",
+          version: CORE_VERSION,
           startedAt: this.#startedAt,
           logFile: this.#logger.filePath,
         },
@@ -150,20 +152,22 @@ export class ManagementServer {
     const actionMatch = url.pathname.match(/^\/api\/servers\/filesystem-poc\/(start|stop|restart)$/);
     if (req.method === "POST" && actionMatch) {
       if (!requireDesktopClient(req, res)) return;
+      if (this.#actionInFlight) {
+        json(res, 409, { error: "another server action is already in progress" });
+        return;
+      }
+
+      this.#actionInFlight = true;
       const action = actionMatch[1];
 
       try {
         if (action === "start") {
           await this.#proxy.start(this.#config);
-          await waitForGateway(this.#config);
-          this.#proxy.markReady();
         } else if (action === "stop") {
           await this.#proxy.stop();
         } else {
           await this.#proxy.stop();
           await this.#proxy.start(this.#config);
-          await waitForGateway(this.#config);
-          this.#proxy.markReady();
         }
         json(res, 200, { server: this.#proxy.snapshot(this.#config) });
       } catch (error) {
@@ -171,6 +175,8 @@ export class ManagementServer {
           error: error instanceof Error ? error.message : String(error),
           server: this.#proxy.snapshot(this.#config),
         });
+      } finally {
+        this.#actionInFlight = false;
       }
       return;
     }

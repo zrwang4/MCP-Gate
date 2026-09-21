@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { access } from "node:fs/promises";
 import { constants } from "node:fs";
-import { resolvePackageBin } from "./package-bin.ts";
+import { access } from "node:fs/promises";
 import type { CoreConfig } from "./config.ts";
+import { waitForGateway } from "./health.ts";
 import type { CoreLogger } from "./logger.ts";
+import { resolvePackageBin } from "./package-bin.ts";
 
 export type ManagedServerStatus = "stopped" | "starting" | "running" | "stopping" | "error";
 
@@ -102,51 +103,77 @@ export class McpProxyProcess {
         }
       });
 
-      child.once("exit", (code, signal) => {
-        this.#child = null;
-        this.#startedAt = null;
-        if (this.#status === "stopping") {
-          this.#status = "stopped";
-          this.#logger.info("filesystem", `stopped (${signal ?? code ?? "unknown"})`);
-          return;
-        }
+      const terminated = new Promise<
+        | { type: "exit"; code: number | null; signal: NodeJS.Signals | null }
+        | { type: "error"; error: Error }
+      >((resolve) => {
+        child.once("exit", (code, signal) => {
+          const wasStopping = this.#status === "stopping";
+          this.#child = null;
+          this.#startedAt = null;
 
-        if (code !== 0 && signal == null) {
+          if (wasStopping) {
+            this.#status = "stopped";
+            this.#logger.info("filesystem", `stopped (${signal ?? code ?? "unknown"})`);
+          } else {
+            this.#status = "error";
+            this.#lastError = `mcp-proxy exited unexpectedly (${signal ?? code ?? "unknown"})`;
+            this.#logger.error("filesystem", this.#lastError);
+          }
+
+          resolve({ type: "exit", code, signal });
+        });
+
+        child.once("error", (error) => {
+          if (this.#child === child) {
+            this.#child = null;
+            this.#startedAt = null;
+          }
           this.#status = "error";
-          this.#lastError = `mcp-proxy exited with code ${code}`;
-          this.#logger.error("filesystem", this.#lastError);
-        } else {
-          this.#status = "stopped";
-          this.#logger.info("filesystem", `stopped (${signal ?? code ?? "unknown"})`);
-        }
+          this.#lastError = error.message;
+          this.#logger.error("filesystem", `failed to start: ${error.message}`);
+          resolve({ type: "error", error });
+        });
       });
 
-      child.once("error", (error) => {
-        this.#child = null;
-        this.#startedAt = null;
-        this.#status = "error";
-        this.#lastError = error.message;
-        this.#logger.error("filesystem", `failed to start: ${error.message}`);
-      });
-    } catch (error) {
-      this.#status = "error";
-      this.#lastError = error instanceof Error ? error.message : String(error);
-      this.#logger.error("filesystem", this.#lastError);
-      throw error;
-    }
-  }
+      const outcome = await Promise.race([
+        waitForGateway(config).then(() => ({ type: "ready" as const })),
+        terminated,
+      ]);
 
-  markReady(): void {
-    if (this.#child) {
+      if (outcome.type === "exit") {
+        throw new Error(`mcp-proxy exited before readiness (${outcome.signal ?? outcome.code ?? "unknown"})`);
+      }
+      if (outcome.type === "error") {
+        throw outcome.error;
+      }
+
+      if (this.#child !== child) {
+        throw new Error("mcp-proxy exited before readiness");
+      }
+
       this.#status = "running";
       this.#logger.info("filesystem", "MCP endpoint is ready");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (this.#child) {
+        await this.stop().catch((stopError) => {
+          this.#logger.warn("filesystem", `cleanup after failed start failed: ${String(stopError)}`);
+        });
+      }
+
+      this.#status = "error";
+      this.#lastError = message;
+      this.#logger.error("filesystem", message);
+      throw error;
     }
   }
 
   async stop(): Promise<void> {
     const child = this.#child;
     if (!child) {
-      this.#status = "stopped";
+      if (this.#status !== "error") this.#status = "stopped";
       this.#startedAt = null;
       return;
     }

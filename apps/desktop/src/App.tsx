@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-const GATEWAY_URL = "http://127.0.0.1:24888/mcp";
+const DEFAULT_GATEWAY_URL = "http://127.0.0.1:24888/mcp";
 const MANAGEMENT_URL = "http://127.0.0.1:24889";
 
 type ServerStatus = "starting" | "running" | "stopping" | "stopped" | "error";
@@ -57,17 +57,24 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${MANAGEMENT_URL}${path}`, {
-    ...init,
-    headers,
-    signal: AbortSignal.timeout(4000),
-  });
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 4000);
 
-  const body = (await response.json()) as T & { error?: string };
-  if (!response.ok) {
-    throw new Error(body.error ?? `HTTP ${response.status}`);
+  try {
+    const response = await fetch(`${MANAGEMENT_URL}${path}`, {
+      ...init,
+      headers,
+      signal: controller.signal,
+    });
+
+    const body = (await response.json()) as T & { error?: string };
+    if (!response.ok) {
+      throw new Error(body.error ?? `HTTP ${response.status}`);
+    }
+    return body;
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
-  return body;
 }
 
 function statusLabel(status: ServerStatus): string {
@@ -102,9 +109,9 @@ export function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [logLevel, setLogLevel] = useState<"all" | LogLevel>("all");
+  const [managementConnected, setManagementConnected] = useState(false);
 
-  const refresh = useCallback(async (quiet = false) => {
-    if (!quiet) setError(null);
+  const refresh = useCallback(async () => {
     try {
       const [statusResult, serversResult, logsResult] = await Promise.all([
         api<StatusResponse>("/api/status"),
@@ -114,21 +121,24 @@ export function App() {
       setStatus(statusResult);
       setServers(serversResult.servers);
       setLogs(logsResult.entries);
+      setManagementConnected(true);
+      setError(null);
     } catch (cause) {
-      if (!quiet) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
+      setManagementConnected(false);
+      setError(cause instanceof Error ? cause.message : String(cause));
     }
   }, []);
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(true), 2000);
+    const timer = window.setInterval(() => void refresh(), 2000);
     return () => window.clearInterval(timer);
   }, [refresh]);
 
+  const gatewayUrl = status?.gateway.endpoint ?? DEFAULT_GATEWAY_URL;
+
   async function copyGatewayUrl() {
-    await navigator.clipboard.writeText(GATEWAY_URL);
+    await navigator.clipboard.writeText(gatewayUrl);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }
@@ -138,16 +148,17 @@ export function App() {
     setError(null);
     try {
       await api(`/api/servers/${serverId}/${action}`, { method: "POST", body: "{}" });
-      await refresh(true);
+      await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      await refresh(true);
+      const message = cause instanceof Error ? cause.message : String(cause);
+      await refresh();
+      setError(message);
     } finally {
       setBusy(null);
     }
   }
 
-  const gatewayState = status?.gateway.status ?? "stopped";
+  const gatewayState = managementConnected ? (status?.gateway.status ?? "stopped") : "error";
   const runningCount = servers.filter((server) => server.status === "running").length;
   const visibleLogs = useMemo(
     () => (logLevel === "all" ? logs : logs.filter((entry) => entry.level === logLevel)),
@@ -187,7 +198,7 @@ export function App() {
         </div>
 
         <div className="endpointRow">
-          <code>{GATEWAY_URL}</code>
+          <code>{gatewayUrl}</code>
           <button className="copyButton" onClick={() => void copyGatewayUrl()}>
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? "已复制" : "复制"}

@@ -1,5 +1,4 @@
 import { loadConfig } from "./config.ts";
-import { waitForGateway } from "./health.ts";
 import { CoreLogger } from "./logger.ts";
 import { ManagementServer } from "./management-server.ts";
 import { McpProxyProcess } from "./proxy-process.ts";
@@ -22,7 +21,10 @@ async function main(): Promise<void> {
     await management.stop().catch((error) => {
       logger.warn("management", `shutdown failed: ${String(error)}`);
     });
-    await proxy.stop();
+    await proxy.stop().catch((error) => {
+      logger.warn("filesystem", `shutdown failed: ${String(error)}`);
+    });
+    await logger.flush();
     process.exit(0);
   }
 
@@ -41,8 +43,6 @@ async function main(): Promise<void> {
 
   try {
     await proxy.start(config);
-    await waitForGateway(config);
-    proxy.markReady();
     logger.info("core", "Core is ready");
   } catch (error) {
     logger.error("core", `initial MCP start failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -52,5 +52,5 @@ async function main(): Promise<void> {
 
 main().catch((error) => {
   console.error("[core] fatal startup failure", error);
-  process.exit(1);
+  process.exitCode = 1;
 });

@@ -71,6 +71,10 @@ export class CoreLogger {
     return this.#logFile;
   }
 
+  async flush(): Promise<void> {
+    await this.#writeQueue;
+  }
+
   #log(level: LogLevel, source: string, message: string): void {
     const normalized = redactSecrets(message.trim());
     if (!normalized) return;
@@ -101,9 +105,13 @@ export class CoreLogger {
   }
 }
 
-function redactSecrets(value: string): string {
+export function redactSecrets(value: string): string {
   return value
+    .replace(
+      /("(?:authorization|api[_-]?key|token|password|secret|cookie)"\s*:\s*")([^"]*)(")/gi,
+      "$1[REDACTED]$3",
+    )
     .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[^\s,;]+/gi, "$1$2[REDACTED]")
-    .replace(/((?:api[_-]?key|token|password|secret|cookie)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(/((?:api[_-]?key|token|password|secret|cookie)\s*[:=]\s*)[^\s,;&]+/gi, "$1[REDACTED]")
     .replace(/([?&](?:api[_-]?key|token|password|secret)=)[^&\s]+/gi, "$1[REDACTED]");
 }

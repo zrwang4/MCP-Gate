@@ -13,6 +13,7 @@
     "desktop:web": "pnpm --filter @mcp-gate/desktop dev",
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r build",
-    "core:management-smoke": "pnpm --filter @mcp-gate/core management:smoke"
+    "core:management-smoke": "pnpm --filter @mcp-gate/core management:smoke",
+    "test": "pnpm --filter @mcp-gate/core test"
   }
 }
