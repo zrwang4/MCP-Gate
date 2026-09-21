@@ -52,3 +52,28 @@ export interface StdioServerConfig {
   createdAt: string;
   updatedAt: string;
 }
+
+export type UpstreamStatus =
+  | "configured"
+  | "connecting"
+  | "running"
+  | "stopping"
+  | "stopped"
+  | "error";
+
+export interface UpstreamInfo {
+  id: string;
+  name: string;
+  alias: string;
+  status: UpstreamStatus;
+  toolCount: number;
+  lastError: string | null;
+}
+
+export interface ToolRouteInfo {
+  publicName: string;
+  serverId: string;
+  serverAlias: string;
+  originalName: string;
+  enabled: boolean;
+}

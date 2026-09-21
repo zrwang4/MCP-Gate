@@ -3,6 +3,8 @@ import { loadConfig } from "./config.ts";
 import { CoreLogger } from "./logger.ts";
 import { ManagementServer } from "./management-server.ts";
 import { ServerRegistry } from "./server-registry.ts";
+import { ToolRegistry } from "./tool-registry.ts";
+import { UpstreamManager } from "./upstream-manager.ts";
 import { McpProxyProcess } from "./proxy-process.ts";
 
 let shuttingDown = false;
@@ -16,7 +18,24 @@ async function main(): Promise<void> {
   const proxy = new McpProxyProcess(logger);
   const registry = new ServerRegistry(config.serverConfigFile, logger);
   await registry.init();
-  const management = new ManagementServer(config, proxy, registry, logger);
+  const toolRegistry = new ToolRegistry();
+  const upstreams = new UpstreamManager(
+    registry,
+    toolRegistry,
+    () => {
+      throw new Error("stdio upstream adapter is not connected yet");
+    },
+    logger,
+  );
+  upstreams.syncConfigs();
+  const management = new ManagementServer(
+    config,
+    proxy,
+    registry,
+    upstreams,
+    toolRegistry,
+    logger,
+  );
 
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;
@@ -26,6 +45,7 @@ async function main(): Promise<void> {
     await management.stop().catch((error) => {
       logger.warn("management", `shutdown failed: ${String(error)}`);
     });
+    await upstreams.stopAll();
     await proxy.stop().catch((error) => {
       logger.warn("filesystem", `shutdown failed: ${String(error)}`);
     });

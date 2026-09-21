@@ -3,6 +3,8 @@ import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
 import type { McpProxyProcess } from "./proxy-process.ts";
 import type { ServerRegistry } from "./server-registry.ts";
+import type { ToolRegistry } from "./tool-registry.ts";
+import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
 
 const ALLOWED_ORIGINS = new Set([
@@ -60,6 +62,8 @@ export class ManagementServer {
   #config: CoreConfig;
   #proxy: McpProxyProcess;
   #registry: ServerRegistry;
+  #upstreams: UpstreamManager;
+  #tools: ToolRegistry;
   #logger: CoreLogger;
   #server: ReturnType<typeof createServer> | null = null;
   #startedAt = new Date().toISOString();
@@ -69,11 +73,15 @@ export class ManagementServer {
     config: CoreConfig,
     proxy: McpProxyProcess,
     registry: ServerRegistry,
+    upstreams: UpstreamManager,
+    tools: ToolRegistry,
     logger: CoreLogger,
   ) {
     this.#config = config;
     this.#proxy = proxy;
     this.#registry = registry;
+    this.#upstreams = upstreams;
+    this.#tools = tools;
     this.#logger = logger;
   }
 
@@ -161,6 +169,16 @@ export class ManagementServer {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/upstreams") {
+      json(res, 200, { upstreams: this.#upstreams.list() });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/tools") {
+      json(res, 200, { tools: this.#tools.list({ includeDisabled: true }) });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/server-configs") {
       if (!requireDesktopClient(req, res)) return;
       try {
@@ -176,6 +194,7 @@ export class ManagementServer {
           args: Array.isArray(body.args) ? body.args as string[] : [],
           cwd: typeof body.cwd === "string" ? body.cwd : undefined,
         });
+        this.#upstreams.syncConfigs();
         json(res, 201, { server });
       } catch (error) {
         json(res, 400, { error: error instanceof Error ? error.message : String(error) });
@@ -187,6 +206,7 @@ export class ManagementServer {
     if (req.method === "DELETE" && configDeleteMatch) {
       if (!requireDesktopClient(req, res)) return;
       const removed = await this.#registry.remove(configDeleteMatch[1]);
+      this.#upstreams.syncConfigs();
       if (!removed) {
         json(res, 404, { error: "server configuration not found" });
         return;

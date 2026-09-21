@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 新增 ToolRegistry：显式维护 public tool → upstream/original tool 映射。
+- Tool namespace 支持冲突规避，不依赖字符串 split 进行反向路由。
+- 新增 UpstreamManager：管理 configured/connecting/running/error 状态、工具缓存和调用路由。
+- 新增 `GET /api/upstreams` 与 `GET /api/tools` 调试接口。
+- 新增 ToolRegistry / UpstreamManager 单元测试。
+
+
 - Core 可在不设置 `MCP_GATE_FILESYSTEM_ROOT` 的情况下直接启动。
 - 默认 Filesystem PoC 使用 `~/Library/Application Support/MCP Gate/filesystem`，启动时自动创建。
 
