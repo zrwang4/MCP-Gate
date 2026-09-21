@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 桌面端新增 MCP Server 级启用/禁用开关。
+- 禁用 Server 时 Core 立即断开 upstream，并从 ToolRegistry 移除对应 Tools。
+- 禁用 Server 后禁止“连接”和修改 autoStart；重新启用后保留原 autoStart 配置。
+- Server Registry 测试覆盖 enabled + autoStart 的持久化。
+
+
 - 修复 production runtime 的 .gitignore 规则被误写为字面量 `\\n`，确保 Node sidecar 与 staged Core resources 不会被误提交。
 
 

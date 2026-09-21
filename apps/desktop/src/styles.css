@@ -858,3 +858,19 @@ footer {
     background: rgba(34,160,107,.16);
   }
 }
+
+.serverCard.serverDisabled {
+  opacity: .68;
+}
+
+.pill.disabled {
+  color: #767672;
+  background: rgba(0,0,0,.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  .pill.disabled {
+    color: #a8a8a2;
+    background: rgba(255,255,255,.08);
+  }
+}

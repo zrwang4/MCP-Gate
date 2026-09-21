@@ -603,15 +603,26 @@ export function App() {
               const connected = upstreamStatus === "running" || upstreamStatus === "connecting";
 
               return (
-                <article className="serverCard configuredCard" key={server.id}>
+                <article
+                  className={`serverCard configuredCard ${server.enabled ? "" : "serverDisabled"}`}
+                  key={server.id}
+                >
                   <div className="serverIcon">
                     <Terminal size={19} />
                   </div>
                   <div className="serverInfo">
                     <div className="serverNameRow">
                       <strong>{server.name}</strong>
-                      <span className={`pill ${upstreamStatus === "configured" ? "configured" : upstreamStatus}`}>
-                        {upstreamStatusLabel(upstreamStatus)}
+                      <span
+                        className={`pill ${
+                          !server.enabled
+                            ? "disabled"
+                            : upstreamStatus === "configured"
+                              ? "configured"
+                              : upstreamStatus
+                        }`}
+                      >
+                        {server.enabled ? upstreamStatusLabel(upstreamStatus) : "已禁用"}
                       </span>
                     </div>
                     <span>
@@ -643,7 +654,7 @@ export function App() {
                     ) : (
                       <button
                         className="actionButton primary"
-                        disabled={changing}
+                        disabled={changing || !server.enabled}
                         onClick={() => void upstreamAction(server.id, "connect")}
                       >
                         <Play size={14} /> 连接
@@ -659,8 +670,18 @@ export function App() {
                       </button>
                     )}
                     <button
-                      className={`actionButton settingButton ${server.autoStart ? "enabled" : ""}`}
+                      className={`actionButton settingButton ${server.enabled ? "enabled" : ""}`}
                       disabled={changing}
+                      onClick={() => void updateServerSettings(
+                        server.id,
+                        { enabled: !server.enabled },
+                      )}
+                    >
+                      服务 {server.enabled ? "开" : "关"}
+                    </button>
+                    <button
+                      className={`actionButton settingButton ${server.autoStart ? "enabled" : ""}`}
+                      disabled={changing || !server.enabled}
                       onClick={() => void updateServerSettings(
                         server.id,
                         { autoStart: !server.autoStart },

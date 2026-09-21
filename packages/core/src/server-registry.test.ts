@@ -56,7 +56,7 @@ test("server registry rejects invalid configurations", async () => {
 });
 
 
-test("server registry persists autoStart settings", async () => {
+test("server registry persists enabled and autoStart settings", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-registry-"));
   try {
     const logger = new CoreLogger(join(dir, "core.jsonl"));
@@ -71,13 +71,16 @@ test("server registry persists autoStart settings", async () => {
     });
 
     const updated = await registry.updateSettings(created.id, {
+      enabled: false,
       autoStart: true,
     });
 
+    assert.equal(updated?.enabled, false);
     assert.equal(updated?.autoStart, true);
 
     const reloaded = new ServerRegistry(file, logger);
     await reloaded.init();
+    assert.equal(reloaded.list()[0]?.enabled, false);
     assert.equal(reloaded.list()[0]?.autoStart, true);
   } finally {
     await rm(dir, { recursive: true, force: true });
