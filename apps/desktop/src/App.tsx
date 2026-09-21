@@ -415,7 +415,7 @@ export function App() {
     [logs, logLevel],
   );
 
-  const toolPageSize = 20;
+  const toolPageSize = 10;
   const filteredTools = useMemo(() => {
     const query = toolSearch.trim().toLowerCase();
     if (!query) return tools;
