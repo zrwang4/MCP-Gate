@@ -6,6 +6,7 @@ import { ManagementServer } from "./management-server.ts";
 import { ServerRegistry } from "./server-registry.ts";
 import { ToolRegistry } from "./tool-registry.ts";
 import { StdioUpstreamClient } from "./stdio-upstream-client.ts";
+import { GatewayServer } from "./gateway-server.ts";
 import { UpstreamManager } from "./upstream-manager.ts";
 
 let shuttingDown = false;

@@ -1,45 +1,28 @@
 import { createServer, type Server as HttpServer } from "node:http";
 import {
+  createMcpHandler,
+  fromJsonSchema,
+  McpServer,
+  type CallToolResult,
+} from "@modelcontextprotocol/server";
+import {
   localhostHostValidation,
   localhostOriginValidation,
   toNodeHandler,
 } from "@modelcontextprotocol/node";
-import {
-  createMcpHandler,
-  Server,
-  type CallToolResult,
-  type Tool,
-} from "@modelcontextprotocol/server";
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger } from "./logger.ts";
-import type { ToolRegistry } from "./tool-registry.ts";
+import type { ToolRegistry, ToolRoute } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
-
-export type GatewayRuntimeStatus =
-  | "starting"
-  | "running"
-  | "stopping"
-  | "stopped"
-  | "error";
-
-export interface GatewaySnapshot {
-  endpoint: string;
-  healthEndpoint: string;
-  status: GatewayRuntimeStatus;
-  toolCount: number;
-  lastError: string | null;
-}
 
 export class GatewayServer {
   #config: CoreConfig;
   #tools: ToolRegistry;
   #upstreams: UpstreamManager;
   #logger: CoreLogger;
-  #httpServer: HttpServer | null = null;
+  #server: HttpServer | null = null;
   #handler: ReturnType<typeof createMcpHandler> | null = null;
-  #status: GatewayRuntimeStatus = "stopped";
-  #lastError: string | null = null;
 
   constructor(
     config: CoreConfig,
@@ -53,49 +36,22 @@ export class GatewayServer {
     this.#logger = logger;
   }
 
-  snapshot(): GatewaySnapshot {
-    return {
-      endpoint: `http://${this.#config.host}:${this.#config.port}/mcp`,
-      healthEndpoint: `http://${this.#config.host}:${this.#config.port}/ping`,
-      status: this.#status,
-      toolCount: this.#tools.list().length,
-      lastError: this.#lastError,
-    };
-  }
-
   async start(): Promise<void> {
-    if (this.#httpServer || this.#status === "starting" || this.#status === "running") {
-      return;
-    }
+    if (this.#server) return;
 
-    this.#status = "starting";
-    this.#lastError = null;
-
-    const handler = createMcpHandler(
-      () => this.#createProtocolServer(),
-      {
-        onerror: (error) => {
-          this.#logger.error("gateway", error.message);
-        },
-      },
-    );
-
+    const handler = createMcpHandler(() => this.#buildMcpServer());
     const nodeHandler = toNodeHandler(handler);
     const validateHost = localhostHostValidation();
     const validateOrigin = localhostOriginValidation();
 
-    const httpServer = createServer((req, res) => {
+    const server = createServer((req, res) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-      if (req.method === "GET" && url.pathname === "/ping") {
+      if (url.pathname === "/ping") {
         res.statusCode = 200;
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.setHeader("Cache-Control", "no-store");
-        res.end(JSON.stringify({
-          ok: this.#status === "running",
-          status: this.#status,
-          tools: this.#tools.list().length,
-        }));
+        res.end(JSON.stringify({ ok: true, version: CORE_VERSION }));
         return;
       }
 
@@ -108,144 +64,103 @@ export class GatewayServer {
 
       if (!validateHost(req, res) || !validateOrigin(req, res)) return;
 
-      void Promise.resolve(nodeHandler(req, res)).catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        this.#logger.error("gateway", message);
+      Promise.resolve(nodeHandler(req, res)).catch((error) => {
+        this.#logger.error(
+          "gateway",
+          error instanceof Error ? error.message : String(error),
+        );
         if (!res.headersSent) {
           res.statusCode = 500;
           res.setHeader("Content-Type", "application/json; charset=utf-8");
           res.end(JSON.stringify({ error: "gateway request failed" }));
-        } else {
+        } else if (!res.writableEnded) {
           res.end();
         }
       });
     });
 
-    try {
-      await new Promise<void>((resolve, reject) => {
-        httpServer.once("error", reject);
-        httpServer.listen(this.#config.port, this.#config.host, () => {
-          httpServer.off("error", reject);
-          resolve();
-        });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(this.#config.port, this.#config.host, () => {
+        server.off("error", reject);
+        resolve();
       });
+    });
 
-      this.#handler = handler;
-      this.#httpServer = httpServer;
-      this.#status = "running";
-      this.#logger.info(
-        "gateway",
-        `listening on http://${this.#config.host}:${this.#config.port}/mcp`,
-      );
-    } catch (error) {
-      await handler.close().catch(() => undefined);
-      this.#status = "error";
-      this.#lastError = error instanceof Error ? error.message : String(error);
-      this.#logger.error("gateway", `failed to start: ${this.#lastError}`);
-      throw error;
-    }
+    this.#server = server;
+    this.#handler = handler;
+    this.#logger.info(
+      "gateway",
+      `listening on http://${this.#config.host}:${this.#config.port}/mcp`,
+    );
   }
 
   async stop(): Promise<void> {
-    if (!this.#httpServer && !this.#handler) {
-      if (this.#status !== "error") this.#status = "stopped";
-      return;
-    }
-
-    this.#status = "stopping";
-    const server = this.#httpServer;
-    const handler = this.#handler;
-    this.#httpServer = null;
-    this.#handler = null;
-
-    await handler?.close().catch((error) => {
-      this.#logger.warn("gateway", `handler close failed: ${String(error)}`);
-    });
+    const server = this.#server;
+    this.#server = null;
 
     if (server) {
-      await new Promise<void>((resolve) => {
-        server.close(() => resolve());
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
       });
     }
 
-    this.#status = "stopped";
-    this.#logger.info("gateway", "stopped");
+    const handler = this.#handler;
+    this.#handler = null;
+    if (handler) {
+      await handler.close().catch(() => undefined);
+    }
   }
 
-  #createProtocolServer(): Server {
-    return createGatewayProtocolServer(
-      this.#tools,
-      this.#upstreams,
-      this.#logger,
+  #buildMcpServer(): McpServer {
+    const server = new McpServer(
+      {
+        name: "mcp-gate",
+        version: CORE_VERSION,
+      },
+      {
+        capabilities: {
+          tools: {
+            listChanged: true,
+          },
+        },
+      },
+    );
+
+    for (const route of this.#tools.list()) {
+      this.#registerTool(server, route);
+    }
+
+    return server;
+  }
+
+  #registerTool(server: McpServer, route: ToolRoute): void {
+    server.registerTool(
+      route.publicName,
+      {
+        description: route.definition.description,
+        inputSchema: schemaFromRoute(route),
+      },
+      async (args) => {
+        const result = await this.#upstreams.callTool(route.publicName, args);
+        return result as CallToolResult;
+      },
     );
   }
 }
 
-export interface GatewayToolCaller {
-  callTool(publicName: string, args: unknown): Promise<CallToolResult>;
-}
-
-export function createGatewayProtocolServer(
-  tools: ToolRegistry,
-  caller: GatewayToolCaller,
-  logger: CoreLogger,
-): Server {
-  const server = new Server(
-    {
-      name: "mcp-gate",
-      version: CORE_VERSION,
-    },
-    {
-      capabilities: {
-        tools: {},
-      },
-    },
-  );
-
-  server.setRequestHandler("tools/list", async () => ({
-    tools: tools.list().map((route) => ({
-      name: route.publicName,
-      description: route.definition.description,
-      inputSchema: normalizeInputSchema(route.definition.inputSchema),
-    })),
-  }));
-
-  server.setRequestHandler("tools/call", async (request): Promise<CallToolResult> => {
+function schemaFromRoute(route: ToolRoute) {
+  const schema = route.definition.inputSchema;
+  if (schema && typeof schema === "object" && !Array.isArray(schema)) {
     try {
-      return await caller.callTool(
-        request.params.name,
-        request.params.arguments ?? {},
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn("gateway", `tool ${request.params.name} failed: ${message}`);
-      return {
-        content: [
-          {
-            type: "text",
-            text: message,
-          },
-        ],
-        isError: true,
-      };
+      return fromJsonSchema(schema as Record<string, unknown>);
+    } catch {
+      // Fall back to a permissive object when an upstream sends a malformed schema.
     }
-  });
-
-  return server;
-}
-
-function normalizeInputSchema(value: unknown): Tool["inputSchema"] {
-  if (
-    value &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    (value as { type?: unknown }).type === "object"
-  ) {
-    return value as Tool["inputSchema"];
   }
 
-  return {
+  return fromJsonSchema({
     type: "object",
-    properties: {},
-  };
+    additionalProperties: true,
+  });
 }

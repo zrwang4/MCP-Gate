@@ -1,54 +1,41 @@
 # Unified Gateway Server
 
-MG-010 将公开入口从单 Filesystem PoC 切换为真正的聚合 Gateway。
+MCP Gate 的公开 MCP endpoint 现在由自有聚合 GatewayServer 提供：
 
 ```text
-Claude / Cursor / Codex
-          │
-          ▼
 http://127.0.0.1:24888/mcp
-          │
-     GatewayServer
-       │       │
- tools/list  tools/call
-       │       │
-       └── ToolRegistry
-                │
-          UpstreamManager
-          │     │     │
-        MCP A  MCP B  MCP C
 ```
 
-## HTTP serving
-
-使用：
+实现基于 MCP TypeScript SDK v2：
 
 - `@modelcontextprotocol/server@2.0.0`
 - `@modelcontextprotocol/node@2.0.0`
-- `createMcpHandler`
-- `toNodeHandler`
-- localhost Host / Origin validation
 
-`createMcpHandler` 的 factory 每个请求创建一个轻量 low-level `Server`，
-共享的 ToolRegistry 与 UpstreamManager 保持在进程级。
-
-## Dynamic tools
-
-Gateway 使用 low-level `Server`，原因是 upstream 的 `tools/list`
-提供的是 JSON Schema，而不是本地 Standard Schema/Zod schema。
+## 请求路径
 
 ```text
-tools/list
-→ ToolRegistry.list()
-→ 原样公开 upstream inputSchema
-
-tools/call
-→ ToolRegistry.resolve(publicName)
-→ UpstreamManager.callTool()
-→ upstream original tool
+MCP Client
+    │
+    ▼
+GatewayServer /mcp
+    │
+    ├── tools/list ← ToolRegistry
+    │
+    └── tools/call
+           │
+           ▼
+     UpstreamManager
+           │
+           ▼
+   StdioUpstreamClient
 ```
 
-## Compatibility
+Gateway 的 server factory 会在每个 MCP 请求时读取当前 ToolRegistry，因此 upstream connect/disconnect 后无需重启公开 endpoint。
 
-旧 `proxy-process.ts` 与 `mcp-proxy` 依赖暂时保留，但不会再启动并占用 24888。
-后续可以作为单服务器兼容模式或迁移工具。
+## 协议兼容
+
+SDK v2 的 `createMcpHandler` 默认提供现代 2026-07-28 MCP HTTP，并使用 stateless fallback 服务 2025-era Streamable HTTP 客户端。
+
+## mcp-proxy
+
+旧 `McpProxyProcess` 源文件暂时保留用于兼容研究和后续 adapter，但 Core 启动路径已经不再让它占用公开 24888 端口。
