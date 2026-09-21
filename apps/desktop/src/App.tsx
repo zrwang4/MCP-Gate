@@ -491,6 +491,20 @@ export function App() {
     }
   }
 
+  async function quickSwitchProfile(nextProfileId: string) {
+    if (busy?.startsWith("profile:")) return;
+    if (nextProfileId === activeProfileId) return;
+
+    if (!nextProfileId) {
+      if (activeProfileId) {
+        await profileAction(activeProfileId, "deactivate");
+      }
+      return;
+    }
+
+    await profileAction(nextProfileId, "activate");
+  }
+
   async function removeProfile(profileId: string) {
     setProfileBusy(true);
     setError(null);
@@ -756,6 +770,8 @@ export function App() {
   }
 
   const gatewayState = managementConnected ? (status?.gateway.status ?? "stopped") : "error";
+  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? null;
+  const profileSwitchBusy = busy?.startsWith("profile:") ?? false;
   const runningCount = upstreams.filter((upstream) => upstream.status === "running").length;
   const enabledToolCount = tools.filter((tool) => tool.enabled).length;
   const visibleLogs = useMemo(
@@ -810,6 +826,27 @@ export function App() {
           </button>
         </div>
 
+        <div className="profileQuickSwitch">
+          <div>
+            <Layers3 size={15} />
+            <span>当前场景</span>
+            <strong>{activeProfile?.name ?? "手动模式"}</strong>
+          </div>
+          <select
+            value={activeProfileId ?? ""}
+            disabled={profileSwitchBusy}
+            onChange={(event) => void quickSwitchProfile(event.target.value)}
+            aria-label="切换 Profile"
+          >
+            <option value="">手动模式（无 Profile）</option>
+            {profiles.map((profile) => (
+              <option value={profile.id} key={profile.id}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="metrics">
           <div>
             <span>已管理 MCP</span>
@@ -822,6 +859,10 @@ export function App() {
           <div>
             <span>已启用 Tools</span>
             <strong>{enabledToolCount}</strong>
+          </div>
+          <div>
+            <span>Profile</span>
+            <strong>{activeProfile?.name ?? "手动模式"}</strong>
           </div>
           <div>
             <span>Core 进程</span>

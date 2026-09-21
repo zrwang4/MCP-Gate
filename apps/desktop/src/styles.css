@@ -1080,3 +1080,69 @@ footer {
     background: rgba(255,255,255,.09);
   }
 }
+
+.profileQuickSwitch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(0,0,0,.07);
+  border-radius: 11px;
+  background: rgba(255,255,255,.56);
+}
+
+.profileQuickSwitch > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.profileQuickSwitch span {
+  color: #858580;
+  font-size: 11px;
+}
+
+.profileQuickSwitch strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.profileQuickSwitch select {
+  max-width: 240px;
+  padding: 6px 9px;
+  border: 1px solid rgba(0,0,0,.09);
+  border-radius: 9px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  outline: none;
+}
+
+.profileQuickSwitch select:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+@media (prefers-color-scheme: dark) {
+  .profileQuickSwitch {
+    background: rgba(36,36,33,.78);
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .profileQuickSwitch select {
+    background: #2c2c29;
+    border-color: rgba(255,255,255,.10);
+    color: #f2f2f0;
+  }
+
+  .profileQuickSwitch select option {
+    background: #2c2c29;
+    color: #f2f2f0;
+  }
+}

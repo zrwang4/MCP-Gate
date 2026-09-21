@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Gateway 概览新增 Profile 快捷切换，下拉可直接激活目标 Profile。
+- 顶部指标显示当前 Profile；无 active Profile 时明确显示“手动模式”。
+- 选择“手动模式（无 Profile）”会停用当前 Profile，并保留各 Server 的 autoStart 配置不变。
+
+
 - 编辑当前 active Profile 后立即执行 exact-set reconcile，运行集合与刚保存的成员保持一致。
 - 删除当前 active Profile 前先停用其成员，再清空 activeProfileId，避免删除配置后旧成员继续运行。
 - Profile 编辑器新增“使用当前运行集合”“全选已启用”“清空”快捷操作。
