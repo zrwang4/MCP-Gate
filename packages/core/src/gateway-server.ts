@@ -23,6 +23,8 @@ export class GatewayServer {
   #logger: CoreLogger;
   #server: HttpServer | null = null;
   #handler: ReturnType<typeof createMcpHandler> | null = null;
+  #status: "starting" | "running" | "stopping" | "stopped" | "error" = "stopped";
+  #lastError: string | null = null;
 
   constructor(
     config: CoreConfig,
@@ -36,8 +38,20 @@ export class GatewayServer {
     this.#logger = logger;
   }
 
+  snapshot() {
+    return {
+      endpoint: `http://${this.#config.host}:${this.#config.port}/mcp`,
+      healthEndpoint: `http://${this.#config.host}:${this.#config.port}/ping`,
+      status: this.#status,
+      toolCount: this.#tools.list().length,
+      lastError: this.#lastError,
+    };
+  }
+
   async start(): Promise<void> {
     if (this.#server) return;
+    this.#status = "starting";
+    this.#lastError = null;
 
     const handler = createMcpHandler(() => this.#buildMcpServer());
     const nodeHandler = toNodeHandler(handler);
@@ -79,23 +93,32 @@ export class GatewayServer {
       });
     });
 
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(this.#config.port, this.#config.host, () => {
-        server.off("error", reject);
-        resolve();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(this.#config.port, this.#config.host, () => {
+          server.off("error", reject);
+          resolve();
+        });
       });
-    });
 
-    this.#server = server;
-    this.#handler = handler;
-    this.#logger.info(
-      "gateway",
-      `listening on http://${this.#config.host}:${this.#config.port}/mcp`,
-    );
+      this.#server = server;
+      this.#handler = handler;
+      this.#status = "running";
+      this.#logger.info(
+        "gateway",
+        `listening on http://${this.#config.host}:${this.#config.port}/mcp`,
+      );
+    } catch (error) {
+      this.#status = "error";
+      this.#lastError = error instanceof Error ? error.message : String(error);
+      await handler.close().catch(() => undefined);
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
+    if (this.#status !== "stopped") this.#status = "stopping";
     const server = this.#server;
     this.#server = null;
 
@@ -110,6 +133,9 @@ export class GatewayServer {
     if (handler) {
       await handler.close().catch(() => undefined);
     }
+
+    this.#status = "stopped";
+    this.#lastError = null;
   }
 
   #buildMcpServer(): McpServer {

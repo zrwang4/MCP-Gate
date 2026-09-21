@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 修复并发开发合并后重复导入 `GatewayServer` 的构建错误。
+- GatewayServer 新增运行状态 snapshot，Management API 可准确返回 Gateway 状态、Tool 数和最近错误。
+- 显式添加 MCP SDK v2 所需的 `zod@4.6.5` peer dependency。
+
+
 - MCP 配置新增自动连接开关，并持久化到 Server Registry。
 - Core 启动 Gateway 后自动恢复所有 `enabled && autoStart` upstream。
 - 单个自动连接失败只进入该 upstream 的 error 状态，不影响 Gateway 和其他 MCP。
