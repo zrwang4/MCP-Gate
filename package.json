@@ -17,7 +17,8 @@
     "test": "pnpm --filter @mcp-gate/core test",
     "core:gateway-smoke": "pnpm --filter @mcp-gate/core gateway:smoke",
     "desktop:sidecar:prepare": "node scripts/prepare-core-sidecar.mjs",
-    "desktop:bundle": "pnpm desktop:sidecar:prepare && pnpm --filter @mcp-gate/desktop tauri build --config src-tauri/tauri.production.conf.json"
+    "desktop:bundle": "pnpm desktop:sidecar:prepare && pnpm --filter @mcp-gate/desktop tauri build --config src-tauri/tauri.production.conf.json",
+    "release:check": "node scripts/check-release-version.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

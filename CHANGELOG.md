@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- 新增正式 macOS Release workflow：仅由 `vX.Y.Z` tag 触发，执行 tests/typecheck/build、Developer ID 签名、Apple notarization、stapling 验证并创建 draft GitHub Release。
+- Release 构建前强制校验 Root/Desktop/Core/Tauri/Cargo 版本一致，并要求 tag 与应用版本一致。
+- 正式发布要求 GitHub Secrets：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`、`KEYCHAIN_PASSWORD`。
+- 发布产物统一生成版本化 DMG、App ZIP 和 `SHA256SUMS.txt`，同时上传 Actions artifact。
+- CI 新增 release metadata consistency 检查，防止多处版本漂移。
+- GitHub Actions checkout/setup-node 更新到当前 Tauri 官方 pipeline 文档使用的主版本，消除旧 Node runtime deprecation 警告。
+- unsigned Release Preview workflow 保留，用于无 Apple 发布凭据时的日常 bundle 验证。
+
+
 - 新增安全 LAN 模式，默认关闭；仅当 Gateway API Key 已启用且可从 Keychain 读取时允许开启。
 - LAN 模式仅把公开 MCP Gateway 从 localhost 热重绑到 IPv4 `0.0.0.0`；Management API 始终保持 `127.0.0.1:24889`。
 - LAN 请求继续使用 MCP SDK v2 `hostHeaderValidation` / `originValidation`，allowlist 自动包含 localhost、机器 hostname 和当前非 internal IPv4，保留 DNS rebinding 防护。
