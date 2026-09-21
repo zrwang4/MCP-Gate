@@ -168,18 +168,21 @@ h2 { margin: 0; font-size: 16px; }
 
 .serverActions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 72px;
+  justify-content: flex-end;
 }
 
 .actionButton {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  border-radius: 9px; padding: 6px 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  border-radius: 8px; padding: 5px 8px;
   border: 1px solid rgba(0,0,0,.09);
   background: rgba(255,255,255,.72);
   color: inherit;
   cursor: pointer;
+  font-size: 11px;
 }
 
 .actionButton.primary {
