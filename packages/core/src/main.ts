@@ -1,6 +1,7 @@
 import { loadConfig } from "./config.ts";
 import { CoreLogger } from "./logger.ts";
 import { ManagementServer } from "./management-server.ts";
+import { ServerRegistry } from "./server-registry.ts";
 import { McpProxyProcess } from "./proxy-process.ts";
 
 let shuttingDown = false;
@@ -11,7 +12,9 @@ async function main(): Promise<void> {
   await logger.init();
 
   const proxy = new McpProxyProcess(logger);
-  const management = new ManagementServer(config, proxy, logger);
+  const registry = new ServerRegistry(config.serverConfigFile, logger);
+  await registry.init();
+  const management = new ManagementServer(config, proxy, registry, logger);
 
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;

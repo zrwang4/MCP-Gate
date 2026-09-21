@@ -1,4 +1,4 @@
-import { Activity, Check, Copy, FileText, Folder, Play, RefreshCw, RotateCw, Settings2, Square } from "lucide-react";
+import { Activity, Check, Copy, FileText, Folder, Play, Plus, RefreshCw, RotateCw, Settings2, Square, Terminal, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:24888/mcp";
@@ -16,6 +16,18 @@ interface ServerInfo {
   startedAt: string | null;
   lastError: string | null;
   root?: string;
+}
+
+interface ServerConfigInfo {
+  id: string;
+  name: string;
+  alias: string;
+  transport: "stdio";
+  command: string;
+  args: string[];
+  cwd?: string;
+  enabled: boolean;
+  autoStart: boolean;
 }
 
 interface LogEntry {
@@ -94,22 +106,31 @@ export function App() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [serverConfigs, setServerConfigs] = useState<ServerConfigInfo[]>([]);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [logLevel, setLogLevel] = useState<"all" | LogLevel>("all");
   const [managementConnected, setManagementConnected] = useState(false);
+  const [showAddServer, setShowAddServer] = useState(false);
+  const [newServerName, setNewServerName] = useState("");
+  const [newServerCommand, setNewServerCommand] = useState("");
+  const [newServerArgs, setNewServerArgs] = useState("");
+  const [newServerCwd, setNewServerCwd] = useState("");
+  const [configBusy, setConfigBusy] = useState(false);
   const logPanelRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [statusResult, serversResult, logsResult] = await Promise.all([
+      const [statusResult, serversResult, configsResult, logsResult] = await Promise.all([
         api<StatusResponse>("/api/status"),
         api<{ servers: ServerInfo[] }>("/api/servers"),
+        api<{ servers: ServerConfigInfo[] }>("/api/server-configs"),
         api<{ entries: LogEntry[] }>("/api/logs?limit=250"),
       ]);
       setStatus(statusResult);
       setServers(serversResult.servers);
+      setServerConfigs(configsResult.servers);
       setLogs(logsResult.entries);
       setManagementConnected(true);
       setError(null);
@@ -151,6 +172,45 @@ export function App() {
       setError(message);
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function addServerConfig() {
+    setConfigBusy(true);
+    setError(null);
+    try {
+      await api("/api/server-configs", {
+        method: "POST",
+        body: JSON.stringify({
+          name: newServerName,
+          command: newServerCommand,
+          args: newServerArgs.split("\n").map((value) => value.trim()).filter(Boolean),
+          cwd: newServerCwd.trim() || undefined,
+        }),
+      });
+      setShowAddServer(false);
+      setNewServerName("");
+      setNewServerCommand("");
+      setNewServerArgs("");
+      setNewServerCwd("");
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setConfigBusy(false);
+    }
+  }
+
+  async function removeServerConfig(serverId: string) {
+    setConfigBusy(true);
+    setError(null);
+    try {
+      await api(`/api/server-configs/${serverId}`, { method: "DELETE" });
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setConfigBusy(false);
     }
   }
 
@@ -204,7 +264,7 @@ export function App() {
         <div className="metrics">
           <div>
             <span>已管理 MCP</span>
-            <strong>{servers.length}</strong>
+            <strong>{servers.length + serverConfigs.length}</strong>
           </div>
           <div>
             <span>运行中</span>
@@ -223,8 +283,8 @@ export function App() {
             <h2>MCP 管理</h2>
             <p>启动、停止和查看本机 MCP 进程状态</p>
           </div>
-          <button className="secondaryButton" disabled title="多 MCP 配置将在聚合层完成后开放">
-            + 添加 MCP
+          <button className="secondaryButton" onClick={() => setShowAddServer(true)}>
+            <Plus size={14} /> 添加 MCP
           </button>
         </div>
 
@@ -278,6 +338,39 @@ export function App() {
             );
           })}
         </div>
+
+        {serverConfigs.length > 0 && (
+          <div className="configuredServers">
+            <div className="configuredHeading">已保存配置 · 聚合运行时将在下一阶段接入</div>
+            {serverConfigs.map((server) => (
+              <article className="serverCard configuredCard" key={server.id}>
+                <div className="serverIcon">
+                  <Terminal size={19} />
+                </div>
+                <div className="serverInfo">
+                  <div className="serverNameRow">
+                    <strong>{server.name}</strong>
+                    <span className="pill configured">已配置</span>
+                  </div>
+                  <span>{server.command} {server.args.join(" ")}</span>
+                  <div className="serverMeta">
+                    <span>{server.alias}</span>
+                    <span>{server.cwd || "默认工作目录"}</span>
+                  </div>
+                </div>
+                <div className="serverActions">
+                  <button
+                    className="actionButton danger"
+                    disabled={configBusy}
+                    onClick={() => void removeServerConfig(server.id)}
+                  >
+                    <Trash2 size={14} /> 删除
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="section logsSection">
@@ -317,6 +410,48 @@ export function App() {
           )}
         </div>
       </section>
+
+      {showAddServer && (
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => setShowAddServer(false)}>
+          <section className="modalCard" role="dialog" aria-modal="true" aria-label="添加 MCP" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <h2>添加 MCP</h2>
+                <p>先保存 stdio 配置；统一聚合运行时将在下一阶段接入。</p>
+              </div>
+              <button className="iconButton" onClick={() => setShowAddServer(false)} aria-label="关闭">
+                <X size={17} />
+              </button>
+            </div>
+            <label className="field">
+              <span>名称</span>
+              <input value={newServerName} onChange={(event) => setNewServerName(event.target.value)} placeholder="例如 GitHub" />
+            </label>
+            <label className="field">
+              <span>命令</span>
+              <input value={newServerCommand} onChange={(event) => setNewServerCommand(event.target.value)} placeholder="例如 npx" />
+            </label>
+            <label className="field">
+              <span>参数（每行一个）</span>
+              <textarea value={newServerArgs} onChange={(event) => setNewServerArgs(event.target.value)} rows={4} placeholder={"-y\n@modelcontextprotocol/server-github"} />
+            </label>
+            <label className="field">
+              <span>工作目录（可选）</span>
+              <input value={newServerCwd} onChange={(event) => setNewServerCwd(event.target.value)} placeholder="/Users/me/project" />
+            </label>
+            <div className="modalActions">
+              <button className="secondaryButton" onClick={() => setShowAddServer(false)}>取消</button>
+              <button
+                className="actionButton primary"
+                disabled={configBusy || !newServerName.trim() || !newServerCommand.trim()}
+                onClick={() => void addServerConfig()}
+              >
+                {configBusy ? "保存中…" : "保存配置"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <footer>
         <span><Activity size={12} /> MG-005+</span>

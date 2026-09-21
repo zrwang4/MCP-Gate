@@ -38,3 +38,17 @@ export interface CoreStatus {
   };
   gateway: GatewayInfo;
 }
+
+export interface StdioServerConfig {
+  id: string;
+  name: string;
+  alias: string;
+  transport: "stdio";
+  command: string;
+  args: string[];
+  cwd?: string;
+  enabled: boolean;
+  autoStart: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

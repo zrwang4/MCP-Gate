@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
 import type { McpProxyProcess } from "./proxy-process.ts";
+import type { ServerRegistry } from "./server-registry.ts";
 import { CORE_VERSION } from "./version.ts";
 
 const ALLOWED_ORIGINS = new Set([
@@ -20,7 +21,7 @@ function setCors(req: IncomingMessage, res: ServerResponse): boolean {
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-MCP-Gate-Client");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   return true;
 }
 
@@ -29,6 +30,22 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(body));
+}
+
+async function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > maxBytes) throw new Error("request body too large");
+    chunks.push(buffer);
+  }
+
+  if (chunks.length === 0) return {};
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return JSON.parse(raw);
 }
 
 function requireDesktopClient(req: IncomingMessage, res: ServerResponse): boolean {
@@ -42,14 +59,21 @@ function requireDesktopClient(req: IncomingMessage, res: ServerResponse): boolea
 export class ManagementServer {
   #config: CoreConfig;
   #proxy: McpProxyProcess;
+  #registry: ServerRegistry;
   #logger: CoreLogger;
   #server: ReturnType<typeof createServer> | null = null;
   #startedAt = new Date().toISOString();
   #actionInFlight = false;
 
-  constructor(config: CoreConfig, proxy: McpProxyProcess, logger: CoreLogger) {
+  constructor(
+    config: CoreConfig,
+    proxy: McpProxyProcess,
+    registry: ServerRegistry,
+    logger: CoreLogger,
+  ) {
     this.#config = config;
     this.#proxy = proxy;
+    this.#registry = registry;
     this.#logger = logger;
   }
 
@@ -129,6 +153,45 @@ export class ManagementServer {
 
     if (req.method === "GET" && url.pathname === "/api/servers") {
       json(res, 200, { servers: [this.#proxy.snapshot(this.#config)] });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/server-configs") {
+      json(res, 200, { servers: this.#registry.list() });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/server-configs") {
+      if (!requireDesktopClient(req, res)) return;
+      try {
+        const body = await readJsonBody(req) as {
+          name?: unknown;
+          command?: unknown;
+          args?: unknown;
+          cwd?: unknown;
+        };
+        const server = await this.#registry.create({
+          name: body.name as string,
+          command: body.command as string,
+          args: Array.isArray(body.args) ? body.args as string[] : [],
+          cwd: typeof body.cwd === "string" ? body.cwd : undefined,
+        });
+        json(res, 201, { server });
+      } catch (error) {
+        json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
+
+    const configDeleteMatch = url.pathname.match(/^\/api\/server-configs\/([0-9a-f-]+)$/i);
+    if (req.method === "DELETE" && configDeleteMatch) {
+      if (!requireDesktopClient(req, res)) return;
+      const removed = await this.#registry.remove(configDeleteMatch[1]);
+      if (!removed) {
+        json(res, 404, { error: "server configuration not found" });
+        return;
+      }
+      json(res, 200, { ok: true });
       return;
     }
 

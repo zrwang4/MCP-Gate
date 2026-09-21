@@ -11,6 +11,7 @@ export interface CoreConfig {
   managementHost: string;
   managementPort: number;
   logFile: string;
+  serverConfigFile: string;
 }
 
 function readPositiveInt(name: string, fallback: number): number {
@@ -45,5 +46,8 @@ export function loadConfig(): CoreConfig {
     logFile:
       process.env.MCP_GATE_LOG_FILE ??
       join(homedir(), "Library", "Logs", "MCP Gate", "core.jsonl"),
+    serverConfigFile:
+      process.env.MCP_GATE_SERVER_CONFIG_FILE ??
+      join(homedir(), "Library", "Application Support", "MCP Gate", "servers.json"),
   };
 }

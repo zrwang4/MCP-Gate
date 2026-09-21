@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 新增 MCP Server Registry，配置持久化到 `~/Library/Application Support/MCP Gate/servers.json`。
+- 新增 stdio MCP 配置的创建、列表、删除 Management API。
+- 桌面端“添加 MCP”按钮改为可用，支持保存名称、命令、参数和工作目录。
+- Server Registry 使用原子文件替换与 0600 权限，损坏配置自动备份恢复。
+- 新增 Server Registry 持久化和校验测试。
+
+
 - 修复 Gateway 状态点 CSS 与运行状态类名不一致的问题。
 - 修复日志面板自动滚动 ref 未绑定的问题。
 - Desktop package 版本统一为 0.2.0。

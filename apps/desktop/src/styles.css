@@ -448,3 +448,138 @@ footer {
   .logSource { color: #9e9e9a; }
   .emptyLogs { color: #888; }
 }
+
+.configuredServers {
+  margin-top: 12px;
+  display: grid;
+  gap: 9px;
+}
+
+.configuredHeading {
+  margin: 6px 2px 2px;
+  color: #888;
+  font-size: 11px;
+}
+
+.configuredCard {
+  opacity: .9;
+}
+
+.pill.configured {
+  color: #576275;
+  background: rgba(75, 95, 130, .10);
+}
+
+.actionButton.danger {
+  color: #a53b36;
+  background: rgba(194, 57, 52, .06);
+  border-color: rgba(194, 57, 52, .14);
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(12, 12, 12, .34);
+  backdrop-filter: blur(5px);
+}
+
+.modalCard {
+  width: min(520px, 100%);
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: #fbfbf9;
+  box-shadow: 0 28px 80px rgba(0,0,0,.22);
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.modalHeader p {
+  margin: 5px 0 0;
+  color: #777;
+  font-size: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.field > span {
+  color: #62625f;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid rgba(0,0,0,.11);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: #fff;
+  outline: none;
+}
+
+.field textarea {
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: rgba(34,160,107,.55);
+  box-shadow: 0 0 0 3px rgba(34,160,107,.09);
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .modalCard {
+    background: #20201e;
+    border-color: rgba(255,255,255,.10);
+  }
+
+  .field input,
+  .field textarea {
+    background: #292927;
+    border-color: rgba(255,255,255,.10);
+    color: #f2f2f0;
+  }
+
+  .field > span,
+  .modalHeader p,
+  .configuredHeading {
+    color: #aaa;
+  }
+
+  .pill.configured {
+    color: #b6c5df;
+    background: rgba(110, 135, 180, .15);
+  }
+
+  .actionButton.danger {
+    color: #f08a8a;
+    background: rgba(220,80,80,.10);
+    border-color: rgba(220,80,80,.18);
+  }
+}
