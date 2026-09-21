@@ -122,23 +122,23 @@ h2 { margin: 0; font-size: 16px; }
   border: 1px solid rgba(0,0,0,.07);
   background: rgba(255,255,255,.78);
   border-radius: 16px;
-  padding: 16px;
-  gap: 14px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.03);
+  padding: 14px 16px;
+  gap: 10px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.5), 0 10px 28px rgba(0,0,0,.04);
   transition: transform .08s ease, box-shadow .15s ease;
 }
 
 .serverCard:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 32px rgba(0,0,0,.05);
+  box-shadow: 0 1px 0 rgba(255,255,255,.5), 0 14px 32px rgba(0,0,0,.06);
 }
 
 .serverIcon {
-  width: 40px; height: 40px; display: grid; place-items: center;
-  border-radius: 12px; background: #eeeeeb;
+  width: 38px; height: 38px; display: grid; place-items: center;
+  border-radius: 11px; background: #eeeeeb;
   color: #4a4a48;
 }
-.serverInfo { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.serverInfo { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .serverInfo strong { font-size: 14px; }
 .serverInfo > span { font-size: 12px; color: #7d7d7d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill { font-size: 11px; border-radius: 999px; padding: 5px 8px; font-weight: 600; }
