@@ -1,0 +1,101 @@
+:root {
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  color: #151515;
+  background: #f4f4f2;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 15% 0%, rgba(255,255,255,.95), transparent 36%), #f4f4f2; }
+button, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .48; }
+
+.shell { width: min(860px, 100%); margin: 0 auto; padding: 34px 34px 28px; }
+.topbar, .cardHeader, .endpointRow, footer { display: flex; align-items: center; }
+.topbar { justify-content: space-between; margin-bottom: 24px; }
+.eyebrow { font-size: 11px; letter-spacing: .14em; color: #777; font-weight: 700; }
+h1 { margin: 5px 0 0; font-size: 29px; letter-spacing: -.035em; }
+h2 { margin: 0; font-size: 16px; }
+
+.iconButton, .ghostButton, .copyButton, .secondaryButton, .actionButton {
+  border: 1px solid rgba(0,0,0,.09); background: rgba(255,255,255,.72); color: inherit;
+}
+.iconButton { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; }
+.ghostButton, .copyButton, .secondaryButton, .actionButton { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 9px; padding: 7px 10px; }
+.actionButton.primary { background: #1e1e1d; color: #fff; border-color: #1e1e1d; }
+
+.errorBanner { margin-bottom: 14px; padding: 12px 14px; border: 1px solid rgba(194,57,52,.2); border-radius: 12px; background: rgba(194,57,52,.07); display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; font-size: 12px; color: #8c2f2b; }
+.errorBanner button { border: 0; background: transparent; color: inherit; font-weight: 700; }
+
+.gatewayCard { padding: 22px; border: 1px solid rgba(0,0,0,.08); border-radius: 18px; background: rgba(255,255,255,.82); box-shadow: 0 12px 36px rgba(0,0,0,.045); }
+.cardHeader { justify-content: space-between; }
+.statusDot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 9px; background: #aaa; }
+.statusDot.running { background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,.10); }
+.statusDot.starting, .statusDot.stopping { background: #c88718; animation: pulse 1s ease-in-out infinite; }
+.statusDot.error { background: #c23934; box-shadow: 0 0 0 4px rgba(194,57,52,.08); }
+.statusText { font-size: 14px; font-weight: 650; }
+.endpointRow { justify-content: space-between; gap: 14px; margin-top: 22px; padding: 11px 12px 11px 14px; border-radius: 12px; background: #f5f5f3; }
+.endpointRow code { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.copyButton { flex: 0 0 auto; background: #fff; }
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+.metrics > div { border-radius: 11px; padding: 10px 12px; background: rgba(0,0,0,.025); display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.metrics span { color: #777; font-size: 11px; }
+.metrics strong { font-size: 13px; }
+
+.section { margin-top: 28px; }
+.sectionTitle { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin: 0 2px 12px; }
+.sectionTitle p { margin: 4px 0 0; color: #888; font-size: 11px; }
+.serverList { display: grid; gap: 10px; }
+.serverCard { border: 1px solid rgba(0,0,0,.07); background: rgba(255,255,255,.72); border-radius: 15px; padding: 15px 16px; display: flex; align-items: center; gap: 12px; }
+.serverIcon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; background: #eeeeeb; flex: 0 0 auto; }
+.serverInfo { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
+.serverInfo > span { font-size: 12px; color: #7d7d7d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.serverNameRow { display: flex; align-items: center; gap: 8px; }
+.serverNameRow strong { font-size: 14px; }
+.serverMeta { display: flex; gap: 12px; font-size: 11px; color: #999; }
+.serverError { color: #a33b36; font-size: 11px; }
+.serverActions { display: flex; gap: 7px; flex: 0 0 auto; }
+.pill { font-size: 10px; border-radius: 999px; padding: 4px 7px; }
+.pill.running { color: #137853; background: rgba(34,160,107,.10); }
+.pill.starting, .pill.stopping { color: #8a5d10; background: rgba(200,135,24,.11); }
+.pill.error { color: #9f3530; background: rgba(194,57,52,.10); }
+.pill.stopped { color: #777; background: rgba(0,0,0,.05); }
+
+.logToolbar { display: flex; align-items: center; gap: 8px; }
+.logToolbar select { height: 32px; border: 1px solid rgba(0,0,0,.09); border-radius: 9px; background: rgba(255,255,255,.72); color: inherit; padding: 0 26px 0 9px; }
+.logPanel { height: 260px; overflow: auto; border: 1px solid rgba(0,0,0,.08); border-radius: 14px; background: #171716; padding: 9px 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.logRow { display: grid; grid-template-columns: 74px 48px 86px 1fr; gap: 8px; padding: 4px 12px; color: #d4d4d1; font-size: 10.5px; line-height: 1.55; }
+.logRow:hover { background: rgba(255,255,255,.04); }
+.logRow time { color: #777; }
+.logLevel { font-weight: 800; }
+.logLevel.info { color: #7ec699; }
+.logLevel.warn { color: #e3b341; }
+.logLevel.error { color: #ed7b72; }
+.logLevel.debug { color: #8aa9dc; }
+.logSource { color: #9e9e98; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logMessage { overflow-wrap: anywhere; }
+.emptyLogs { color: #777; height: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; }
+
+footer { justify-content: space-between; margin-top: 34px; color: #999; font-size: 11px; }
+footer span { display: inline-flex; align-items: center; gap: 5px; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+@media (max-width: 680px) {
+  .shell { padding: 24px 18px; }
+  .serverCard { align-items: flex-start; flex-wrap: wrap; }
+  .serverActions { width: 100%; padding-left: 50px; }
+  .metrics { grid-template-columns: 1fr; }
+  .logRow { grid-template-columns: 64px 42px 70px 1fr; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { color: #f2f2f0; background: #151514; }
+  body { background: radial-gradient(circle at 15% 0%, #242421, transparent 35%), #151514; }
+  .gatewayCard, .serverCard { background: rgba(30,30,28,.82); border-color: rgba(255,255,255,.08); }
+  .endpointRow, .metrics > div { background: #242421; }
+  .iconButton, .ghostButton, .copyButton, .secondaryButton, .actionButton, .logToolbar select { background: #242421; color: #f2f2f0; border-color: rgba(255,255,255,.09); }
+  .actionButton.primary { background: #f0f0ed; color: #171716; border-color: #f0f0ed; }
+  .serverIcon { background: #292926; }
+}
