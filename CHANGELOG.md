@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Core 可在不设置 `MCP_GATE_FILESYSTEM_ROOT` 的情况下直接启动。
+- 默认 Filesystem PoC 使用 `~/Library/Application Support/MCP Gate/filesystem`，启动时自动创建。
+
+
 - 新增 MCP Server Registry，配置持久化到 `~/Library/Application Support/MCP Gate/servers.json`。
 - 新增 stdio MCP 配置的创建、列表、删除 Management API。
 - 桌面端“添加 MCP”按钮改为可用，支持保存名称、命令、参数和工作目录。

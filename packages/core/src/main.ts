@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import { loadConfig } from "./config.ts";
 import { CoreLogger } from "./logger.ts";
 import { ManagementServer } from "./management-server.ts";
@@ -8,6 +9,7 @@ let shuttingDown = false;
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  await mkdir(config.filesystemRoot, { recursive: true });
   const logger = new CoreLogger(config.logFile);
   await logger.init();
 

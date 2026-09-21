@@ -454,8 +454,8 @@ export function App() {
       )}
 
       <footer>
-        <span><Activity size={12} /> MG-005+</span>
-        <span>Core 管理 API · 日志 · MCP 生命周期</span>
+        <span><Activity size={12} /> MG-006</span>
+        <span>Core 管理 API · Server Registry · 日志</span>
       </footer>
     </main>
   );

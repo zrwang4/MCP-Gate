@@ -27,12 +27,8 @@ function readPositiveInt(name: string, fallback: number): number {
 }
 
 export function loadConfig(): CoreConfig {
-  const root = process.env.MCP_GATE_FILESYSTEM_ROOT;
-  if (!root) {
-    throw new Error(
-      "MCP_GATE_FILESYSTEM_ROOT is required. Point it at a dedicated test directory, not your whole home directory.",
-    );
-  }
+  const appSupportDir = join(homedir(), "Library", "Application Support", "MCP Gate");
+  const root = process.env.MCP_GATE_FILESYSTEM_ROOT ?? join(appSupportDir, "filesystem");
 
   return {
     host: process.env.MCP_GATE_HOST ?? "127.0.0.1",
@@ -48,6 +44,6 @@ export function loadConfig(): CoreConfig {
       join(homedir(), "Library", "Logs", "MCP Gate", "core.jsonl"),
     serverConfigFile:
       process.env.MCP_GATE_SERVER_CONFIG_FILE ??
-      join(homedir(), "Library", "Application Support", "MCP Gate", "servers.json"),
+      join(appSupportDir, "servers.json"),
   };
 }

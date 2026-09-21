@@ -23,19 +23,20 @@ corepack enable
 pnpm install
 ```
 
-## 2. Create a dedicated test directory
+## 2. Filesystem test directory
 
-Do **not** expose your whole home directory while testing.
+Core now creates a dedicated safe directory automatically:
 
-```bash
-mkdir -p "$HOME/Desktop/mcp-gate-test"
-echo "hello from MCP Gate" > "$HOME/Desktop/mcp-gate-test/hello.txt"
+```text
+~/Library/Application Support/MCP Gate/filesystem
 ```
+
+To use another directory, set `MCP_GATE_FILESYSTEM_ROOT`.
 
 ## 3. Start Core
 
 ```bash
-MCP_GATE_FILESYSTEM_ROOT="$HOME/Desktop/mcp-gate-test" pnpm core:dev
+pnpm core:dev
 ```
 
 Expected final log contains a JSON line similar to:
@@ -73,7 +74,7 @@ The dashboard currently checks `/ping`, displays gateway state, and lets you cop
 
 | Variable | Default | Purpose |
 |---|---:|---|
-| `MCP_GATE_FILESYSTEM_ROOT` | required | Directory exposed by Filesystem MCP |
+| `MCP_GATE_FILESYSTEM_ROOT` | App Support filesystem dir | Directory exposed by Filesystem MCP |
 | `MCP_GATE_HOST` | `127.0.0.1` | Gateway bind host |
 | `MCP_GATE_PORT` | `24888` | Gateway port |
 | `MCP_GATE_CONNECTION_TIMEOUT_MS` | `60000` | Upstream startup timeout |
