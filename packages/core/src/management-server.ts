@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
 import type { GatewayServer } from "./gateway-server.ts";
-import type { ServerRegistry } from "./server-registry.ts";
+import type { HttpServerConfig, McpServerConfig, ServerRegistry } from "./server-registry.ts";
+import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
 import type { ToolRegistry } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
@@ -66,6 +68,7 @@ export class ManagementServer {
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
   #toolPolicy: ToolPolicyStore;
+  #secrets: SecretStore;
   #logger: CoreLogger;
   #server: ReturnType<typeof createServer> | null = null;
   #startedAt = new Date().toISOString();
@@ -77,6 +80,7 @@ export class ManagementServer {
     upstreams: UpstreamManager,
     tools: ToolRegistry,
     toolPolicy: ToolPolicyStore,
+    secrets: SecretStore,
     logger: CoreLogger,
   ) {
     this.#config = config;
@@ -85,6 +89,7 @@ export class ManagementServer {
     this.#upstreams = upstreams;
     this.#tools = tools;
     this.#toolPolicy = toolPolicy;
+    this.#secrets = secrets;
     this.#logger = logger;
   }
 
@@ -164,7 +169,9 @@ export class ManagementServer {
     }
 
     if (req.method === "GET" && url.pathname === "/api/server-configs") {
-      json(res, 200, { servers: this.#registry.list() });
+      json(res, 200, {
+        servers: this.#registry.list().map(toPublicServerConfig),
+      });
       return;
     }
 
@@ -270,6 +277,8 @@ export class ManagementServer {
 
     if (req.method === "POST" && url.pathname === "/api/server-configs") {
       if (!requireDesktopClient(req, res)) return;
+
+      let createdSecretId: string | null = null;
       try {
         const body = await readJsonBody(req) as {
           name?: unknown;
@@ -278,19 +287,35 @@ export class ManagementServer {
           args?: unknown;
           cwd?: unknown;
           url?: unknown;
+          authorization?: unknown;
         };
+
+        const transport = body.transport === "http" ? "http" : "stdio";
+        const authorization = normalizeOptionalAuthorization(body.authorization);
+
+        if (transport === "http" && authorization) {
+          createdSecretId = `http-auth:${randomUUID()}`;
+          await this.#secrets.set(createdSecretId, authorization);
+        }
+
         const server = await this.#registry.create({
           name: body.name as string,
-          transport: body.transport === "http" ? "http" : "stdio",
+          transport,
           command: typeof body.command === "string" ? body.command : undefined,
           args: Array.isArray(body.args) ? body.args as string[] : [],
           cwd: typeof body.cwd === "string" ? body.cwd : undefined,
           url: typeof body.url === "string" ? body.url : undefined,
+          authSecretId: createdSecretId ?? undefined,
         });
         this.#upstreams.syncConfigs();
-        json(res, 201, { server });
+        json(res, 201, { server: toPublicServerConfig(server) });
       } catch (error) {
-        json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        if (createdSecretId) {
+          await this.#secrets.delete(createdSecretId).catch(() => false);
+        }
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
       return;
     }
@@ -301,6 +326,17 @@ export class ManagementServer {
     if (req.method === "POST" && configEditMatch) {
       if (!requireDesktopClient(req, res)) return;
 
+      const serverId = configEditMatch[1];
+      const existing = this.#registry.get(serverId);
+      if (!existing) {
+        json(res, 404, { error: "server configuration not found" });
+        return;
+      }
+
+      let createdSecretId: string | null = null;
+      let secretToDeleteAfterSuccess: string | null =
+        existing.transport === "http" ? existing.authSecretId ?? null : null;
+
       try {
         const body = await readJsonBody(req) as {
           name?: unknown;
@@ -309,32 +345,68 @@ export class ManagementServer {
           args?: unknown;
           cwd?: unknown;
           url?: unknown;
+          authorization?: unknown;
+          clearAuthorization?: unknown;
         };
 
-        await this.#upstreams
-          .disconnect(configEditMatch[1])
-          .catch(() => undefined);
+        await this.#upstreams.disconnect(serverId).catch(() => undefined);
 
-        const updated = await this.#registry.update(
-          configEditMatch[1],
-          {
-            name: body.name as string,
-            transport: body.transport === "http" ? "http" : body.transport === "stdio" ? "stdio" : undefined,
-            command: typeof body.command === "string" ? body.command : undefined,
-            args: Array.isArray(body.args) ? body.args as string[] : [],
-            cwd: typeof body.cwd === "string" ? body.cwd : undefined,
-            url: typeof body.url === "string" ? body.url : undefined,
-          },
-        );
+        const transport =
+          body.transport === "http"
+            ? "http"
+            : body.transport === "stdio"
+              ? "stdio"
+              : existing.transport;
+
+        const authorization = normalizeOptionalAuthorization(body.authorization);
+        const clearAuthorization = body.clearAuthorization === true;
+
+        let authSecretId: string | null | undefined;
+
+        if (transport === "http") {
+          if (authorization) {
+            createdSecretId = `http-auth:${randomUUID()}`;
+            await this.#secrets.set(createdSecretId, authorization);
+            authSecretId = createdSecretId;
+          } else if (clearAuthorization) {
+            authSecretId = null;
+          } else if (existing.transport === "http") {
+            authSecretId = existing.authSecretId;
+            secretToDeleteAfterSuccess = null;
+          }
+        } else {
+          authSecretId = null;
+        }
+
+        const updated = await this.#registry.update(serverId, {
+          name: body.name as string,
+          transport,
+          command: typeof body.command === "string" ? body.command : undefined,
+          args: Array.isArray(body.args) ? body.args as string[] : [],
+          cwd: typeof body.cwd === "string" ? body.cwd : undefined,
+          url: typeof body.url === "string" ? body.url : undefined,
+          authSecretId,
+        });
 
         if (!updated) {
-          json(res, 404, { error: "server configuration not found" });
-          return;
+          throw new Error("server configuration not found");
+        }
+
+        if (
+          secretToDeleteAfterSuccess &&
+          secretToDeleteAfterSuccess !== createdSecretId
+        ) {
+          await this.#secrets
+            .delete(secretToDeleteAfterSuccess)
+            .catch(() => false);
         }
 
         this.#upstreams.syncConfigs();
-        json(res, 200, { server: updated });
+        json(res, 200, { server: toPublicServerConfig(updated) });
       } catch (error) {
+        if (createdSecretId) {
+          await this.#secrets.delete(createdSecretId).catch(() => false);
+        }
         json(res, 400, {
           error: error instanceof Error ? error.message : String(error),
         });
@@ -381,7 +453,7 @@ export class ManagementServer {
             .catch(() => undefined);
         }
 
-        json(res, 200, { server: updated });
+        json(res, 200, { server: toPublicServerConfig(updated) });
       } catch (error) {
         json(res, 400, {
           error: error instanceof Error ? error.message : String(error),
@@ -393,14 +465,21 @@ export class ManagementServer {
     const configDeleteMatch = url.pathname.match(/^\/api\/server-configs\/([0-9a-f-]+)$/i);
     if (req.method === "DELETE" && configDeleteMatch) {
       if (!requireDesktopClient(req, res)) return;
-      await this.#upstreams.disconnect(configDeleteMatch[1]).catch(() => undefined);
-      const removed = await this.#registry.remove(configDeleteMatch[1]);
-      await this.#toolPolicy.removeServer(configDeleteMatch[1]);
+      const serverId = configDeleteMatch[1];
+      const existing = this.#registry.get(serverId);
+      await this.#upstreams.disconnect(serverId).catch(() => undefined);
+      const removed = await this.#registry.remove(serverId);
+      await this.#toolPolicy.removeServer(serverId);
       this.#upstreams.syncConfigs();
       if (!removed) {
         json(res, 404, { error: "server configuration not found" });
         return;
       }
+
+      if (existing?.transport === "http" && existing.authSecretId) {
+        await this.#secrets.delete(existing.authSecretId).catch(() => false);
+      }
+
       json(res, 200, { ok: true });
       return;
     }
@@ -424,4 +503,30 @@ export class ManagementServer {
 
     json(res, 404, { error: "not found" });
   }
+}
+
+function normalizeOptionalAuthorization(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") {
+    throw new Error("authorization must be a string");
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length > 8192) {
+    throw new Error("authorization is too long");
+  }
+  return trimmed;
+}
+
+function toPublicServerConfig(server: McpServerConfig): Record<string, unknown> {
+  if (server.transport !== "http") {
+    return { ...server };
+  }
+
+  const { authSecretId, ...publicConfig } = server as HttpServerConfig;
+  return {
+    ...publicConfig,
+    hasAuthorization: Boolean(authSecretId),
+  };
 }

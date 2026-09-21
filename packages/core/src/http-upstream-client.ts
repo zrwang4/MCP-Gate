@@ -3,6 +3,7 @@ import {
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 import type { HttpServerConfig } from "./server-registry.ts";
+import type { SecretStore } from "./secret-store.ts";
 import type { McpToolDefinition } from "./tool-registry.ts";
 import type { UpstreamClient } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
@@ -11,9 +12,11 @@ export class HttpUpstreamClient implements UpstreamClient {
   #config: HttpServerConfig;
   #client: Client | null = null;
   #transport: StreamableHTTPClientTransport | null = null;
+  #secrets: SecretStore;
 
-  constructor(config: HttpServerConfig) {
+  constructor(config: HttpServerConfig, secrets: SecretStore) {
     this.#config = config;
+    this.#secrets = secrets;
   }
 
   async connect(): Promise<void> {
@@ -30,8 +33,25 @@ export class HttpUpstreamClient implements UpstreamClient {
         },
       },
     );
+    const authorization = this.#config.authSecretId
+      ? await this.#secrets.get(this.#config.authSecretId)
+      : null;
+
+    if (this.#config.authSecretId && !authorization) {
+      throw new Error("HTTP authorization secret is missing from Keychain");
+    }
+
     const transport = new StreamableHTTPClientTransport(
       new URL(this.#config.url),
+      authorization
+        ? {
+            requestInit: {
+              headers: {
+                Authorization: authorization,
+              },
+            },
+          }
+        : undefined,
     );
 
     await client.connect(transport);

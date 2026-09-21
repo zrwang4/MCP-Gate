@@ -59,6 +59,7 @@ export interface StdioServerConfig extends ServerConfigBase {
 export interface HttpServerConfig extends ServerConfigBase {
   transport: "http";
   url: string;
+  hasAuthorization: boolean;
 }
 
 export type McpServerConfig = StdioServerConfig | HttpServerConfig;

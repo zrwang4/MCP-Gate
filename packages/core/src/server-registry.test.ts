@@ -117,3 +117,34 @@ test("server registry persists and validates HTTP MCP configurations", async () 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("HTTP registry stores only an opaque auth secret id", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-registry-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const file = join(dir, "servers.json");
+    const registry = new ServerRegistry(file, logger);
+    await registry.init();
+
+    const created = await registry.create({
+      name: "Private Remote",
+      transport: "http",
+      url: "https://example.com/mcp",
+      authSecretId: "http-auth:test-only",
+    });
+
+    assert.equal(created.transport, "http");
+    if (created.transport === "http") {
+      assert.equal(created.authSecretId, "http-auth:test-only");
+    }
+
+    const raw = await readFile(file, "utf8");
+    assert.match(raw, /http-auth:test-only/);
+    assert.doesNotMatch(raw, /Bearer super-secret/);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

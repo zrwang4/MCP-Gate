@@ -23,6 +23,7 @@ export interface StdioServerConfig extends ServerConfigBase {
 export interface HttpServerConfig extends ServerConfigBase {
   transport: "http";
   url: string;
+  authSecretId?: string;
 }
 
 export type McpServerConfig = StdioServerConfig | HttpServerConfig;
@@ -34,6 +35,7 @@ export interface ServerConfigInput {
   args?: string[];
   cwd?: string;
   url?: string;
+  authSecretId?: string | null;
 }
 
 interface RegistryFile {
@@ -118,6 +120,11 @@ export class ServerRegistry {
       {
         ...input,
         transport: input.transport ?? current.transport,
+        authSecretId: Object.prototype.hasOwnProperty.call(input, "authSecretId")
+          ? input.authSecretId
+          : current.transport === "http"
+            ? current.authSecretId
+            : undefined,
       },
       {
         id: current.id,
@@ -136,6 +143,11 @@ export class ServerRegistry {
       `updated MCP configuration: ${updated.name} (${updated.alias}) transport=${updated.transport}`,
     );
     return cloneServer(updated);
+  }
+
+  get(id: string): McpServerConfig | undefined {
+    const server = this.#servers.find((item) => item.id === id);
+    return server ? cloneServer(server) : undefined;
   }
 
   async updateSettings(
@@ -191,6 +203,9 @@ export class ServerRegistry {
         name,
         transport: "http",
         url: validateHttpUrl(input.url),
+        ...(typeof input.authSecretId === "string" && input.authSecretId
+          ? { authSecretId: input.authSecretId }
+          : {}),
       };
     }
 
@@ -291,7 +306,10 @@ function isServerConfig(value: unknown): value is McpServerConfig {
   if (!baseValid) return false;
 
   if (server.transport === "http") {
-    return typeof server.url === "string";
+    return (
+      typeof server.url === "string" &&
+      (server.authSecretId === undefined || typeof server.authSecretId === "string")
+    );
   }
 
   return (
