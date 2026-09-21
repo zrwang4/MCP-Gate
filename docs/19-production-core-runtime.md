@@ -16,7 +16,7 @@ MCP Gate.app
         └── node_modules/
 ```
 
-Tauri 的 `externalBin` 要求源文件名带 Rust target triple；打包后 sidecar 在最终 bundle 中使用基础名称。citeturn162017search0
+Tauri 的 `externalBin` 要求源文件名带 Rust target triple；打包后 sidecar 在最终 bundle 中使用基础名称。
 
 ## Prepare
 
@@ -32,7 +32,7 @@ pnpm desktop:sidecar:prepare
 4. 把当前 Node.js runtime 复制为：
    `mcp-gate-node-$TARGET_TRIPLE`
 
-`pnpm deploy` 会创建带独立 production `node_modules` 的可移植目录。citeturn867901search0
+`pnpm deploy` 会创建带独立 production `node_modules` 的可移植目录。
 
 ## Bundle
 
@@ -46,7 +46,7 @@ pnpm desktop:bundle
 apps/desktop/src-tauri/tauri.production.conf.json
 ```
 
-把 Node sidecar 和 Core runtime resources 加入 Tauri bundle。Tauri resources 会复制到 App resource directory。citeturn966779search1
+把 Node sidecar 和 Core runtime resources 加入 Tauri bundle。Tauri resources 会复制到 App resource directory。
 
 ## Runtime selection
 

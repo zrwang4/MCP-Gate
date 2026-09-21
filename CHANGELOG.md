@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 修复 sidecar staging 提交时 package.json 结尾误写字面量 `\\n` 导致 pnpm 无法解析的问题。
+- 清理 production Core runtime 文档中的内部检索引用标记。
+
+
 - Tauri 桌面端新增 window-state plugin，自动保存并恢复主窗口位置和尺寸。
 - Window state 完全在 Rust 侧启用，不向 WebView 开放额外插件权限。
 - 桌面设置区展示窗口状态持久化能力。
