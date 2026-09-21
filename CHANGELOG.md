@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 补充 Vite `import.meta.env` 类型声明，修复 Management API session-token 前端代码在 strict typecheck 下的 TS2339。
+- 保留桌面 Tauri command 获取 token 与 Web 开发模式 `VITE_MCP_GATE_MANAGEMENT_TOKEN` 两种路径。
+
+
 - 修复 Desktop typecheck 缺少 Vite ImportMetaEnv 类型导致的 `import.meta.env` 编译错误。
 
 
