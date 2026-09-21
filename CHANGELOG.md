@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 修复 stdio env Management API 缺少环境变量校验 helper 导致的 typecheck / production staging 失败。
+- stdio Server 的 Management API 响应不再暴露 opaque envSecretIds，只返回 secretEnvKeys。
+- stdio → HTTP transport 切换时同步清理旧的 Secret env Keychain 项。
+
+
 - stdio MCP 新增环境变量配置；普通变量写入 servers.json，Secret 变量只保存 opaque Keychain 引用。
 - 新增 `POST /api/server-configs/:id/environment`，独立管理 stdio env 与 Secret env。
 - Secret env 编辑时 `KEY=` 表示保留已有 Keychain 值，删除整行表示删除对应 Secret。

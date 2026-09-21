@@ -492,6 +492,12 @@ export class ManagementServer {
             .catch(() => false);
         }
 
+        if (existing.transport === "stdio" && updated.transport !== "stdio") {
+          for (const secretId of Object.values(existing.envSecretIds ?? {})) {
+            await this.#secrets.delete(secretId).catch(() => false);
+          }
+        }
+
         this.#upstreams.syncConfigs();
         json(res, 200, { server: toPublicServerConfig(updated) });
       } catch (error) {
@@ -615,9 +621,59 @@ function normalizeOptionalAuthorization(value: unknown): string | undefined {
   return trimmed;
 }
 
+function normalizeEnvironmentRecord(value: unknown): Record<string, string> {
+  if (value === undefined || value === null) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("environment must be an object");
+  }
+
+  const entries = Object.entries(value);
+  if (entries.length > 128) throw new Error("too many environment variables");
+
+  const result: Record<string, string> = {};
+  for (const [key, item] of entries) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new Error(`invalid environment variable name: ${key}`);
+    }
+    if (typeof item !== "string") {
+      throw new Error(`environment value for ${key} must be a string`);
+    }
+    if (item.length > 65_536) {
+      throw new Error(`environment value for ${key} is too long`);
+    }
+    result[key] = item;
+  }
+  return result;
+}
+
+function normalizeEnvironmentKeys(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new Error("secretEnvKeys must be an array");
+  }
+  if (value.length > 128) throw new Error("too many secret environment variables");
+
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(item)) {
+      throw new Error(`invalid secret environment variable name: ${String(item)}`);
+    }
+    if (!seen.has(item)) {
+      seen.add(item);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
 function toPublicServerConfig(server: McpServerConfig): Record<string, unknown> {
-  if (server.transport !== "http") {
-    return { ...server };
+  if (server.transport === "stdio") {
+    const { envSecretIds, ...publicConfig } = server;
+    return {
+      ...publicConfig,
+      secretEnvKeys: Object.keys(envSecretIds ?? {}).sort(),
+    };
   }
 
   const { authSecretId, ...publicConfig } = server as HttpServerConfig;
