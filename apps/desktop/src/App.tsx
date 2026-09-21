@@ -255,6 +255,28 @@ export function App() {
     }
   }
 
+  async function updateServerSettings(
+    serverId: string,
+    patch: { enabled?: boolean; autoStart?: boolean },
+  ) {
+    setBusy(`${serverId}:settings`);
+    setError(null);
+    try {
+      await api(
+        `/api/server-configs/${serverId}/settings`,
+        {
+          method: "POST",
+          body: JSON.stringify(patch),
+        },
+      );
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function removeServerConfig(serverId: string) {
     setConfigBusy(true);
     setError(null);
@@ -387,6 +409,7 @@ export function App() {
                       <span>{server.alias}</span>
                       <span>{upstream?.toolCount ?? 0} 个工具</span>
                       <span>{server.cwd || "默认工作目录"}</span>
+                      {server.autoStart && <span>自动连接</span>}
                     </div>
                     {upstream?.lastError && <div className="serverError">{upstream.lastError}</div>}
                   </div>
@@ -417,6 +440,16 @@ export function App() {
                         <RefreshCw size={14} /> 工具
                       </button>
                     )}
+                    <button
+                      className={`actionButton settingButton ${server.autoStart ? "enabled" : ""}`}
+                      disabled={changing}
+                      onClick={() => void updateServerSettings(
+                        server.id,
+                        { autoStart: !server.autoStart },
+                      )}
+                    >
+                      自动 {server.autoStart ? "开" : "关"}
+                    </button>
                     <button
                       className="actionButton danger"
                       disabled={configBusy || changing}

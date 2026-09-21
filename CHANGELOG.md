@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- MCP 配置新增自动连接开关，并持久化到 Server Registry。
+- Core 启动 Gateway 后自动恢复所有 `enabled && autoStart` upstream。
+- 单个自动连接失败只进入该 upstream 的 error 状态，不影响 Gateway 和其他 MCP。
+- Management API 新增 `POST /api/server-configs/:id/settings`。
+- 新增 Registry autoStart 持久化测试与 UpstreamManager 自动连接测试。
+
+
 - 新增统一 Gateway 协议测试，使用 MCP SDK Client + InMemoryTransport 验证动态 `tools/list` 与 `tools/call`。
 - 新增 `pnpm core:gateway-smoke`，通过真实 Streamable HTTP 连接 `/mcp` 并执行 `tools/list`。
 - HTTP smoke 使用 SDK v2 version negotiation auto 模式，同时覆盖现代协议协商路径。

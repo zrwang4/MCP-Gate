@@ -67,6 +67,7 @@ async function main(): Promise<void> {
 
   try {
     await gateway.start();
+    await upstreams.connectAutoStart();
     logger.info("core", "Core is ready");
   } catch (error) {
     logger.error(

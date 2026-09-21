@@ -245,6 +245,54 @@ export class ManagementServer {
       return;
     }
 
+    const configSettingsMatch = url.pathname.match(
+      /^\/api\/server-configs\/([0-9a-f-]+)\/settings$/i,
+    );
+    if (req.method === "POST" && configSettingsMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          enabled?: unknown;
+          autoStart?: unknown;
+        };
+
+        const updated = await this.#registry.updateSettings(
+          configSettingsMatch[1],
+          {
+            enabled:
+              body.enabled === undefined
+                ? undefined
+                : body.enabled as boolean,
+            autoStart:
+              body.autoStart === undefined
+                ? undefined
+                : body.autoStart as boolean,
+          },
+        );
+
+        if (!updated) {
+          json(res, 404, { error: "server configuration not found" });
+          return;
+        }
+
+        this.#upstreams.syncConfigs();
+
+        if (!updated.enabled) {
+          await this.#upstreams
+            .disconnect(updated.id)
+            .catch(() => undefined);
+        }
+
+        json(res, 200, { server: updated });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     const configDeleteMatch = url.pathname.match(/^\/api\/server-configs\/([0-9a-f-]+)$/i);
     if (req.method === "DELETE" && configDeleteMatch) {
       if (!requireDesktopClient(req, res)) return;

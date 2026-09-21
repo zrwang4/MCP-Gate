@@ -722,3 +722,17 @@ footer {
     border-color: rgba(34,160,107,.22);
   }
 }
+
+.settingButton.enabled {
+  color: #137853;
+  background: rgba(34,160,107,.08);
+  border-color: rgba(34,160,107,.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  .settingButton.enabled {
+    color: #6ee3a8;
+    background: rgba(34,160,107,.13);
+    border-color: rgba(34,160,107,.20);
+  }
+}

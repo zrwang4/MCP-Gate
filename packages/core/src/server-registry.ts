@@ -110,6 +110,36 @@ export class ServerRegistry {
     return cloneServer(server);
   }
 
+  async updateSettings(
+    id: string,
+    input: { enabled?: boolean; autoStart?: boolean },
+  ): Promise<StdioServerConfig | undefined> {
+    const server = this.#servers.find((item) => item.id === id);
+    if (!server) return undefined;
+
+    if (input.enabled !== undefined) {
+      if (typeof input.enabled !== "boolean") {
+        throw new Error("enabled must be a boolean");
+      }
+      server.enabled = input.enabled;
+    }
+
+    if (input.autoStart !== undefined) {
+      if (typeof input.autoStart !== "boolean") {
+        throw new Error("autoStart must be a boolean");
+      }
+      server.autoStart = input.autoStart;
+    }
+
+    server.updatedAt = new Date().toISOString();
+    await this.#persist();
+    this.#logger.info(
+      "registry",
+      `updated MCP settings: ${server.name} enabled=${server.enabled} autoStart=${server.autoStart}`,
+    );
+    return cloneServer(server);
+  }
+
   async remove(id: string): Promise<boolean> {
     const index = this.#servers.findIndex((server) => server.id === id);
     if (index < 0) return false;

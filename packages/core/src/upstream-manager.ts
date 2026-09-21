@@ -200,6 +200,27 @@ export class UpstreamManager {
     return runtime.client.callTool(route.originalName, args);
   }
 
+  async connectAutoStart(): Promise<void> {
+    this.syncConfigs();
+    const ids = this.#registry
+      .list()
+      .filter((config) => config.enabled && config.autoStart)
+      .map((config) => config.id);
+
+    const results = await Promise.allSettled(
+      ids.map((id) => this.connect(id)),
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        this.#logger.warn(
+          "upstream",
+          `auto-start failed for ${ids[index]}: ${String(result.reason)}`,
+        );
+      }
+    });
+  }
+
   async stopAll(): Promise<void> {
     const ids = [...this.#runtimes.keys()];
     for (const id of ids) {

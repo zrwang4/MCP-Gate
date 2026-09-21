@@ -57,3 +57,57 @@ test("upstream manager connects, caches tools, and routes calls", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("upstream manager auto-connects autoStart configurations only", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  try {
+    const logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+
+    const auto = await servers.create({
+      name: "Auto",
+      command: "fake",
+    });
+    const manual = await servers.create({
+      name: "Manual",
+      command: "fake",
+    });
+
+    await servers.updateSettings(auto.id, { autoStart: true });
+
+    const tools = new ToolRegistry();
+    const connected: string[] = [];
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      (config) => ({
+        async connect() {
+          connected.push(config.id);
+        },
+        async disconnect() {},
+        async listTools() {
+          return [{ name: "ping" }];
+        },
+        async callTool() {
+          return {
+            content: [{ type: "text" as const, text: "pong" }],
+          };
+        },
+      }),
+      logger,
+    );
+
+    await upstreams.connectAutoStart();
+
+    assert.deepEqual(connected, [auto.id]);
+    assert.equal(upstreams.list().find((item) => item.id === auto.id)?.status, "running");
+    assert.equal(upstreams.list().find((item) => item.id === manual.id)?.status, "configured");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
