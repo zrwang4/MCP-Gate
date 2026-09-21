@@ -623,14 +623,14 @@ footer {
 
 .toolList {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .toolRow {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 11px 12px;
+  gap: 12px;
+  padding: 10px 12px;
   border: 1px solid rgba(0,0,0,.07);
   border-radius: 12px;
   background: rgba(255,255,255,.68);
@@ -656,10 +656,10 @@ footer {
 }
 
 .toolInfo p {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
   color: #82827f;
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .toolSource {
@@ -674,7 +674,7 @@ footer {
 .toolToggle {
   flex: 0 0 auto;
   min-width: 58px;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-radius: 999px;
   border: 1px solid rgba(0,0,0,.10);
   background: rgba(0,0,0,.035);
