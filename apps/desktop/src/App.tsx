@@ -300,7 +300,7 @@ export function App() {
           </div>
         </div>
 
-        <div className="logPanel">
+        <div className="logPanel" ref={logPanelRef}>
           {visibleLogs.length === 0 ? (
             <div className="emptyLogs">
               <FileText size={18} /> 暂无日志

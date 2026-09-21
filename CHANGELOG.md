@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 修复 Gateway 状态点 CSS 与运行状态类名不一致的问题。
+- 修复日志面板自动滚动 ref 未绑定的问题。
+- Desktop package 版本统一为 0.2.0。
+- 恢复 macOS 稳定日志目录，不再依赖 Filesystem MCP root。
+- 恢复共享的 MCP Server / 日志 / Core 状态类型。
+- 删除误提交的 npm `package-lock.json`，项目继续统一使用 pnpm。
+
+
 - 修复 MCP 子进程启动失败或 readiness 超时时长期停留在“启动中”的问题。
 - 防止并发 start/stop/restart 操作互相覆盖。
 - Core 版本改为从 package 元数据读取，统一 Desktop/Tauri 版本为 0.2.0。

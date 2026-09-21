@@ -88,8 +88,11 @@ h2 { margin: 0; font-size: 16px; }
   display: inline-block; width: 9px; height: 9px; border-radius: 50%;
   margin-right: 9px; background: #aaa;
 }
-.statusDot.online { background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,.12); }
-.statusDot.checking { animation: pulse 1s ease-in-out infinite; }
+.statusDot.running { background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,.12); }
+.statusDot.starting { background: #c88718; animation: pulse 1s ease-in-out infinite; }
+.statusDot.stopping { background: #c88718; animation: pulse 1s ease-in-out infinite; }
+.statusDot.stopped { background: #8a8a86; }
+.statusDot.error { background: #c23934; box-shadow: 0 0 0 4px rgba(194,57,52,.10); }
 .statusText { font-size: 14px; font-weight: 650; }
 
 .ghostButton,

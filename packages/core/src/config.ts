@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
 export interface CoreConfig {
   host: string;
@@ -41,6 +42,8 @@ export function loadConfig(): CoreConfig {
     sessionIdleTimeoutMs: readPositiveInt("MCP_GATE_SESSION_IDLE_TIMEOUT_MS", 30 * 60_000),
     managementHost: process.env.MCP_GATE_MANAGEMENT_HOST ?? "127.0.0.1",
     managementPort: readPositiveInt("MCP_GATE_MANAGEMENT_PORT", 24889),
-    logFile: process.env.MCP_GATE_LOG_FILE ?? resolve(root, "../../logs/core.jsonl"),
+    logFile:
+      process.env.MCP_GATE_LOG_FILE ??
+      join(homedir(), "Library", "Logs", "MCP Gate", "core.jsonl"),
   };
 }
