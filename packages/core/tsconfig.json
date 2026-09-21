@@ -5,8 +5,13 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "noEmit": true,
-    "types": ["node"],
-    "skipLibCheck": true
+    "types": [
+      "node"
+    ],
+    "skipLibCheck": true,
+    "rewriteRelativeImportExtensions": true
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }

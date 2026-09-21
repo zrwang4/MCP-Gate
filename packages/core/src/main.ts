@@ -1,47 +1,56 @@
 import { loadConfig } from "./config.ts";
-import { waitForGateway } from "./health.ts";
+import { CoreLogger } from "./logger.ts";
+import { ManagementServer } from "./management-server.ts";
 import { McpProxyProcess } from "./proxy-process.ts";
 
-const proxy = new McpProxyProcess();
 let shuttingDown = false;
-
-async function shutdown(signal: string): Promise<void> {
-  if (shuttingDown) return;
-  shuttingDown = true;
-
-  console.info(`[core] received ${signal}, shutting down`);
-  await proxy.stop();
-  process.exit(0);
-}
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  const logger = new CoreLogger(config.logFile);
+  await logger.init();
 
-  console.info("[core] MCP Gate Core PoC starting");
-  console.info(`[core] filesystem root: ${config.filesystemRoot}`);
-  console.info(`[core] gateway: http://${config.host}:${config.port}/mcp`);
+  const proxy = new McpProxyProcess(logger);
+  const management = new ManagementServer(config, proxy, logger);
 
-  await proxy.start(config);
-  await waitForGateway(config);
+  async function shutdown(signal: string): Promise<void> {
+    if (shuttingDown) return;
+    shuttingDown = true;
 
-  console.info(
-    JSON.stringify({
-      event: "core.ready",
-      gatewayUrl: `http://${config.host}:${config.port}/mcp`,
-      healthUrl: `http://${config.host}:${config.port}/ping`,
-      upstream: {
-        id: "filesystem-poc",
-        root: config.filesystemRoot,
-      },
-    }),
+    logger.info("core", `received ${signal}, shutting down`);
+    await management.stop().catch((error) => {
+      logger.warn("management", `shutdown failed: ${String(error)}`);
+    });
+    await proxy.stop().catch((error) => {
+      logger.warn("filesystem", `shutdown failed: ${String(error)}`);
+    });
+    await logger.flush();
+    process.exit(0);
+  }
+
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+
+  logger.info("core", "MCP Gate Core starting");
+  logger.info("core", `filesystem root: ${config.filesystemRoot}`);
+  logger.info("core", `gateway: http://${config.host}:${config.port}/mcp`);
+  logger.info(
+    "core",
+    `management: http://${config.managementHost}:${config.managementPort}`,
   );
+
+  await management.start();
+
+  try {
+    await proxy.start(config);
+    logger.info("core", "Core is ready");
+  } catch (error) {
+    logger.error("core", `initial MCP start failed: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn("core", "Management API remains available so the service can be retried from the UI");
+  }
 }
 
-process.on("SIGINT", () => void shutdown("SIGINT"));
-process.on("SIGTERM", () => void shutdown("SIGTERM"));
-
-main().catch(async (error) => {
-  console.error("[core] startup failed", error);
-  await proxy.stop();
-  process.exit(1);
+main().catch((error) => {
+  console.error("[core] fatal startup failure", error);
+  process.exitCode = 1;
 });
