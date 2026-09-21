@@ -776,3 +776,22 @@ footer {
     color: #e8e8e4;
   }
 }
+
+.checkField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #666;
+  font-size: 11px;
+}
+
+.checkField input {
+  margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .checkField {
+    color: #aaa;
+  }
+}

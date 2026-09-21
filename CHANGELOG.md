@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- HTTP MCP 新增 Authorization 鉴权，Secret 通过 `@github/keytar` 写入 macOS Keychain。
+- `servers.json` 只保存 opaque `authSecretId`，Management API 只返回 `hasAuthorization`，不会返回 secret id 或 Token。
+- HTTP transport 连接时从 Keychain 读取 Authorization，并通过 MCP SDK `requestInit.headers.Authorization` 注入。
+- 编辑 HTTP MCP 支持替换或清除 Authorization；采用“新 Secret 先写入、配置成功后删除旧 Secret”的更新顺序。
+- 删除 HTTP MCP 配置时同步删除对应 Keychain Secret。
+- 新增 SecretStore 抽象和 MemorySecretStore 测试；`@github/keytar` 为 macOS optional dependency。
+
+
 - 修复编辑 MCP 配置时 HTTP 与 stdio 之间切换 transport 未正确写入的问题。
 
 

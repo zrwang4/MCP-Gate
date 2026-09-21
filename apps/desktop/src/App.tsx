@@ -39,6 +39,7 @@ interface ServerConfigInfo {
   args?: string[];
   cwd?: string;
   url?: string;
+  hasAuthorization?: boolean;
   enabled: boolean;
   autoStart: boolean;
 }
@@ -166,6 +167,8 @@ export function App() {
   const [newServerArgs, setNewServerArgs] = useState("");
   const [newServerCwd, setNewServerCwd] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
+  const [newServerAuthorization, setNewServerAuthorization] = useState("");
+  const [clearServerAuthorization, setClearServerAuthorization] = useState(false);
   const [configBusy, setConfigBusy] = useState(false);
   const [testTool, setTestTool] = useState<ToolInfo | null>(null);
   const [testToolArgs, setTestToolArgs] = useState("{}");
@@ -223,6 +226,8 @@ export function App() {
     setNewServerArgs("");
     setNewServerCwd("");
     setNewServerUrl("");
+    setNewServerAuthorization("");
+    setClearServerAuthorization(false);
     setShowAddServer(true);
   }
 
@@ -234,6 +239,8 @@ export function App() {
     setNewServerArgs((server.args ?? []).join("\n"));
     setNewServerCwd(server.cwd ?? "");
     setNewServerUrl(server.url ?? "");
+    setNewServerAuthorization("");
+    setClearServerAuthorization(false);
     setShowAddServer(true);
   }
 
@@ -252,6 +259,12 @@ export function App() {
             : undefined,
           cwd: newServerTransport === "stdio" ? (newServerCwd.trim() || undefined) : undefined,
           url: newServerTransport === "http" ? newServerUrl.trim() : undefined,
+          authorization:
+            newServerTransport === "http" && newServerAuthorization.trim()
+              ? newServerAuthorization.trim()
+              : undefined,
+          clearAuthorization:
+            newServerTransport === "http" && clearServerAuthorization,
         }),
       });
       setShowAddServer(false);
@@ -262,6 +275,8 @@ export function App() {
       setNewServerArgs("");
       setNewServerCwd("");
       setNewServerUrl("");
+      setNewServerAuthorization("");
+      setClearServerAuthorization(false);
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -497,6 +512,9 @@ export function App() {
                       <span>{server.transport.toUpperCase()}</span>
                       <span>{server.alias}</span>
                       <span>{upstream?.toolCount ?? 0} 个工具</span>
+                      {server.transport === "http" && server.hasAuthorization && (
+                        <span>Keychain 鉴权</span>
+                      )}
                       <span>{server.cwd || "默认工作目录"}</span>
                       {server.autoStart && <span>自动连接</span>}
                     </div>
@@ -660,7 +678,7 @@ export function App() {
             <div className="modalHeader">
               <div>
                 <h2>{editingServerId ? "编辑 MCP" : "添加 MCP"}</h2>
-                <p>{editingServerId ? "保存时会先断开当前连接，alias 保持不变。" : "保存后可直接连接 stdio MCP；Tools 会注册到统一 Gateway。"}</p>
+                <p>{editingServerId ? "保存时会先断开当前连接，alias 保持不变。" : "支持 stdio 与 HTTP MCP；HTTP 凭据写入 macOS Keychain。"}</p>
               </div>
               <button className="iconButton" onClick={() => {
                 setShowAddServer(false);
@@ -699,15 +717,43 @@ export function App() {
             </label>
               </>
             ) : (
-              <label className="field">
-                <span>MCP URL</span>
-                <input
-                  value={newServerUrl}
-                  onChange={(event) => setNewServerUrl(event.target.value)}
-                  placeholder="https://example.com/mcp"
-                />
-                <small>当前版本暂不保存 Authorization/Header；鉴权会接入 Keychain。</small>
-              </label>
+              <>
+                <label className="field">
+                  <span>MCP URL</span>
+                  <input
+                    value={newServerUrl}
+                    onChange={(event) => setNewServerUrl(event.target.value)}
+                    placeholder="https://example.com/mcp"
+                  />
+                </label>
+                <label className="field">
+                  <span>Authorization（可选）</span>
+                  <input
+                    type="password"
+                    value={newServerAuthorization}
+                    onChange={(event) => setNewServerAuthorization(event.target.value)}
+                    placeholder={
+                      editingServerId &&
+                      serverConfigs.find((item) => item.id === editingServerId)?.hasAuthorization
+                        ? "已保存在 Keychain，留空保持不变"
+                        : "Bearer ..."
+                    }
+                    autoComplete="off"
+                  />
+                  <small>只写入 macOS Keychain，不会保存到 servers.json 或回传到 UI。</small>
+                </label>
+                {editingServerId &&
+                  serverConfigs.find((item) => item.id === editingServerId)?.hasAuthorization && (
+                    <label className="checkField">
+                      <input
+                        type="checkbox"
+                        checked={clearServerAuthorization}
+                        onChange={(event) => setClearServerAuthorization(event.target.checked)}
+                      />
+                      <span>清除已保存的 Authorization</span>
+                    </label>
+                  )}
+              </>
             )}
             <div className="modalActions">
               <button className="secondaryButton" onClick={() => {

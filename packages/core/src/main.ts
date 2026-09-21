@@ -5,6 +5,7 @@ import { GatewayServer } from "./gateway-server.ts";
 import { HttpUpstreamClient } from "./http-upstream-client.ts";
 import { ManagementServer } from "./management-server.ts";
 import { ServerRegistry } from "./server-registry.ts";
+import { createPlatformSecretStore } from "./secret-store.ts";
 import { ToolPolicyStore } from "./tool-policy-store.ts";
 import { ToolRegistry } from "./tool-registry.ts";
 import { StdioUpstreamClient } from "./stdio-upstream-client.ts";
@@ -23,12 +24,13 @@ async function main(): Promise<void> {
   const toolPolicy = new ToolPolicyStore(config.toolPolicyFile, logger);
   await toolPolicy.init();
   const toolRegistry = new ToolRegistry(toolPolicy);
+  const secrets = createPlatformSecretStore();
   const upstreams = new UpstreamManager(
     registry,
     toolRegistry,
     (serverConfig) =>
       serverConfig.transport === "http"
-        ? new HttpUpstreamClient(serverConfig)
+        ? new HttpUpstreamClient(serverConfig, secrets)
         : new StdioUpstreamClient(serverConfig),
     logger,
   );
@@ -41,6 +43,7 @@ async function main(): Promise<void> {
     upstreams,
     toolRegistry,
     toolPolicy,
+    secrets,
     logger,
   );
 
