@@ -256,6 +256,7 @@ footer {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .logToolbar select {
@@ -266,6 +267,7 @@ footer {
   background: #fff;
   color: inherit;
   padding: 5px 8px;
+  min-width: 88px;
 }
 
 .logPanel {
@@ -370,7 +372,7 @@ footer {
   .iconButton,
   .ghostButton,
   .copyButton,
-  .actionButton {
+  .secondaryButton {
     background: #2c2c29;
     color: #f2f2f0;
     border-color: rgba(255,255,255,.1);
@@ -385,8 +387,15 @@ footer {
   .iconButton:hover,
   .ghostButton:hover,
   .copyButton:hover,
+  .secondaryButton:hover,
   .actionButton:hover {
     background: #333330;
+  }
+
+  .logToolbar select {
+    background: #2c2c29;
+    border-color: rgba(255,255,255,.1);
+    color: #f2f2f0;
   }
 
   .serverIcon { background: #2e2e2b; color: #d6d6d2; }
