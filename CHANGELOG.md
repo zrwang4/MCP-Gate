@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 新增 production Core runtime staging：复制固定 Node runtime 为 Tauri target-triple sidecar，并通过 `pnpm deploy --prod --legacy` 生成自包含 Core resources。
+- 新增 `tauri.production.conf.json`：打包 `mcp-gate-node` external binary 与 `core-runtime` resources。
+- CoreSupervisor 在正式 App 中自动发现 `Contents/MacOS/mcp-gate-node` 与资源目录的 `core-runtime/dist/main.js`，优先使用内置 runtime。
+- 新增 `pnpm desktop:sidecar:prepare` 与 `pnpm desktop:bundle`。
+- macOS CI 现在实际 staging Node/Core runtime，再执行 Rust check。
+- 生成的 Node sidecar 和 Core runtime 目录加入 gitignore，不提交大型二进制。
+
+
 - Tauri 桌面端新增 single-instance 插件，防止登录自启后用户再次双击产生重复实例。
 - single-instance 按官方建议作为首个插件注册。
 - 第二实例启动时自动显示、取消最小化并聚焦已有主窗口。

@@ -3,6 +3,7 @@ mod core_supervisor;
 use core_supervisor::{CoreRuntimeStatus, CoreSupervisor};
 use tauri::{
     menu::{Menu, MenuItem},
+    path::BaseDirectory,
     tray::TrayIconBuilder,
     AppHandle, Manager, RunEvent, State, WindowEvent,
 };
@@ -68,7 +69,21 @@ pub fn run() {
             None,
         ))
         .setup(|app| {
-            let supervisor = CoreSupervisor::new();
+            let bundled_node = std::env::current_exe()
+                .ok()
+                .and_then(|path| path.parent().map(|parent| parent.join("mcp-gate-node")))
+                .filter(|path| path.exists());
+
+            let bundled_core_entry = app
+                .path()
+                .resolve("core-runtime/dist/main.js", BaseDirectory::Resource)
+                .ok()
+                .filter(|path| path.exists());
+
+            let supervisor = CoreSupervisor::new(
+                bundled_node,
+                bundled_core_entry,
+            );
 
             if let Err(error) = supervisor.ensure_started() {
                 eprintln!("[desktop] Core auto-start failed: {error}");

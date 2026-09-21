@@ -23,19 +23,26 @@ pub struct CoreRuntimeStatus {
 pub struct CoreSupervisor {
     child: Mutex<Option<Child>>,
     launch_mode: Mutex<&'static str>,
+    bundled_node: Option<PathBuf>,
+    bundled_core_entry: Option<PathBuf>,
 }
 
 impl Default for CoreSupervisor {
     fn default() -> Self {
-        Self::new()
+        Self::new(None, None)
     }
 }
 
 impl CoreSupervisor {
-    pub fn new() -> Self {
+    pub fn new(
+        bundled_node: Option<PathBuf>,
+        bundled_core_entry: Option<PathBuf>,
+    ) -> Self {
         Self {
             child: Mutex::new(None),
             launch_mode: Mutex::new("none"),
+            bundled_node,
+            bundled_core_entry,
         }
     }
 
@@ -55,7 +62,7 @@ impl CoreSupervisor {
             return Ok(self.status_with_guard(&mut child_guard));
         }
 
-        let (mut command, launch_mode) = build_core_command()?;
+        let (mut command, launch_mode) = self.build_core_command()?;
         command
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())
@@ -219,40 +226,61 @@ fn management_reachable() -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(120)).is_ok()
 }
 
-fn build_core_command() -> Result<(Command, &'static str), String> {
-    if let Ok(executable) = env::var("MCP_GATE_CORE_EXECUTABLE") {
-        if executable.trim().is_empty() {
-            return Err("MCP_GATE_CORE_EXECUTABLE cannot be empty".to_string());
+impl CoreSupervisor {
+    fn build_core_command(&self) -> Result<(Command, &'static str), String> {
+        if let Ok(executable) = env::var("MCP_GATE_CORE_EXECUTABLE") {
+            if executable.trim().is_empty() {
+                return Err("MCP_GATE_CORE_EXECUTABLE cannot be empty".to_string());
+            }
+
+            return Ok((Command::new(executable), "managed-executable"));
         }
 
-        return Ok((Command::new(executable), "managed-executable"));
+        if let (Some(node), Some(core_entry)) =
+            (&self.bundled_node, &self.bundled_core_entry)
+        {
+            if node.exists() && core_entry.exists() {
+                let mut command = Command::new(node);
+                command.arg(core_entry);
+
+                if let Some(core_root) = core_entry
+                    .parent()
+                    .and_then(|path| path.parent())
+                {
+                    command.current_dir(core_root);
+                }
+
+                return Ok((command, "managed-bundled-node"));
+            }
+        }
+
+        let node =
+            env::var("MCP_GATE_NODE_BINARY").unwrap_or_else(|_| "node".to_string());
+        let core_entry = env::var_os("MCP_GATE_CORE_ENTRY")
+            .map(PathBuf::from)
+            .unwrap_or_else(default_dev_core_entry);
+
+        if !core_entry.exists() {
+            return Err(format!(
+                "Core entry not found at {}. Set MCP_GATE_CORE_ENTRY or MCP_GATE_CORE_EXECUTABLE.",
+                core_entry.display()
+            ));
+        }
+
+        let mut command = Command::new(node);
+        command.arg("--experimental-strip-types").arg(&core_entry);
+
+        if let Some(workspace_root) = core_entry
+            .parent()
+            .and_then(|path| path.parent())
+            .and_then(|path| path.parent())
+            .and_then(|path| path.parent())
+        {
+            command.current_dir(workspace_root);
+        }
+
+        Ok((command, "managed-node"))
     }
-
-    let node = env::var("MCP_GATE_NODE_BINARY").unwrap_or_else(|_| "node".to_string());
-    let core_entry = env::var_os("MCP_GATE_CORE_ENTRY")
-        .map(PathBuf::from)
-        .unwrap_or_else(default_dev_core_entry);
-
-    if !core_entry.exists() {
-        return Err(format!(
-            "Core entry not found at {}. Set MCP_GATE_CORE_ENTRY or MCP_GATE_CORE_EXECUTABLE.",
-            core_entry.display()
-        ));
-    }
-
-    let mut command = Command::new(node);
-    command.arg("--experimental-strip-types").arg(&core_entry);
-
-    if let Some(workspace_root) = core_entry
-        .parent()
-        .and_then(|path| path.parent())
-        .and_then(|path| path.parent())
-        .and_then(|path| path.parent())
-    {
-        command.current_dir(workspace_root);
-    }
-
-    Ok((command, "managed-node"))
 }
 
 fn default_dev_core_entry() -> PathBuf {

@@ -73,7 +73,12 @@ interface CoreRuntimeStatus {
   reachable: boolean;
   managed: boolean;
   pid: number | null;
-  launchMode: "none" | "external" | "managed-node" | "managed-executable";
+  launchMode:
+    | "none"
+    | "external"
+    | "managed-node"
+    | "managed-bundled-node"
+    | "managed-executable";
 }
 
 interface StatusResponse {
@@ -154,6 +159,9 @@ function coreRuntimeLabel(status: CoreRuntimeStatus | null): string {
   if (!IS_TAURI) return "Web 模式";
   if (!status) return "检测中";
   if (status.managed) {
+    if (status.launchMode === "managed-bundled-node") {
+      return "内置 Core Runtime";
+    }
     return status.launchMode === "managed-executable"
       ? "桌面托管 Sidecar"
       : "桌面托管 Node";

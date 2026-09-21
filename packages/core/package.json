@@ -29,5 +29,8 @@
   },
   "optionalDependencies": {
     "@github/keytar": "7.10.6"
-  }
-}
+  },
+  "files": [
+    "dist"
+  ]
+}\n

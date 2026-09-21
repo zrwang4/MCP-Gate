@@ -6,3 +6,4 @@ target/
 .env
 .env.local
 apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/binaries/mcp-gate-node-*\napps/desktop/src-tauri/resources/core-runtime/\n

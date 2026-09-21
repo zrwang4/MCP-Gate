@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "externalBin": [
+      "binaries/mcp-gate-node"
+    ],
+    "resources": {
+      "resources/core-runtime/": "core-runtime/"
+    }
+  }
+}
