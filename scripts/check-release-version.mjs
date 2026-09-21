@@ -46,11 +46,12 @@ for (const [name, version] of entries) {
   }
 }
 
-const tag = (
-  process.env.RELEASE_TAG ??
-  process.env.GITHUB_REF_NAME ??
-  ""
-).trim();
+const explicitTag = process.env.RELEASE_TAG?.trim() ?? "";
+const githubTag =
+  process.env.GITHUB_REF_TYPE === "tag"
+    ? process.env.GITHUB_REF_NAME?.trim() ?? ""
+    : "";
+const tag = explicitTag || githubTag;
 
 if (tag) {
   const match = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(tag);

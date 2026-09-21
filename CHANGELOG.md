@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 修复 `release:check` 在普通 branch CI 中误把 `GITHUB_REF_NAME=main` 当作发布 tag；现在仅在 `GITHUB_REF_TYPE=tag` 或显式 `RELEASE_TAG` 时校验 tag。
+
+
 - 新增正式 macOS Release workflow：仅由 `vX.Y.Z` tag 触发，执行 tests/typecheck/build、Developer ID 签名、Apple notarization、stapling 验证并创建 draft GitHub Release。
 - Release 构建前强制校验 Root/Desktop/Core/Tauri/Cargo 版本一致，并要求 tag 与应用版本一致。
 - 正式发布要求 GitHub Secrets：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`、`KEYCHAIN_PASSWORD`。
