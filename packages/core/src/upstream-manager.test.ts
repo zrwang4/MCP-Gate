@@ -119,3 +119,152 @@ test("upstream manager auto-connects autoStart configurations only", async () =>
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("upstream manager reconnects an unexpectedly closed upstream", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({
+      name: "Flaky",
+      command: "fake",
+    });
+
+    const tools = new ToolRegistry();
+    let factoryCalls = 0;
+    let activeHandlers: {
+      onClose?: () => void;
+      onError?: (error: Error) => void;
+    } = {};
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => {
+        factoryCalls += 1;
+        return {
+          setLifecycleHandlers(handlers) {
+            activeHandlers = handlers;
+          },
+          async connect() {},
+          async disconnect() {},
+          async listTools() {
+            return [{ name: "ping" }];
+          },
+          async callTool() {
+            return {
+              content: [{ type: "text" as const, text: "pong" }],
+            };
+          },
+        };
+      },
+      logger,
+      { reconnectDelaysMs: [5, 10] },
+    );
+
+    await upstreams.connect(config.id);
+    assert.equal(factoryCalls, 1);
+    assert.equal(tools.list().length, 1);
+
+    activeHandlers.onError?.(new Error("pipe closed"));
+    activeHandlers.onClose?.();
+
+    const dropped = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(dropped?.status, "error");
+    assert.equal(dropped?.toolCount, 0);
+    assert.equal(dropped?.reconnectAttempt, 1);
+    assert.ok(dropped?.nextRetryAt);
+    assert.equal(tools.list().length, 0);
+
+    await waitFor(() => {
+      const current = upstreams.list().find((item) => item.id === config.id);
+      return factoryCalls >= 2 && current?.status === "running";
+    });
+
+    const recovered = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(recovered?.reconnectAttempt, 0);
+    assert.equal(recovered?.nextRetryAt, null);
+    assert.equal(recovered?.lastError, null);
+    assert.equal(tools.list().length, 1);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("manual disconnect does not schedule automatic reconnect", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({
+      name: "Manual",
+      command: "fake",
+    });
+
+    const tools = new ToolRegistry();
+    let factoryCalls = 0;
+    let closeHandler: (() => void) | undefined;
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => {
+        factoryCalls += 1;
+        return {
+          setLifecycleHandlers(handlers) {
+            closeHandler = handlers.onClose;
+          },
+          async connect() {},
+          async disconnect() {
+            closeHandler?.();
+          },
+          async listTools() {
+            return [{ name: "ping" }];
+          },
+          async callTool() {
+            return {
+              content: [{ type: "text" as const, text: "pong" }],
+            };
+          },
+        };
+      },
+      logger,
+      { reconnectDelaysMs: [5] },
+    );
+
+    await upstreams.connect(config.id);
+    await upstreams.disconnect(config.id);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(factoryCalls, 1);
+    const snapshot = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(snapshot?.status, "stopped");
+    assert.equal(snapshot?.reconnectAttempt, 0);
+    assert.equal(snapshot?.nextRetryAt, null);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 500,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error("condition not met before timeout");
+}

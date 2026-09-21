@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 新增 Upstream 意外断线检测：MCP SDK Client 的 onclose/onerror 生命周期接入 UpstreamManager。
+- 已成功运行的 MCP 意外断线后自动从 ToolRegistry 移除 Tools，避免继续暴露失效工具。
+- 自动重连采用 1s → 2s → 5s → 10s → 30s 退避；重连成功后恢复 Tools 并重置计数。
+- 手动断开、Server 禁用、Core shutdown 不触发自动重连；首次连接失败也保持显式失败，不进入无限重试。
+- Management API / UI 暴露 reconnectAttempt 与 nextRetryAt，桌面端显示下一次自动重连状态。
+- 新增意外断线恢复与手动断开不重连测试。
+
+
 - 桌面端新增 MCP Server 级启用/禁用开关。
 - 禁用 Server 时 Core 立即断开 upstream，并从 ToolRegistry 移除对应 Tools。
 - 禁用 Server 后禁止“连接”和修改 autoStart；重新启用后保留原 autoStart 配置。

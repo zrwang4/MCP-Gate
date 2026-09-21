@@ -2,16 +2,25 @@ import { Client, type CallToolResult } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import type { StdioServerConfig } from "./server-registry.ts";
 import type { McpToolDefinition } from "./tool-registry.ts";
-import type { UpstreamClient } from "./upstream-manager.ts";
+import type {
+  UpstreamClient,
+  UpstreamLifecycleHandlers,
+} from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
 
 export class StdioUpstreamClient implements UpstreamClient {
   #config: StdioServerConfig;
   #client: Client | null = null;
   #transport: StdioClientTransport | null = null;
+  #lifecycleHandlers: UpstreamLifecycleHandlers = {};
 
   constructor(config: StdioServerConfig) {
     this.#config = config;
+  }
+
+  setLifecycleHandlers(handlers: UpstreamLifecycleHandlers): void {
+    this.#lifecycleHandlers = handlers;
+    if (this.#client) this.#bindLifecycle(this.#client);
   }
 
   async connect(): Promise<void> {
@@ -21,6 +30,8 @@ export class StdioUpstreamClient implements UpstreamClient {
       name: "mcp-gate",
       version: CORE_VERSION,
     });
+
+    this.#bindLifecycle(client);
 
     const transport = new StdioClientTransport({
       command: this.#config.command,
@@ -68,6 +79,15 @@ export class StdioUpstreamClient implements UpstreamClient {
       name,
       arguments: (args ?? {}) as Record<string, unknown>,
     });
+  }
+
+  #bindLifecycle(client: Client): void {
+    client.onclose = () => {
+      this.#lifecycleHandlers.onClose?.();
+    };
+    client.onerror = (error) => {
+      this.#lifecycleHandlers.onError?.(error);
+    };
   }
 
   #requireClient(): Client {

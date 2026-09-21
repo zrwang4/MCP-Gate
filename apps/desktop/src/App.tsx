@@ -32,6 +32,8 @@ interface UpstreamInfo {
   status: "configured" | "connecting" | "running" | "stopping" | "stopped" | "error";
   toolCount: number;
   lastError: string | null;
+  reconnectAttempt: number;
+  nextRetryAt: string | null;
 }
 
 interface ServerConfigInfo {
@@ -641,6 +643,11 @@ export function App() {
                       {server.autoStart && <span>自动连接</span>}
                     </div>
                     {upstream?.lastError && <div className="serverError">{upstream.lastError}</div>}
+                    {upstream?.nextRetryAt && (
+                      <div className="serverReconnect">
+                        自动重连 #{upstream.reconnectAttempt} · {formatTime(upstream.nextRetryAt)}
+                      </div>
+                    )}
                   </div>
                   <div className="serverActions">
                     {connected ? (

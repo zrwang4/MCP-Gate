@@ -80,6 +80,8 @@ export interface UpstreamInfo {
   status: UpstreamStatus;
   toolCount: number;
   lastError: string | null;
+  reconnectAttempt: number;
+  nextRetryAt: string | null;
 }
 
 export interface ToolRouteInfo {
