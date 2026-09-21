@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- MCP 添加/编辑弹窗新增“测试连接”，保存前可验证 stdio/HTTP 的 initialize + tools/list。
+- 测试成功显示 Tool 数量、耗时和最多 12 个 Tool 名称；失败信息只显示在弹窗内，不覆盖当前已保存配置。
+- 编辑已有 stdio/HTTP 时继续支持留空复用 Keychain Secret，测试不会写入 Registry 或替换 Secret。
+- 测试是可选操作，不强制通过后才能保存。
+
+
 - 修复诊断快照联合类型与 Gateway snapshot 类型依赖导致的 Core typecheck 失败。
 
 

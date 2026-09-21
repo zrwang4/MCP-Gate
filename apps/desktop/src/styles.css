@@ -1431,3 +1431,79 @@ footer {
     color: #6ee3a8;
   }
 }
+
+.connectionTestResult {
+  display: grid;
+  gap: 7px;
+  margin-top: 15px;
+  padding: 11px 12px;
+  border-radius: 11px;
+  border: 1px solid rgba(0,0,0,.08);
+  font-size: 11px;
+}
+
+.connectionTestResult.success {
+  color: #176f50;
+  background: rgba(34,160,107,.07);
+  border-color: rgba(34,160,107,.20);
+}
+
+.connectionTestResult.error {
+  color: #9d3833;
+  background: rgba(194,57,52,.06);
+  border-color: rgba(194,57,52,.18);
+}
+
+.connectionTestSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connectionTestSummary strong {
+  font-size: 12px;
+}
+
+.connectionTestTools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.connectionTestTools code,
+.connectionTestTools > span {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.05);
+  font-size: 9px;
+}
+
+.connectionTestResult small {
+  color: #7d7d78;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  .connectionTestResult.success {
+    color: #7bddae;
+    background: rgba(34,160,107,.12);
+    border-color: rgba(34,160,107,.24);
+  }
+
+  .connectionTestResult.error {
+    color: #f08a8a;
+    background: rgba(220,80,80,.11);
+    border-color: rgba(220,80,80,.24);
+  }
+
+  .connectionTestTools code,
+  .connectionTestTools > span {
+    background: rgba(255,255,255,.07);
+  }
+
+  .connectionTestResult small {
+    color: #999;
+  }
+}

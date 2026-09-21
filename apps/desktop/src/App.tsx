@@ -170,6 +170,17 @@ interface CoreRuntimeStatus {
     | "managed-executable";
 }
 
+interface ConnectionTestResult {
+  transport: "stdio" | "http";
+  toolCount: number;
+  toolNames: string[];
+  durationMs: number;
+}
+
+type ConnectionTestState =
+  | { status: "success"; result: ConnectionTestResult }
+  | { status: "error"; error: string };
+
 interface StatusResponse {
   core: {
     version: string;
@@ -354,6 +365,9 @@ export function App() {
   const [newServerAuthorization, setNewServerAuthorization] = useState("");
   const [clearServerAuthorization, setClearServerAuthorization] = useState(false);
   const [configBusy, setConfigBusy] = useState(false);
+  const [connectionTestBusy, setConnectionTestBusy] = useState(false);
+  const [connectionTestState, setConnectionTestState] =
+    useState<ConnectionTestState | null>(null);
   const [testTool, setTestTool] = useState<ToolInfo | null>(null);
   const [testToolArgs, setTestToolArgs] = useState("{}");
   const [testToolResult, setTestToolResult] = useState("");
@@ -775,6 +789,7 @@ export function App() {
     setNewServerUrl("");
     setNewServerAuthorization("");
     setClearServerAuthorization(false);
+    setConnectionTestState(null);
     setShowAddServer(true);
   }
 
@@ -790,7 +805,93 @@ export function App() {
     setNewServerUrl(server.url ?? "");
     setNewServerAuthorization("");
     setClearServerAuthorization(false);
+    setConnectionTestState(null);
     setShowAddServer(true);
+  }
+
+  async function testServerConnection() {
+    setConnectionTestBusy(true);
+    setConnectionTestState(null);
+
+    try {
+      const plainEnv =
+        newServerTransport === "stdio"
+          ? parseEnvironmentText(newServerEnv)
+          : {};
+      const secretEnv =
+        newServerTransport === "stdio"
+          ? parseEnvironmentText(newServerSecretEnv)
+          : {};
+      const secretEnvKeys = Object.keys(secretEnv);
+
+      for (const key of Object.keys(plainEnv)) {
+        if (secretEnvKeys.includes(key)) {
+          throw new Error(
+            `环境变量 ${key} 不能同时是普通变量和 Secret`,
+          );
+        }
+      }
+
+      const response = await api<{ result: ConnectionTestResult }>(
+        "/api/server-configs/test-connection",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            serverId: editingServerId ?? undefined,
+            transport: newServerTransport,
+            command:
+              newServerTransport === "stdio"
+                ? newServerCommand
+                : undefined,
+            args:
+              newServerTransport === "stdio"
+                ? newServerArgs
+                    .split("\n")
+                    .map((value) => value.trim())
+                    .filter(Boolean)
+                : undefined,
+            cwd:
+              newServerTransport === "stdio"
+                ? newServerCwd.trim() || undefined
+                : undefined,
+            env: newServerTransport === "stdio" ? plainEnv : undefined,
+            secretEnvKeys:
+              newServerTransport === "stdio"
+                ? secretEnvKeys
+                : undefined,
+            secretEnv:
+              newServerTransport === "stdio"
+                ? secretEnv
+                : undefined,
+            url:
+              newServerTransport === "http"
+                ? newServerUrl.trim()
+                : undefined,
+            authorization:
+              newServerTransport === "http" &&
+              newServerAuthorization.trim()
+                ? newServerAuthorization.trim()
+                : undefined,
+            clearAuthorization:
+              newServerTransport === "http" &&
+              clearServerAuthorization,
+          }),
+        },
+        90_000,
+      );
+
+      setConnectionTestState({
+        status: "success",
+        result: response.result,
+      });
+    } catch (cause) {
+      setConnectionTestState({
+        status: "error",
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      setConnectionTestBusy(false);
+    }
   }
 
   async function saveServerConfig() {
@@ -870,6 +971,7 @@ export function App() {
       setNewServerUrl("");
       setNewServerAuthorization("");
       setClearServerAuthorization(false);
+      setConnectionTestState(null);
       await refresh();
     } catch (cause) {
       if (createdServerId) {
@@ -1842,8 +1944,10 @@ export function App() {
 
       {showAddServer && (
         <div className="modalBackdrop" role="presentation" onMouseDown={() => {
+          if (connectionTestBusy || configBusy) return;
           setShowAddServer(false);
           setEditingServerId(null);
+          setConnectionTestState(null);
         }}>
           <section className="modalCard" role="dialog" aria-modal="true" aria-label={editingServerId ? "编辑 MCP" : "添加 MCP"} onMouseDown={(event) => event.stopPropagation()}>
             <div className="modalHeader">
@@ -1851,10 +1955,16 @@ export function App() {
                 <h2>{editingServerId ? "编辑 MCP" : "添加 MCP"}</h2>
                 <p>{editingServerId ? "保存时会先断开当前连接，alias 保持不变。" : "支持 stdio 与 HTTP MCP；HTTP 凭据写入 macOS Keychain。"}</p>
               </div>
-              <button className="iconButton" onClick={() => {
-                setShowAddServer(false);
-                setEditingServerId(null);
-              }} aria-label="关闭">
+              <button
+                className="iconButton"
+                disabled={connectionTestBusy || configBusy}
+                onClick={() => {
+                  setShowAddServer(false);
+                  setEditingServerId(null);
+                  setConnectionTestState(null);
+                }}
+                aria-label="关闭"
+              >
                 <X size={17} />
               </button>
             </div>
@@ -1948,15 +2058,78 @@ export function App() {
                   )}
               </>
             )}
+            {connectionTestState && (
+              <div
+                className={`connectionTestResult ${connectionTestState.status}`}
+                role="status"
+              >
+                {connectionTestState.status === "success" ? (
+                  <>
+                    <div className="connectionTestSummary">
+                      <strong>连接成功</strong>
+                      <span>
+                        {connectionTestState.result.toolCount} 个 Tools ·
+                        {" "}
+                        {connectionTestState.result.durationMs} ms
+                      </span>
+                    </div>
+                    {connectionTestState.result.toolNames.length > 0 && (
+                      <div className="connectionTestTools">
+                        {connectionTestState.result.toolNames
+                          .slice(0, 12)
+                          .map((toolName) => (
+                            <code key={toolName}>{toolName}</code>
+                          ))}
+                        {connectionTestState.result.toolNames.length > 12 && (
+                          <span>
+                            +{connectionTestState.result.toolNames.length - 12}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <strong>连接失败</strong>
+                    <span>{connectionTestState.error}</span>
+                  </>
+                )}
+                <small>
+                  这是临时连接测试，不会保存配置；修改表单后请重新测试。
+                </small>
+              </div>
+            )}
+
             <div className="modalActions">
-              <button className="secondaryButton" onClick={() => {
-                setShowAddServer(false);
-                setEditingServerId(null);
-              }}>取消</button>
+              <button
+                className="secondaryButton"
+                disabled={connectionTestBusy || configBusy}
+                onClick={() => {
+                  setShowAddServer(false);
+                  setEditingServerId(null);
+                  setConnectionTestState(null);
+                }}
+              >
+                取消
+              </button>
+              <button
+                className="secondaryButton"
+                disabled={
+                  connectionTestBusy ||
+                  configBusy ||
+                  (newServerTransport === "stdio"
+                    ? !newServerCommand.trim()
+                    : !newServerUrl.trim())
+                }
+                onClick={() => void testServerConnection()}
+              >
+                {connectionTestBusy ? "测试中…" : "测试连接"}
+              </button>
               <button
                 className="actionButton primary"
                 disabled={
                   configBusy ||
+                  connectionTestBusy ||
                   !newServerName.trim() ||
                   (newServerTransport === "stdio"
                     ? !newServerCommand.trim()
