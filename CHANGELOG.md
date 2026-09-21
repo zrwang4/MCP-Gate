@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 新增统一 GatewayServer，`127.0.0.1:24888/mcp` 直接聚合所有已连接 upstream Tools。
+- Gateway 使用 MCP SDK v2 低层 `Server` 动态返回上游 JSON Schema。
+- `tools/list` 读取内存 ToolRegistry；`tools/call` 通过 UpstreamManager 路由到原 MCP。
+- 新 Gateway 同时支持 2026-07-28 与 SDK 默认的 stateless 2025-era HTTP 请求。
+- 新增 `@modelcontextprotocol/server@2.0.0` 与 `@modelcontextprotocol/node@2.0.0`。
+- 旧 Filesystem mcp-proxy PoC 不再占用主 Gateway 端口，但代码暂时保留作兼容/回退。
+
+
 - stdio MCP connect 请求使用独立长超时，避免初始化超过 4 秒时 UI 误报失败。
 - 修复 upstream `connecting` 状态被错误显示为“已停止”。
 

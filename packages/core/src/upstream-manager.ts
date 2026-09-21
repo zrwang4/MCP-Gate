@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@modelcontextprotocol/client";
 import type { CoreLogger } from "./logger.ts";
 import type { ServerRegistry, StdioServerConfig } from "./server-registry.ts";
 import type { McpToolDefinition, ToolRegistry } from "./tool-registry.ts";
@@ -14,7 +15,7 @@ export interface UpstreamClient {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   listTools(): Promise<McpToolDefinition[]>;
-  callTool(name: string, args: unknown): Promise<unknown>;
+  callTool(name: string, args: unknown): Promise<CallToolResult>;
 }
 
 export type UpstreamFactory = (
@@ -186,7 +187,7 @@ export class UpstreamManager {
     return this.#snapshot(runtime);
   }
 
-  async callTool(publicName: string, args: unknown): Promise<unknown> {
+  async callTool(publicName: string, args: unknown): Promise<CallToolResult> {
     const route = this.#tools.resolve(publicName);
     if (!route) throw new Error("tool not found");
     if (!route.enabled) throw new Error("tool is disabled");

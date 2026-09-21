@@ -1,4 +1,4 @@
-import { Client } from "@modelcontextprotocol/client";
+import { Client, type CallToolResult } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import type { StdioServerConfig } from "./server-registry.ts";
 import type { McpToolDefinition } from "./tool-registry.ts";
@@ -53,7 +53,7 @@ export class StdioUpstreamClient implements UpstreamClient {
     }));
   }
 
-  async callTool(name: string, args: unknown): Promise<unknown> {
+  async callTool(name: string, args: unknown): Promise<CallToolResult> {
     const client = this.#requireClient();
 
     if (

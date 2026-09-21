@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
-import type { McpProxyProcess } from "./proxy-process.ts";
+import type { GatewayServer } from "./gateway-server.ts";
 import type { ServerRegistry } from "./server-registry.ts";
 import type { ToolRegistry } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
@@ -60,25 +60,24 @@ function requireDesktopClient(req: IncomingMessage, res: ServerResponse): boolea
 
 export class ManagementServer {
   #config: CoreConfig;
-  #proxy: McpProxyProcess;
+  #gateway: GatewayServer;
   #registry: ServerRegistry;
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
   #logger: CoreLogger;
   #server: ReturnType<typeof createServer> | null = null;
   #startedAt = new Date().toISOString();
-  #actionInFlight = false;
 
   constructor(
     config: CoreConfig,
-    proxy: McpProxyProcess,
+    gateway: GatewayServer,
     registry: ServerRegistry,
     upstreams: UpstreamManager,
     tools: ToolRegistry,
     logger: CoreLogger,
   ) {
     this.#config = config;
-    this.#proxy = proxy;
+    this.#gateway = gateway;
     this.#registry = registry;
     this.#upstreams = upstreams;
     this.#tools = tools;
@@ -140,18 +139,14 @@ export class ManagementServer {
     }
 
     if (req.method === "GET" && url.pathname === "/api/status") {
-      const server = this.#proxy.snapshot(this.#config);
+      const gateway = this.#gateway.snapshot();
       json(res, 200, {
         core: {
           version: CORE_VERSION,
           startedAt: this.#startedAt,
           logFile: this.#logger.filePath,
         },
-        gateway: {
-          endpoint: `http://${this.#config.host}:${this.#config.port}/mcp`,
-          healthEndpoint: `http://${this.#config.host}:${this.#config.port}/ping`,
-          status: server.status,
-        },
+        gateway,
         management: {
           endpoint: `http://${this.#config.managementHost}:${this.#config.managementPort}`,
         },
@@ -160,7 +155,7 @@ export class ManagementServer {
     }
 
     if (req.method === "GET" && url.pathname === "/api/servers") {
-      json(res, 200, { servers: [this.#proxy.snapshot(this.#config)] });
+      json(res, 200, { servers: [] });
       return;
     }
 
@@ -255,38 +250,6 @@ export class ManagementServer {
           level,
         }),
       });
-      return;
-    }
-
-    const actionMatch = url.pathname.match(/^\/api\/servers\/filesystem-poc\/(start|stop|restart)$/);
-    if (req.method === "POST" && actionMatch) {
-      if (!requireDesktopClient(req, res)) return;
-      if (this.#actionInFlight) {
-        json(res, 409, { error: "another server action is already in progress" });
-        return;
-      }
-
-      this.#actionInFlight = true;
-      const action = actionMatch[1];
-
-      try {
-        if (action === "start") {
-          await this.#proxy.start(this.#config);
-        } else if (action === "stop") {
-          await this.#proxy.stop();
-        } else {
-          await this.#proxy.stop();
-          await this.#proxy.start(this.#config);
-        }
-        json(res, 200, { server: this.#proxy.snapshot(this.#config) });
-      } catch (error) {
-        json(res, 500, {
-          error: error instanceof Error ? error.message : String(error),
-          server: this.#proxy.snapshot(this.#config),
-        });
-      } finally {
-        this.#actionInFlight = false;
-      }
       return;
     }
 

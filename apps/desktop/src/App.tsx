@@ -546,8 +546,8 @@ export function App() {
       )}
 
       <footer>
-        <span><Activity size={12} /> MG-006</span>
-        <span>Core 管理 API · Server Registry · 日志</span>
+        <span><Activity size={12} /> MG-010</span>
+        <span>统一 /mcp · UpstreamManager · ToolRegistry</span>
       </footer>
     </main>
   );
