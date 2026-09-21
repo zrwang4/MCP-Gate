@@ -15,6 +15,11 @@ fn app_version() -> &'static str {
 }
 
 #[tauri::command]
+fn management_token(state: State<'_, CoreSupervisor>) -> String {
+    state.management_token()
+}
+
+#[tauri::command]
 fn core_runtime_status(state: State<'_, CoreSupervisor>) -> CoreRuntimeStatus {
     state.status()
 }
@@ -133,6 +138,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            management_token,
             core_runtime_status,
             restart_core,
             autostart_enabled,

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- 正式桌面模式新增 Management API 随机会话 Token，替代仅依赖固定 `X-MCP-Gate-Client` 的弱控制面边界。
+- Tauri 每次启动生成 64 字符随机 Token，通过 `MCP_GATE_MANAGEMENT_TOKEN` 只注入自己托管的 Core。
+- 前端通过 Tauri command 获取当前 Token，并在所有 Management API 请求发送 `X-MCP-Gate-Token`。
+- 除 `/api/health` 外，所有 Management API（包括读取日志、配置、Tools、Profiles）都要求认证。
+- Token 使用 timing-safe compare；认证失败不记录 Token 内容。
+- 手工开发 Core 未设置 Token 时保留旧 desktop header fallback；可通过 `MCP_GATE_MANAGEMENT_TOKEN` + `VITE_MCP_GATE_MANAGEMENT_TOKEN` 显式启用开发 Token。
+- 新增 Management auth 单元测试并更新 management smoke。
+
+
 - 新增本机 MCP 配置源发现：Cursor 全局 `~/.cursor/mcp.json` 与 Claude Desktop macOS 本地配置。
 - Core 直接读取固定配置路径，WebView 只拿到存在状态、脱敏 Preview 和导入结果，不接收原始配置文件或 Secret 值。
 - 新增 `POST /api/import/mcp-config/sources`、`source-preview`、`source-apply`。

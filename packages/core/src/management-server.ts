@@ -3,6 +3,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
 import {
+  isManagementRequestAuthorized,
+  MANAGEMENT_TOKEN_HEADER,
+} from "./management-auth.ts";
+import {
   applyMcpClientConfig,
   previewMcpClientConfig,
   toPublicMcpImportPreview,
@@ -35,7 +39,10 @@ function setCors(req: IncomingMessage, res: ServerResponse): boolean {
 
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-MCP-Gate-Client");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-MCP-Gate-Client, X-MCP-Gate-Token",
+  );
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   return true;
 }
@@ -157,6 +164,19 @@ export class ManagementServer {
 
     if (req.method === "GET" && url.pathname === "/api/health") {
       json(res, 200, { ok: true });
+      return;
+    }
+
+    if (!isManagementRequestAuthorized(req.headers, this.#config.managementToken)) {
+      this.#logger.warn(
+        "management",
+        `management access denied: ${req.method ?? "UNKNOWN"} ${url.pathname}`,
+      );
+      json(res, 403, {
+        error: this.#config.managementToken
+          ? `missing or invalid ${MANAGEMENT_TOKEN_HEADER}`
+          : "missing desktop client header",
+      });
       return;
     }
 

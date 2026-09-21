@@ -22,6 +22,20 @@ const MANAGEMENT_URL = "http://127.0.0.1:24889";
 const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+let managementTokenPromise: Promise<string | null> | null = null;
+
+async function getManagementToken(): Promise<string | null> {
+  if (!IS_TAURI) {
+    const token = import.meta.env.VITE_MCP_GATE_MANAGEMENT_TOKEN;
+    return typeof token === "string" && token.trim() ? token.trim() : null;
+  }
+
+  managementTokenPromise ??= invoke<string>("management_token")
+    .then((token) => token.trim() || null)
+    .catch(() => null);
+  return managementTokenPromise;
+}
+
 type ServerStatus = "starting" | "running" | "stopping" | "stopped" | "error";
 type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -164,6 +178,10 @@ interface StatusResponse {
 
 async function api<T>(path: string, init?: RequestInit, timeoutMs = 4000): Promise<T> {
   const headers = new Headers(init?.headers);
+  const managementToken = await getManagementToken();
+  if (managementToken) {
+    headers.set("X-MCP-Gate-Token", managementToken);
+  }
   if (init?.method && init.method !== "GET") {
     headers.set("X-MCP-Gate-Client", "desktop");
     headers.set("Content-Type", "application/json");

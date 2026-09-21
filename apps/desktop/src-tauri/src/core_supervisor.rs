@@ -1,3 +1,4 @@
+use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
 use std::{
     env,
@@ -25,6 +26,7 @@ pub struct CoreSupervisor {
     launch_mode: Mutex<&'static str>,
     bundled_node: Option<PathBuf>,
     bundled_core_entry: Option<PathBuf>,
+    management_token: String,
 }
 
 impl Default for CoreSupervisor {
@@ -38,11 +40,17 @@ impl CoreSupervisor {
         bundled_node: Option<PathBuf>,
         bundled_core_entry: Option<PathBuf>,
     ) -> Self {
+        let management_token = env::var("MCP_GATE_MANAGEMENT_TOKEN")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(generate_management_token);
+
         Self {
             child: Mutex::new(None),
             launch_mode: Mutex::new("none"),
             bundled_node,
             bundled_core_entry,
+            management_token,
         }
     }
 
@@ -67,7 +75,8 @@ impl CoreSupervisor {
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
-            .env("MCP_GATE_MANAGED_BY_DESKTOP", "1");
+            .env("MCP_GATE_MANAGED_BY_DESKTOP", "1")
+            .env("MCP_GATE_MANAGEMENT_TOKEN", &self.management_token);
 
         let child = command
             .spawn()
@@ -108,6 +117,10 @@ impl CoreSupervisor {
         }
 
         self.ensure_started()
+    }
+
+    pub fn management_token(&self) -> String {
+        self.management_token.clone()
     }
 
     pub fn status(&self) -> CoreRuntimeStatus {
@@ -286,4 +299,13 @@ impl CoreSupervisor {
 fn default_dev_core_entry() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../packages/core/src/main.ts")
+}
+
+
+fn generate_management_token() -> String {
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(64)
+        .map(char::from)
+        .collect()
 }
