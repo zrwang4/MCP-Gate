@@ -1,0 +1,130 @@
+:root {
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  color: #151515;
+  background: #f4f4f2;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(255,255,255,.95), transparent 36%),
+    #f4f4f2;
+}
+
+button { font: inherit; }
+
+.shell {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 34px 34px 28px;
+}
+
+.topbar,
+.cardHeader,
+.endpointRow,
+.sectionTitle,
+.serverCard,
+footer {
+  display: flex;
+  align-items: center;
+}
+
+.topbar { justify-content: space-between; margin-bottom: 30px; }
+.eyebrow { font-size: 11px; letter-spacing: .14em; color: #777; font-weight: 700; }
+h1 { margin: 5px 0 0; font-size: 29px; letter-spacing: -.035em; }
+h2 { margin: 0; font-size: 16px; }
+
+.iconButton,
+.ghostButton,
+.copyButton {
+  border: 1px solid rgba(0,0,0,.09);
+  background: rgba(255,255,255,.72);
+  color: inherit;
+  cursor: pointer;
+}
+
+.iconButton {
+  width: 38px; height: 38px; border-radius: 12px;
+  display: grid; place-items: center;
+}
+
+.gatewayCard {
+  padding: 22px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 18px;
+  background: rgba(255,255,255,.82);
+  box-shadow: 0 12px 36px rgba(0,0,0,.045);
+}
+
+.cardHeader { justify-content: space-between; }
+.statusDot {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  margin-right: 9px; background: #aaa;
+}
+.statusDot.online { background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,.10); }
+.statusDot.checking { animation: pulse 1s ease-in-out infinite; }
+.statusText { font-size: 14px; font-weight: 650; }
+
+.ghostButton,
+.copyButton {
+  display: inline-flex; align-items: center; gap: 7px;
+  border-radius: 9px; padding: 7px 10px;
+}
+
+.endpointRow {
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 22px;
+  padding: 11px 12px 11px 14px;
+  border-radius: 12px;
+  background: #f5f5f3;
+}
+.endpointRow code { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.copyButton { flex: 0 0 auto; background: #fff; }
+.hint { margin: 13px 2px 0; color: #767676; font-size: 12px; line-height: 1.6; }
+
+.section { margin-top: 28px; }
+.sectionTitle { justify-content: space-between; margin: 0 2px 12px; }
+.sectionTitle span { font-size: 12px; color: #888; }
+
+.serverCard {
+  border: 1px solid rgba(0,0,0,.07);
+  background: rgba(255,255,255,.72);
+  border-radius: 15px;
+  padding: 15px 16px;
+  gap: 12px;
+}
+.serverIcon {
+  width: 38px; height: 38px; display: grid; place-items: center;
+  border-radius: 11px; background: #eeeeeb;
+}
+.serverInfo { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.serverInfo strong { font-size: 14px; }
+.serverInfo span { font-size: 12px; color: #7d7d7d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { font-size: 11px; border-radius: 999px; padding: 5px 8px; }
+.pill.success { color: #137853; background: rgba(34,160,107,.10); }
+.pill.muted { color: #777; background: rgba(0,0,0,.05); }
+
+footer {
+  justify-content: space-between;
+  margin-top: 34px;
+  color: #999;
+  font-size: 11px;
+}
+
+@keyframes pulse { 50% { opacity: .35; } }
+
+@media (prefers-color-scheme: dark) {
+  :root { color: #f2f2f0; background: #151514; }
+  body { background: radial-gradient(circle at 15% 0%, #242421, transparent 35%), #151514; }
+  .gatewayCard, .serverCard { background: rgba(30,30,28,.82); border-color: rgba(255,255,255,.08); }
+  .endpointRow { background: #242421; }
+  .iconButton, .ghostButton, .copyButton { background: #242421; color: #f2f2f0; border-color: rgba(255,255,255,.09); }
+  .serverIcon { background: #292926; }
+}
