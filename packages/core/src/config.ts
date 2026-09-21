@@ -7,6 +7,9 @@ export interface CoreConfig {
   connectionTimeoutMs: number;
   requestTimeoutMs: number;
   sessionIdleTimeoutMs: number;
+  managementHost: string;
+  managementPort: number;
+  logFile: string;
 }
 
 function readPositiveInt(name: string, fallback: number): number {
@@ -36,5 +39,8 @@ export function loadConfig(): CoreConfig {
     connectionTimeoutMs: readPositiveInt("MCP_GATE_CONNECTION_TIMEOUT_MS", 60_000),
     requestTimeoutMs: readPositiveInt("MCP_GATE_REQUEST_TIMEOUT_MS", 300_000),
     sessionIdleTimeoutMs: readPositiveInt("MCP_GATE_SESSION_IDLE_TIMEOUT_MS", 30 * 60_000),
+    managementHost: process.env.MCP_GATE_MANAGEMENT_HOST ?? "127.0.0.1",
+    managementPort: readPositiveInt("MCP_GATE_MANAGEMENT_PORT", 24889),
+    logFile: process.env.MCP_GATE_LOG_FILE ?? resolve(root, "../../logs/core.jsonl"),
   };
 }
