@@ -319,7 +319,7 @@ export class ManagementServer {
           configEditMatch[1],
           {
             name: body.name as string,
-            transport: body.transport === "http" ? "http" : undefined,
+            transport: body.transport === "http" ? "http" : body.transport === "stdio" ? "stdio" : undefined,
             command: typeof body.command === "string" ? body.command : undefined,
             args: Array.isArray(body.args) ? body.args as string[] : [],
             cwd: typeof body.cwd === "string" ? body.cwd : undefined,

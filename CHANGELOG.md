@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 修复编辑 MCP 配置时 HTTP 与 stdio 之间切换 transport 未正确写入的问题。
+
+
 - 新增 HTTP MCP upstream：Server Registry 支持 `transport: "http"` 与远端 MCP URL。
 - 新增 `HttpUpstreamClient`，使用 MCP SDK v2 `StreamableHTTPClientTransport` 和自动协议协商。
 - stdio / HTTP upstream 共用 UpstreamManager、ToolRegistry、统一 `/mcp` 与 autoStart 生命周期。
