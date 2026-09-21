@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 修复 UpstreamManager 测试 teardown 与异步日志写入的竞争，删除临时目录前先 flush logger。
+
+
 - 恢复可测试的 `createGatewayProtocolServer` 工厂，并让 HTTP GatewayServer 复用同一协议构造逻辑。
 - 修复 CI 中 gateway protocol test 因重构后导出缺失导致的失败。
 

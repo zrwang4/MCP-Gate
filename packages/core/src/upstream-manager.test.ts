@@ -10,8 +10,9 @@ import { UpstreamManager, type UpstreamClient } from "./upstream-manager.ts";
 
 test("upstream manager connects, caches tools, and routes calls", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
   try {
-    const logger = new CoreLogger(join(dir, "core.jsonl"));
+    logger = new CoreLogger(join(dir, "core.jsonl"));
     await logger.init();
 
     const servers = new ServerRegistry(join(dir, "servers.json"), logger);
@@ -54,6 +55,7 @@ test("upstream manager connects, caches tools, and routes calls", async () => {
     await upstreams.disconnect(config.id);
     assert.equal(tools.list().length, 0);
   } finally {
+    await logger?.flush();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -61,8 +63,9 @@ test("upstream manager connects, caches tools, and routes calls", async () => {
 
 test("upstream manager auto-connects autoStart configurations only", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
   try {
-    const logger = new CoreLogger(join(dir, "core.jsonl"));
+    logger = new CoreLogger(join(dir, "core.jsonl"));
     await logger.init();
 
     const servers = new ServerRegistry(join(dir, "servers.json"), logger);
@@ -108,6 +111,7 @@ test("upstream manager auto-connects autoStart configurations only", async () =>
     assert.equal(upstreams.list().find((item) => item.id === auto.id)?.status, "running");
     assert.equal(upstreams.list().find((item) => item.id === manual.id)?.status, "configured");
   } finally {
+    await logger?.flush();
     await rm(dir, { recursive: true, force: true });
   }
 });
