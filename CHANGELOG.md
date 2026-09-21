@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- macOS 桌面端新增系统托盘：可打开 MCP Gate、重启 Core、退出应用。
+- 主窗口关闭行为改为隐藏到托盘，后台 Gateway/Core 保持运行。
+- 新增 Tauri autostart plugin，支持 macOS LaunchAgent 登录时自动启动。
+- 前端通过自有 Tauri command 读取/切换 autostart，不直接暴露插件 JS 权限。
+- 桌面设置区新增“登录时自动启动”和托盘状态。
+
+
 - 补充临时 Tauri `icons/icon.png`，解除 `generate_context!()` 在 Rust CI 中对默认图标的硬依赖。
 - pnpm 显式允许 `@github/keytar` install script，确保 macOS Keychain native prebuild 正常安装。
 - CoreSupervisor 启动 Node Core 时工作目录修正为 monorepo root。

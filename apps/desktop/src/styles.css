@@ -806,3 +806,55 @@ footer {
     color: #aaa;
   }
 }
+
+.settingsList {
+  display: grid;
+  gap: 8px;
+}
+
+.settingsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 15px;
+  border: 1px solid rgba(0,0,0,.07);
+  border-radius: 13px;
+  background: rgba(255,255,255,.68);
+}
+
+.settingsRow > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settingsRow strong {
+  font-size: 13px;
+}
+
+.settingsRow span {
+  color: #858580;
+  font-size: 11px;
+}
+
+.settingsStatus {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(34,160,107,.10);
+  color: #197653 !important;
+  font-weight: 700;
+}
+
+@media (prefers-color-scheme: dark) {
+  .settingsRow {
+    background: rgba(32,32,30,.78);
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .settingsStatus {
+    color: #82d7b2 !important;
+    background: rgba(34,160,107,.16);
+  }
+}

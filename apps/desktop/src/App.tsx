@@ -7,6 +7,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Settings2,
   Square,
   Terminal,
   Trash2,
@@ -183,6 +184,8 @@ export function App() {
   const [managementConnected, setManagementConnected] = useState(false);
   const [coreRuntime, setCoreRuntime] = useState<CoreRuntimeStatus | null>(null);
   const [coreRestarting, setCoreRestarting] = useState(false);
+  const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null);
+  const [autostartBusy, setAutostartBusy] = useState(false);
   const [showAddServer, setShowAddServer] = useState(false);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [newServerName, setNewServerName] = useState("");
@@ -199,6 +202,17 @@ export function App() {
   const [testToolResult, setTestToolResult] = useState("");
   const [testToolBusy, setTestToolBusy] = useState(false);
   const logPanelRef = useRef<HTMLDivElement | null>(null);
+
+  const refreshDesktopPreferences = useCallback(async () => {
+    if (!IS_TAURI) return;
+
+    try {
+      const enabled = await invoke<boolean>("autostart_enabled");
+      setAutostartEnabled(enabled);
+    } catch {
+      setAutostartEnabled(null);
+    }
+  }, []);
 
   const refreshCoreRuntime = useCallback(async () => {
     if (!IS_TAURI) return;
@@ -232,8 +246,9 @@ export function App() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       void refreshCoreRuntime();
+      void refreshDesktopPreferences();
     }
-  }, [refreshCoreRuntime]);
+  }, [refreshCoreRuntime, refreshDesktopPreferences]);
 
   useEffect(() => {
     void refresh();
@@ -263,6 +278,23 @@ export function App() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setCoreRestarting(false);
+    }
+  }
+
+  async function toggleAutostart() {
+    if (!IS_TAURI || autostartBusy || autostartEnabled === null) return;
+
+    setAutostartBusy(true);
+    setError(null);
+    try {
+      const enabled = await invoke<boolean>("set_autostart", {
+        enabled: !autostartEnabled,
+      });
+      setAutostartEnabled(enabled);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAutostartBusy(false);
     }
   }
 
@@ -740,6 +772,47 @@ export function App() {
         </div>
       </section>
 
+      <section className="section">
+        <div className="sectionTitle">
+          <div>
+            <h2>桌面设置</h2>
+            <p>窗口关闭后会隐藏到系统托盘，Core 会继续运行。</p>
+          </div>
+          <Settings2 size={16} />
+        </div>
+
+        <div className="settingsList">
+          <div className="settingsRow">
+            <div>
+              <strong>登录时自动启动</strong>
+              <span>使用 macOS LaunchAgent 启动 MCP Gate。</span>
+            </div>
+            <button
+              className={`toolToggle ${autostartEnabled ? "enabled" : ""}`}
+              disabled={!IS_TAURI || autostartBusy || autostartEnabled === null}
+              onClick={() => void toggleAutostart()}
+              aria-pressed={autostartEnabled === true}
+            >
+              {!IS_TAURI
+                ? "仅桌面版"
+                : autostartBusy
+                  ? "处理中…"
+                  : autostartEnabled
+                    ? "已开启"
+                    : "已关闭"}
+            </button>
+          </div>
+
+          <div className="settingsRow">
+            <div>
+              <strong>系统托盘</strong>
+              <span>托盘菜单可打开窗口、重启 Core 或退出 MCP Gate。</span>
+            </div>
+            <span className="settingsStatus">{IS_TAURI ? "已启用" : "仅桌面版"}</span>
+          </div>
+        </div>
+      </section>
+
       {showAddServer && (
         <div className="modalBackdrop" role="presentation" onMouseDown={() => {
           setShowAddServer(false);
@@ -897,8 +970,8 @@ export function App() {
       )}
 
       <footer>
-        <span><Activity size={12} /> MG-010</span>
-        <span>统一 /mcp · Desktop Core Supervisor · Tool 管理</span>
+        <span><Activity size={12} /> MG-018</span>
+        <span>统一 /mcp · Tray · Autostart · Core Supervisor</span>
       </footer>
     </main>
   );
