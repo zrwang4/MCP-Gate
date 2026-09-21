@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 修复 AuditLogger options 误传给 GatewayAccessController、未传给 UpstreamManager 的接线错误。
+
+
 - 新增独立 Tool 调用审计日志 `~/Library/Logs/MCP Gate/audit.jsonl`，与 Core 运行日志分离。
 - 审计只记录 public Tool、upstream 路由、调用来源、耗时、成功/失败和脱敏后的错误，不记录 arguments 或 result。
 - 正常 MCP 客户端调用标记为 `gateway`，桌面 Tool 测试器调用标记为 `tester`。

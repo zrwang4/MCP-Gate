@@ -36,7 +36,6 @@ async function main(): Promise<void> {
     config.gatewayAccessFile,
     secrets,
     logger,
-    { audit },
   );
   await gatewayAccess.init();
   const upstreams = new UpstreamManager(
@@ -47,6 +46,7 @@ async function main(): Promise<void> {
         ? new HttpUpstreamClient(serverConfig, secrets)
         : new StdioUpstreamClient(serverConfig, secrets),
     logger,
+    { audit },
   );
   upstreams.syncConfigs();
   const gateway = new GatewayServer(
