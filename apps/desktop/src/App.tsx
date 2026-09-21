@@ -174,6 +174,8 @@ export function App() {
   const [testToolArgs, setTestToolArgs] = useState("{}");
   const [testToolResult, setTestToolResult] = useState("");
   const [testToolBusy, setTestToolBusy] = useState(false);
+  const [toolSearch, setToolSearch] = useState("");
+  const [toolPage, setToolPage] = useState(1);
   const logPanelRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback(async () => {
@@ -413,6 +415,29 @@ export function App() {
     [logs, logLevel],
   );
 
+  const toolPageSize = 20;
+  const filteredTools = useMemo(() => {
+    const query = toolSearch.trim().toLowerCase();
+    if (!query) return tools;
+    return tools.filter(
+      (tool) =>
+        tool.publicName.toLowerCase().includes(query) ||
+        tool.serverAlias.toLowerCase().includes(query) ||
+        tool.definition.description?.toLowerCase().includes(query),
+    );
+  }, [tools, toolSearch]);
+
+  const totalToolPages = Math.max(1, Math.ceil(filteredTools.length / toolPageSize));
+  const safeToolPage = Math.min(toolPage, totalToolPages);
+  const pagedTools = useMemo(() => {
+    const start = (safeToolPage - 1) * toolPageSize;
+    return filteredTools.slice(start, start + toolPageSize);
+  }, [filteredTools, safeToolPage]);
+
+  useEffect(() => {
+    setToolPage(1);
+  }, [toolSearch]);
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -585,49 +610,78 @@ export function App() {
             <h2>Tools</h2>
             <p>只有启用的 Tool 会出现在统一 /mcp 的 tools/list</p>
           </div>
-          <span>{enabledToolCount}/{tools.length} 已启用</span>
+          <div className="toolToolbar">
+            <input
+              className="toolSearch"
+              value={toolSearch}
+              onChange={(event) => setToolSearch(event.target.value)}
+              placeholder="搜索工具名、来源或描述..."
+            />
+            <span className="toolCount">{filteredTools.length} 个工具</span>
+          </div>
         </div>
 
-        {tools.length === 0 ? (
+        {filteredTools.length === 0 ? (
           <div className="emptyState compact">
-            <span>连接一个 MCP 后，这里会显示它暴露的 Tools。</span>
+            <span>{tools.length === 0 ? "连接一个 MCP 后，这里会显示它暴露的 Tools。" : "没有匹配的 Tools。"}</span>
           </div>
         ) : (
-          <div className="toolList">
-            {tools.map((tool) => {
-              const changing = busy === `tool:${tool.publicName}`;
-              return (
-                <article className="toolRow" key={tool.publicName}>
-                  <div className="toolInfo">
-                    <div>
-                      <code>{tool.publicName}</code>
-                      <span className="toolSource">{tool.serverAlias}</span>
+          <>
+            <div className="toolList">
+              {pagedTools.map((tool) => {
+                const changing = busy === `tool:${tool.publicName}`;
+                return (
+                  <article className="toolRow" key={tool.publicName}>
+                    <div className="toolInfo">
+                      <div>
+                        <code>{tool.publicName}</code>
+                        <span className="toolSource">{tool.serverAlias}</span>
+                      </div>
+                      {tool.definition.description && (
+                        <p>{tool.definition.description}</p>
+                      )}
                     </div>
-                    {tool.definition.description && (
-                      <p>{tool.definition.description}</p>
-                    )}
-                  </div>
-                  <div className="toolActions">
-                    <button
-                      className="actionButton"
-                      disabled={!tool.enabled || changing}
-                      onClick={() => openToolTester(tool)}
-                    >
-                      测试
-                    </button>
-                    <button
-                    className={`toolToggle ${tool.enabled ? "enabled" : ""}`}
-                    disabled={changing}
-                    onClick={() => void toggleTool(tool)}
-                    aria-pressed={tool.enabled}
-                  >
-                    {tool.enabled ? "已启用" : "已禁用"}
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+                    <div className="toolActions">
+                      <button
+                        className="actionButton"
+                        disabled={!tool.enabled || changing}
+                        onClick={() => openToolTester(tool)}
+                      >
+                        测试
+                      </button>
+                      <button
+                        className={`toolToggle ${tool.enabled ? "enabled" : ""}`}
+                        disabled={changing}
+                        onClick={() => void toggleTool(tool)}
+                        aria-pressed={tool.enabled}
+                      >
+                        {tool.enabled ? "已启用" : "已禁用"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="pagination">
+              <button
+                className="ghostButton"
+                disabled={safeToolPage <= 1}
+                onClick={() => setToolPage((page) => page - 1)}
+              >
+                上一页
+              </button>
+              <span>
+                {safeToolPage} / {totalToolPages}
+              </span>
+              <button
+                className="ghostButton"
+                disabled={safeToolPage >= totalToolPages}
+                onClick={() => setToolPage((page) => page + 1)}
+              >
+                下一页
+              </button>
+            </div>
+          </>
         )}
       </section>
 

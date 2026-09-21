@@ -416,6 +416,20 @@ footer {
     color: #f2f2f0;
   }
 
+  .toolSearch {
+    background: #2c2c29;
+    border-color: rgba(255,255,255,.1);
+    color: #f2f2f0;
+  }
+
+  .toolCount {
+    color: #aaa;
+  }
+
+  .pagination {
+    color: #aaa;
+  }
+
   .serverIcon { background: #2e2e2b; color: #d6d6d2; }
   .pill.running { color: #6ee3a8; background: rgba(34,160,107,.16); }
   .pill.starting,
@@ -624,6 +638,40 @@ footer {
 .toolList {
   display: grid;
   gap: 6px;
+}
+
+.toolToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.toolSearch {
+  font: inherit;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,.1);
+  background: #fff;
+  color: #151515;
+  padding: 5px 10px;
+  min-width: 180px;
+  max-width: 260px;
+}
+
+.toolCount {
+  font-size: 12px;
+  color: #888;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #888;
 }
 
 .toolRow {
