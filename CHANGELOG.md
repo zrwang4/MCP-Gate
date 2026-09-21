@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 保存前连接测试新增 Core 侧硬超时：connect 默认 60 秒，tools/list 默认 20 秒。
+- 超时后 Core 主动 disconnect 临时 client，不依赖 WebView 的 fetch abort 来回收 stdio 子进程或 HTTP session。
+- 新增可注入超时配置用于单元测试，并覆盖 connect 永久挂起时的主动断开路径。
+
+
 - 统一 `/mcp` 新增可选 Gateway API Key，默认关闭；开启后要求 `Authorization: Bearer <key>`。
 - API Key 明文只在启用/轮换时返回一次，持久化仅保存 Keychain opaque Secret ID。
 - Gateway Access 配置存放于 `gateway-access.json`；Keychain Secret 缺失时 fail closed，`/mcp` 返回 503 而不是静默放开。

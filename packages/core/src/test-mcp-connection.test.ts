@@ -74,7 +74,7 @@ test("connection test reuses existing stdio secret without persisting changes", 
       registry,
       secrets,
       logger,
-      factory,
+      { factory },
     );
 
     assert.equal(result.toolCount, 2);
@@ -157,7 +157,7 @@ test("connection test reuses existing HTTP authorization", async () => {
       registry,
       secrets,
       logger,
-      factory,
+      { factory },
     );
 
     assert.equal(result.transport, "http");
@@ -198,6 +198,63 @@ test("connection test rejects a missing new secret value", async () => {
       ),
       /secret environment value is required for API_TOKEN/,
     );
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+
+test("connection test timeout disconnects the temporary client", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-test-connection-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const registry = new ServerRegistry(
+      join(dir, "servers.json"),
+      logger,
+    );
+    await registry.init();
+
+    let disconnected = false;
+    const factory: ConnectionTestClientFactory = () => ({
+      async connect() {
+        await new Promise<void>(() => undefined);
+      },
+      async disconnect() {
+        disconnected = true;
+      },
+      async listTools() {
+        return [];
+      },
+      async callTool() {
+        return {
+          content: [{ type: "text" as const, text: "ok" }],
+        };
+      },
+    });
+
+    await assert.rejects(
+      testMcpConnection(
+        {
+          transport: "stdio",
+          command: "fake",
+        },
+        registry,
+        new MemorySecretStore(),
+        logger,
+        {
+          factory,
+          connectTimeoutMs: 5,
+          listToolsTimeoutMs: 5,
+        },
+      ),
+      /MCP connection timed out after 5ms/,
+    );
+
+    assert.equal(disconnected, true);
   } finally {
     await logger?.flush();
     await rm(dir, { recursive: true, force: true });

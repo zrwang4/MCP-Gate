@@ -39,12 +39,21 @@ export type ConnectionTestClientFactory = (
   secrets: SecretStore,
 ) => Promise<UpstreamClient> | UpstreamClient;
 
+export interface McpConnectionTestOptions {
+  factory?: ConnectionTestClientFactory;
+  connectTimeoutMs?: number;
+  listToolsTimeoutMs?: number;
+}
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 60_000;
+const DEFAULT_LIST_TOOLS_TIMEOUT_MS = 20_000;
+
 export async function testMcpConnection(
   input: McpConnectionTestInput,
   registry: ServerRegistry,
   persistentSecrets: SecretStore,
   logger: CoreLogger,
-  factory: ConnectionTestClientFactory = createTestClient,
+  options: McpConnectionTestOptions = {},
 ): Promise<McpConnectionTestResult> {
   const startedAt = Date.now();
   const serverId =
@@ -82,10 +91,28 @@ export async function testMcpConnection(
     );
   }
 
-  const client = await factory(config, temporarySecrets);
+  const client = await (options.factory ?? createTestClient)(
+    config,
+    temporarySecrets,
+  );
+  const connectTimeoutMs =
+    options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+  const listToolsTimeoutMs =
+    options.listToolsTimeoutMs ?? DEFAULT_LIST_TOOLS_TIMEOUT_MS;
+
   try {
-    await client.connect();
-    const tools = await client.listTools();
+    await withTimeout(
+      client.connect(),
+      connectTimeoutMs,
+      `MCP connection timed out after ${connectTimeoutMs}ms`,
+      () => client.disconnect(),
+    );
+    const tools = await withTimeout(
+      client.listTools(),
+      listToolsTimeoutMs,
+      `MCP tools/list timed out after ${listToolsTimeoutMs}ms`,
+      () => client.disconnect(),
+    );
     const result: McpConnectionTestResult = {
       transport,
       toolCount: tools.length,
@@ -397,4 +424,46 @@ function validateHttpUrl(value: unknown): string {
     throw new Error("url must use http or https");
   }
   return url.toString();
+}
+
+
+async function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  message: string,
+  onTimeout: () => Promise<void>,
+): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("timeout must be a positive number");
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(message));
+      void onTimeout().catch(() => undefined);
+    }, timeoutMs);
+
+    const unrefTimer = timer as ReturnType<typeof setTimeout> & {
+      unref?: () => void;
+    };
+    unrefTimer.unref?.();
+
+    operation.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
