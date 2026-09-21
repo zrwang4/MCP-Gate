@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   FileText,
+  Layers3,
   Pencil,
   Play,
   Plus,
@@ -50,6 +51,26 @@ interface ServerConfigInfo {
   hasAuthorization?: boolean;
   enabled: boolean;
   autoStart: boolean;
+}
+
+interface ProfileInfo {
+  id: string;
+  name: string;
+  serverIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ProfileApplyFailure {
+  serverId: string;
+  error: string;
+}
+
+interface ProfileApplyResult {
+  connected: string[];
+  disconnected: string[];
+  alreadyRunning: string[];
+  failed: ProfileApplyFailure[];
 }
 
 interface ToolInfo {
@@ -225,6 +246,8 @@ export function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [serverConfigs, setServerConfigs] = useState<ServerConfigInfo[]>([]);
   const [upstreams, setUpstreams] = useState<UpstreamInfo[]>([]);
+  const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -236,6 +259,11 @@ export function App() {
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null);
   const [autostartBusy, setAutostartBusy] = useState(false);
   const [showAddServer, setShowAddServer] = useState(false);
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState("");
+  const [profileServerIds, setProfileServerIds] = useState<string[]>([]);
+  const [profileBusy, setProfileBusy] = useState(false);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [newServerName, setNewServerName] = useState("");
   const [newServerTransport, setNewServerTransport] = useState<"stdio" | "http">("stdio");
@@ -278,16 +306,19 @@ export function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [statusResult, configsResult, upstreamsResult, toolsResult, logsResult] = await Promise.all([
+      const [statusResult, configsResult, upstreamsResult, profilesResult, toolsResult, logsResult] = await Promise.all([
         api<StatusResponse>("/api/status"),
         api<{ servers: ServerConfigInfo[] }>("/api/server-configs"),
         api<{ upstreams: UpstreamInfo[] }>("/api/upstreams"),
+        api<{ profiles: ProfileInfo[]; activeProfileId: string | null }>("/api/profiles"),
         api<{ tools: ToolInfo[] }>("/api/tools"),
         api<{ entries: LogEntry[] }>("/api/logs?limit=250"),
       ]);
       setStatus(statusResult);
       setServerConfigs(configsResult.servers);
       setUpstreams(upstreamsResult.upstreams);
+      setProfiles(profilesResult.profiles);
+      setActiveProfileId(profilesResult.activeProfileId);
       setTools(toolsResult.tools);
       setLogs(logsResult.entries);
       setManagementConnected(true);
@@ -353,6 +384,106 @@ export function App() {
     await navigator.clipboard.writeText(gatewayUrl);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  function openCreateProfile() {
+    setEditingProfileId(null);
+    setProfileName("");
+    setProfileServerIds([]);
+    setShowProfileEditor(true);
+  }
+
+  function openEditProfile(profile: ProfileInfo) {
+    setEditingProfileId(profile.id);
+    setProfileName(profile.name);
+    setProfileServerIds([...profile.serverIds]);
+    setShowProfileEditor(true);
+  }
+
+  function toggleProfileServer(serverId: string) {
+    setProfileServerIds((current) =>
+      current.includes(serverId)
+        ? current.filter((id) => id !== serverId)
+        : [...current, serverId],
+    );
+  }
+
+  async function saveProfile() {
+    setProfileBusy(true);
+    setError(null);
+    try {
+      await api(
+        editingProfileId ? `/api/profiles/${editingProfileId}` : "/api/profiles",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: profileName,
+            serverIds: profileServerIds,
+          }),
+        },
+      );
+      setShowProfileEditor(false);
+      setEditingProfileId(null);
+      setProfileName("");
+      setProfileServerIds([]);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function profileAction(
+    profileId: string,
+    action: "activate" | "deactivate",
+  ) {
+    setBusy(`profile:${profileId}:${action}`);
+    setError(null);
+    try {
+      const response = await api<{
+        activeProfileId: string | null;
+        result: ProfileApplyResult;
+      }>(
+        `/api/profiles/${profileId}/${action}`,
+        {
+          method: "POST",
+          body: "{}",
+        },
+        120_000,
+      );
+
+      setActiveProfileId(response.activeProfileId);
+      if (response.result.failed.length > 0) {
+        setError(
+          `Profile 已应用，但有 ${response.result.failed.length} 个 MCP 失败：${response.result.failed
+            .map((item) => {
+              const server = serverConfigs.find((server) => server.id === item.serverId);
+              return `${server?.name ?? item.serverId}: ${item.error}`;
+            })
+            .join("；")}`,
+        );
+      }
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeProfile(profileId: string) {
+    setProfileBusy(true);
+    setError(null);
+    try {
+      await api(`/api/profiles/${profileId}`, { method: "DELETE" });
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setProfileBusy(false);
+    }
   }
 
   function openCreateServer() {
@@ -821,6 +952,100 @@ export function App() {
       <section className="section">
         <div className="sectionTitle">
           <div>
+            <h2>Profiles</h2>
+            <p>按场景保存一组 MCP，激活时精确切换运行集合</p>
+          </div>
+          <button className="secondaryButton" onClick={openCreateProfile}>
+            <Plus size={14} /> 新建 Profile
+          </button>
+        </div>
+
+        {profiles.length === 0 ? (
+          <div className="emptyState compact">
+            <Layers3 size={19} />
+            <span>还没有 Profile。可以创建“Coding”“Research”等场景。</span>
+          </div>
+        ) : (
+          <div className="profileGrid">
+            {profiles.map((profile) => {
+              const active = activeProfileId === profile.id;
+              const changing = busy?.startsWith(`profile:${profile.id}:`) ?? false;
+              const memberServers = profile.serverIds
+                .map((id) => serverConfigs.find((server) => server.id === id))
+                .filter((server): server is ServerConfigInfo => Boolean(server));
+              const runningMembers = profile.serverIds.filter(
+                (id) => upstreams.find((upstream) => upstream.id === id)?.status === "running",
+              ).length;
+
+              return (
+                <article className={`profileCard ${active ? "active" : ""}`} key={profile.id}>
+                  <div className="profileHeader">
+                    <div>
+                      <div className="profileNameRow">
+                        <Layers3 size={16} />
+                        <strong>{profile.name}</strong>
+                        {active && <span className="pill running">当前</span>}
+                      </div>
+                      <span>{runningMembers}/{profile.serverIds.length} 个成员运行中</span>
+                    </div>
+                    <div className="profileActions">
+                      <button
+                        className={`actionButton ${active ? "" : "primary"}`}
+                        disabled={changing}
+                        onClick={() => void profileAction(
+                          profile.id,
+                          active ? "deactivate" : "activate",
+                        )}
+                      >
+                        {active ? <Square size={14} /> : <Play size={14} />}
+                        {active ? "停用" : "激活"}
+                      </button>
+                      <button
+                        className="actionButton"
+                        disabled={profileBusy || changing}
+                        onClick={() => openEditProfile(profile)}
+                      >
+                        <Pencil size={14} /> 编辑
+                      </button>
+                      <button
+                        className="actionButton danger"
+                        disabled={profileBusy || changing}
+                        onClick={() => void removeProfile(profile.id)}
+                      >
+                        <Trash2 size={14} /> 删除
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="profileMembers">
+                    {memberServers.length === 0 ? (
+                      <span className="profileEmpty">空 Profile：激活后会断开所有 MCP。</span>
+                    ) : (
+                      memberServers.map((server) => {
+                        const running =
+                          upstreams.find((upstream) => upstream.id === server.id)?.status === "running";
+                        return (
+                          <span
+                            className={`profileMember ${running ? "running" : ""} ${server.enabled ? "" : "disabled"}`}
+                            key={server.id}
+                          >
+                            {server.name}
+                            {!server.enabled ? " · 禁用" : running ? " · 运行中" : ""}
+                          </span>
+                        );
+                      })
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="section">
+        <div className="sectionTitle">
+          <div>
             <h2>Tools</h2>
             <p>只有启用的 Tool 会出现在统一 /mcp 的 tools/list</p>
           </div>
@@ -964,6 +1189,92 @@ export function App() {
           </div>
         </div>
       </section>
+
+      {showProfileEditor && (
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => {
+          setShowProfileEditor(false);
+          setEditingProfileId(null);
+        }}>
+          <section
+            className="modalCard"
+            role="dialog"
+            aria-modal="true"
+            aria-label={editingProfileId ? "编辑 Profile" : "新建 Profile"}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modalHeader">
+              <div>
+                <h2>{editingProfileId ? "编辑 Profile" : "新建 Profile"}</h2>
+                <p>激活后，只保留选中的 MCP 运行；未选中的已连接 MCP 会被断开。</p>
+              </div>
+              <button
+                className="iconButton"
+                onClick={() => {
+                  setShowProfileEditor(false);
+                  setEditingProfileId(null);
+                }}
+                aria-label="关闭"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <label className="field">
+              <span>名称</span>
+              <input
+                value={profileName}
+                onChange={(event) => setProfileName(event.target.value)}
+                placeholder="例如 Coding"
+              />
+            </label>
+
+            <div className="profilePicker">
+              <span className="profilePickerTitle">MCP 成员</span>
+              {serverConfigs.length === 0 ? (
+                <div className="emptyState compact">
+                  <span>先添加 MCP，再创建 Profile。</span>
+                </div>
+              ) : (
+                serverConfigs.map((server) => (
+                  <label className="profilePickerRow" key={server.id}>
+                    <input
+                      type="checkbox"
+                      checked={profileServerIds.includes(server.id)}
+                      onChange={() => toggleProfileServer(server.id)}
+                    />
+                    <div>
+                      <strong>{server.name}</strong>
+                      <span>
+                        {server.transport.toUpperCase()} · {server.alias}
+                        {!server.enabled ? " · 已禁用" : ""}
+                      </span>
+                    </div>
+                  </label>
+                ))
+              )}
+            </div>
+
+            <div className="modalActions">
+              <button
+                className="secondaryButton"
+                onClick={() => {
+                  setShowProfileEditor(false);
+                  setEditingProfileId(null);
+                }}
+              >
+                取消
+              </button>
+              <button
+                className="actionButton primary"
+                disabled={profileBusy || !profileName.trim()}
+                onClick={() => void saveProfile()}
+              >
+                {profileBusy ? "保存中…" : editingProfileId ? "保存修改" : "创建 Profile"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {showAddServer && (
         <div className="modalBackdrop" role="presentation" onMouseDown={() => {
@@ -1144,8 +1455,8 @@ export function App() {
       )}
 
       <footer>
-        <span><Activity size={12} /> MG-018</span>
-        <span>统一 /mcp · Tray · Autostart · Single Instance</span>
+        <span><Activity size={12} /> Profiles</span>
+        <span>统一 /mcp · Profiles · Recovery · Secure Secrets</span>
       </footer>
     </main>
   );

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 桌面端新增 Profiles 管理区：创建、编辑、删除、激活、停用 Profile。
+- Profile 编辑器用复选框选择 MCP 成员，并显示禁用状态。
+- Profile 卡片显示当前 active 状态、成员运行数和各成员运行状态。
+- 激活操作显示部分失败信息；空 Profile 可作为“一键断开全部 MCP”的场景。
+- 前端轮询同步 activeProfileId，Core 重启恢复后 UI 会自动显示当前 Profile。
+
+
 - 新增 Profiles 持久化到 `~/Library/Application Support/MCP Gate/profiles.json`。
 - Profile 保存一组 MCP Server ID；激活 Profile 会把运行集合精确切换到该组，停用会断开该组成员。
 - 当前 active Profile 持久化；Core 重启时优先恢复 active Profile，没有 active Profile 时才执行各 Server 的 autoStart。

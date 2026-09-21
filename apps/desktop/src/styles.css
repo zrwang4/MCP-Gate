@@ -887,3 +887,155 @@ footer {
     color: #e0b85d;
   }
 }
+
+.profileGrid {
+  display: grid;
+  gap: 9px;
+}
+
+.profileCard {
+  padding: 14px;
+  border: 1px solid rgba(0,0,0,.07);
+  border-radius: 14px;
+  background: rgba(255,255,255,.68);
+}
+
+.profileCard.active {
+  border-color: rgba(34,160,107,.28);
+  box-shadow: 0 0 0 3px rgba(34,160,107,.06);
+}
+
+.profileHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.profileHeader > div:first-child {
+  min-width: 0;
+}
+
+.profileHeader > div:first-child > span {
+  display: block;
+  margin-top: 4px;
+  color: #858580;
+  font-size: 11px;
+}
+
+.profileNameRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.profileNameRow strong {
+  font-size: 13px;
+}
+
+.profileActions {
+  display: flex;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.profileMembers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.profileMember {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.05);
+  color: #6f6f6a;
+  font-size: 10px;
+}
+
+.profileMember.running {
+  color: #137853;
+  background: rgba(34,160,107,.10);
+}
+
+.profileMember.disabled {
+  opacity: .55;
+}
+
+.profileEmpty {
+  color: #858580;
+  font-size: 11px;
+}
+
+.profilePicker {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+}
+
+.profilePickerTitle {
+  color: #62625f;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.profilePickerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 11px;
+  background: rgba(255,255,255,.65);
+  cursor: pointer;
+}
+
+.profilePickerRow input {
+  margin: 0;
+}
+
+.profilePickerRow > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.profilePickerRow strong {
+  font-size: 12px;
+}
+
+.profilePickerRow span {
+  color: #858580;
+  font-size: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .profileCard,
+  .profilePickerRow {
+    background: rgba(30,30,28,.78);
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .profileCard.active {
+    border-color: rgba(34,160,107,.30);
+    box-shadow: 0 0 0 3px rgba(34,160,107,.08);
+  }
+
+  .profileHeader > div:first-child > span,
+  .profilePickerRow span,
+  .profileEmpty,
+  .profilePickerTitle {
+    color: #999;
+  }
+
+  .profileMember {
+    color: #aaa;
+    background: rgba(255,255,255,.06);
+  }
+
+  .profileMember.running {
+    color: #6ee3a8;
+    background: rgba(34,160,107,.15);
+  }
+}
