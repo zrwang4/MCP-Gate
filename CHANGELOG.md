@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 修复 production runtime 的 .gitignore 规则被误写为字面量 `\\n`，确保 Node sidecar 与 staged Core resources 不会被误提交。
+
+
 - macOS 登录自启改为静默模式：LaunchAgent 传入 `--hidden`，启动后仅驻留托盘，不弹主窗口。
 - 用户手动启动仍正常显示窗口；托盘“打开”或第二实例会重新 show/unminimize/focus。
 - Tray 增加 macOS 菜单栏标题 `MCP`，在正式图标落地前确保托盘入口可见。
