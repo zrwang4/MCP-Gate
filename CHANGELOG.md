@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 修复 Desktop typecheck 缺少 Vite ImportMetaEnv 类型导致的 `import.meta.env` 编译错误。
+
+
 - 导入弹窗新增本机配置自动发现，可直接预览并导入 Cursor 全局配置和 Claude Desktop 本地配置。
 - 本机 Source 模式不把原始 JSON 或 Secret 值传给 WebView；UI 只显示固定的 ~ 路径、存在状态和脱敏 Preview。
 - Source Preview 与 Apply 增加 modifiedAt 一致性校验；文件在预览后发生变化时拒绝导入并要求重新预览。
