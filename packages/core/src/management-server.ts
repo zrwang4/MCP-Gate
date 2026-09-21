@@ -21,6 +21,7 @@ import type { HttpServerConfig, McpServerConfig, ServerRegistry } from "./server
 import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
+import { testMcpConnection } from "./test-mcp-connection.ts";
 import type { ToolRegistry } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
@@ -685,6 +686,29 @@ export class ManagementServer {
       return;
     }
 
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/server-configs/test-connection"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req, 256 * 1024);
+        const result = await testMcpConnection(
+          body as Record<string, unknown>,
+          this.#registry,
+          this.#secrets,
+          this.#logger,
+        );
+        json(res, 200, { result });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
 
     if (req.method === "POST" && url.pathname === "/api/server-configs") {
       if (!requireDesktopClient(req, res)) return;

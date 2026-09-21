@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 新增 MCP 保存前连接测试服务：使用内存配置完成 connect + tools/list + disconnect，不写入 Server Registry。
+- 编辑 stdio MCP 时，Secret 输入留空可复用现有 Keychain 值进行测试；新 Secret 仍必须提供值。
+- 编辑 HTTP MCP 时，Authorization 留空可复用现有 Keychain 值；勾选清除时按无鉴权测试。
+- 新增 `POST /api/server-configs/test-connection`，成功返回 transport、Tool 数量、最多 50 个 Tool 名称和耗时。
+- 测试日志只记录 transport、Tool 数和耗时，不记录 command、URL、env 或 Secret。
+- 新增 stdio Secret 复用、HTTP Authorization 复用和缺失新 Secret 的单元测试。
+
+
 - 新增受 Management Token 保护的 `GET /api/diagnostics`，生成结构化诊断快照。
 - 诊断快照包含 Core/Gateway、Profiles、MCP 状态、Tools 和最近 warn/error 日志。
 - 默认不导出 Keychain Secret、Secret ID、普通 env 值或完整 stdio args。
