@@ -53,6 +53,7 @@ export class GatewayServer {
   #logger: CoreLogger;
   #server: HttpServer | null = null;
   #handler: ReturnType<typeof createMcpHandler> | null = null;
+  #unsubscribeToolChanges: (() => void) | null = null;
   #status: "starting" | "running" | "stopping" | "stopped" | "error" = "stopped";
   #lastError: string | null = null;
 
@@ -134,6 +135,14 @@ export class GatewayServer {
 
       this.#server = server;
       this.#handler = handler;
+      this.#unsubscribeToolChanges = this.#tools.onChanged(() => {
+        Promise.resolve(handler.notify.toolsChanged()).catch((error) => {
+          this.#logger.warn(
+            "gateway",
+            `failed to publish tools/list_changed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      });
       this.#status = "running";
       this.#logger.info(
         "gateway",
@@ -149,6 +158,11 @@ export class GatewayServer {
 
   async stop(): Promise<void> {
     if (this.#status !== "stopped") this.#status = "stopping";
+
+    const unsubscribeToolChanges = this.#unsubscribeToolChanges;
+    this.#unsubscribeToolChanges = null;
+    unsubscribeToolChanges?.();
+
     const server = this.#server;
     this.#server = null;
 

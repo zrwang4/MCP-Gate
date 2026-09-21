@@ -60,3 +60,33 @@ test("tool registry preserves enabled state when a server refreshes tools", () =
     true,
   );
 });
+
+test("tool registry emits change events only for observable changes", () => {
+  const registry = new ToolRegistry();
+  let changed = 0;
+  const unsubscribe = registry.onChanged(() => {
+    changed += 1;
+  });
+
+  registry.replaceServerTools("srv-1", "git", [{ name: "status" }]);
+  assert.equal(changed, 1);
+
+  registry.setEnabled("git__status", false);
+  assert.equal(changed, 2);
+
+  registry.setEnabled("git__status", false);
+  assert.equal(changed, 2);
+
+  registry.removeServer("missing");
+  assert.equal(changed, 2);
+
+  registry.removeServer("srv-1");
+  assert.equal(changed, 3);
+
+  registry.clear();
+  assert.equal(changed, 3);
+
+  unsubscribe();
+  registry.replaceServerTools("srv-2", "db", [{ name: "query" }]);
+  assert.equal(changed, 3);
+});

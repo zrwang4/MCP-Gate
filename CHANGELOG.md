@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- ToolRegistry 新增变更事件；upstream Tools、Tool 开关或 Server 移除时只在实际列表变化时触发。
+- GatewayServer 订阅 ToolRegistry 变化，并通过 `handler.notify.toolsChanged()` 向已订阅客户端发布 `notifications/tools/list_changed`。
+- Gateway 停止时自动取消 ToolRegistry 订阅，避免重复通知和泄漏。
+- 新增 ToolRegistry change event 单元测试。
+
+
 - 修复 UpstreamManager test fake client 返回值不符合 MCP SDK v2 `CallToolResult` 类型导致的 typecheck 失败。
 
 

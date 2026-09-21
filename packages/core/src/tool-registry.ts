@@ -6,6 +6,8 @@ export interface McpToolDefinition {
   inputSchema?: unknown;
 }
 
+export type ToolRegistryListener = () => void;
+
 export interface ToolRoute {
   publicName: string;
   serverId: string;
@@ -18,9 +20,17 @@ export interface ToolRoute {
 export class ToolRegistry {
   #routes = new Map<string, ToolRoute>();
   #policy: ToolPolicyStore | null;
+  #listeners = new Set<ToolRegistryListener>();
 
   constructor(policy?: ToolPolicyStore) {
     this.#policy = policy ?? null;
+  }
+
+  onChanged(listener: ToolRegistryListener): () => void {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
   }
 
   replaceServerTools(
@@ -28,13 +38,14 @@ export class ToolRegistry {
     serverAlias: string,
     tools: McpToolDefinition[],
   ): ToolRoute[] {
+    const before = this.#fingerprint();
     const previousEnabled = new Map(
       [...this.#routes.values()]
         .filter((route) => route.serverId === serverId)
         .map((route) => [route.originalName, route.enabled] as const),
     );
 
-    this.removeServer(serverId);
+    this.#removeServerRoutes(serverId);
 
     const created: ToolRoute[] = [];
     for (const tool of tools) {
@@ -67,15 +78,14 @@ export class ToolRegistry {
       created.push(cloneRoute(route));
     }
 
+    this.#emitIfChanged(before);
     return created;
   }
 
   removeServer(serverId: string): void {
-    for (const [publicName, route] of this.#routes) {
-      if (route.serverId === serverId) {
-        this.#routes.delete(publicName);
-      }
-    }
+    const before = this.#fingerprint();
+    this.#removeServerRoutes(serverId);
+    this.#emitIfChanged(before);
   }
 
   list(options?: { includeDisabled?: boolean }): ToolRoute[] {
@@ -94,12 +104,56 @@ export class ToolRegistry {
   setEnabled(publicName: string, enabled: boolean): boolean {
     const route = this.#routes.get(publicName);
     if (!route) return false;
+    if (route.enabled === enabled) return true;
+
     route.enabled = enabled;
+    this.#emitChanged();
     return true;
   }
 
   clear(): void {
+    if (this.#routes.size === 0) return;
     this.#routes.clear();
+    this.#emitChanged();
+  }
+
+  #removeServerRoutes(serverId: string): void {
+    for (const [publicName, route] of this.#routes) {
+      if (route.serverId === serverId) {
+        this.#routes.delete(publicName);
+      }
+    }
+  }
+
+  #fingerprint(): string {
+    return JSON.stringify(
+      [...this.#routes.values()]
+        .sort((a, b) => a.publicName.localeCompare(b.publicName))
+        .map((route) => ({
+          publicName: route.publicName,
+          serverId: route.serverId,
+          originalName: route.originalName,
+          enabled: route.enabled,
+          description: route.definition.description,
+          inputSchema: route.definition.inputSchema,
+        })),
+    );
+  }
+
+  #emitIfChanged(before: string): void {
+    if (before !== this.#fingerprint()) {
+      this.#emitChanged();
+    }
+  }
+
+  #emitChanged(): void {
+    for (const listener of this.#listeners) {
+      try {
+        listener();
+      } catch {
+        // Listeners must not break registry mutations.
+      }
+    }
   }
 }
 
