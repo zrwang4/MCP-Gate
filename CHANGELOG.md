@@ -2,6 +2,81 @@
 
 ## Unreleased
 
+- 修复编辑 MCP 配置时 HTTP 与 stdio 之间切换 transport 未正确写入的问题。
+
+
+- 新增 HTTP MCP upstream：Server Registry 支持 `transport: "http"` 与远端 MCP URL。
+- 新增 `HttpUpstreamClient`，使用 MCP SDK v2 `StreamableHTTPClientTransport` 和自动协议协商。
+- stdio / HTTP upstream 共用 UpstreamManager、ToolRegistry、统一 `/mcp` 与 autoStart 生命周期。
+- 桌面端添加/编辑 MCP 可选择“本地命令（stdio）”或“远端 MCP（HTTP）”。
+- HTTP 配置当前只持久化 URL，不保存 Authorization/Header secret；鉴权留给 Keychain 阶段。
+- 新增 HTTP Registry URL 校验测试。
+
+
+- ToolRegistry 新增变更事件；upstream Tools、Tool 开关或 Server 移除时只在实际列表变化时触发。
+- GatewayServer 订阅 ToolRegistry 变化，并通过 `handler.notify.toolsChanged()` 向已订阅客户端发布 `notifications/tools/list_changed`。
+- Gateway 停止时自动取消 ToolRegistry 订阅，避免重复通知和泄漏。
+- 新增 ToolRegistry change event 单元测试。
+
+
+- 修复 UpstreamManager test fake client 返回值不符合 MCP SDK v2 `CallToolResult` 类型导致的 typecheck 失败。
+
+
+- 修复 UpstreamManager 测试 teardown 与异步日志写入的竞争，删除临时目录前先 flush logger。
+
+
+- 恢复可测试的 `createGatewayProtocolServer` 工厂，并让 HTTP GatewayServer 复用同一协议构造逻辑。
+- 修复 CI 中 gateway protocol test 因重构后导出缺失导致的失败。
+
+
+- 新增 GitHub Actions CI：自动运行 Core tests、全仓 typecheck 和 TypeScript/Web build。
+- CI 固定 Node.js 22 与 pnpm 10.17.1；提交 pnpm-lock.yaml 后可切换 frozen lockfile 安装。
+
+
+- 桌面端新增 Tool 测试器，可手工输入 JSON arguments 并查看调用结果。
+- 新增 Management API `POST /api/tools/:publicName/call` 供本地调试使用。
+- `core:gateway-smoke` 支持通过 `MCP_GATE_SMOKE_TOOL` 和 `MCP_GATE_SMOKE_ARGS` 显式执行端到端 `tools/call`。
+- smoke 默认仍只执行 `tools/list`，避免自动触发有副作用的 Tool。
+
+
+- Tool enable/disable 状态持久化到 `tool-policy.json`，Core 重启和 upstream 重连后继续生效。
+- MCP Server 配置支持编辑 name/command/args/cwd；编辑时自动断开 upstream 并保持 alias 稳定。
+- 删除 MCP 配置时同步清理对应 Tool policy。
+- 新增 ToolPolicyStore 持久化测试。
+
+
+- 修复并发开发合并后重复导入 `GatewayServer` 的构建错误。
+- GatewayServer 新增运行状态 snapshot，Management API 可准确返回 Gateway 状态、Tool 数和最近错误。
+- 显式添加 MCP SDK v2 所需的 `zod@4.6.5` peer dependency。
+
+
+- MCP 配置新增自动连接开关，并持久化到 Server Registry。
+- Core 启动 Gateway 后自动恢复所有 `enabled && autoStart` upstream。
+- 单个自动连接失败只进入该 upstream 的 error 状态，不影响 Gateway 和其他 MCP。
+- Management API 新增 `POST /api/server-configs/:id/settings`。
+- 新增 Registry autoStart 持久化测试与 UpstreamManager 自动连接测试。
+
+
+- 新增统一 Gateway 协议测试，使用 MCP SDK Client + InMemoryTransport 验证动态 `tools/list` 与 `tools/call`。
+- 新增 `pnpm core:gateway-smoke`，通过真实 Streamable HTTP 连接 `/mcp` 并执行 `tools/list`。
+- HTTP smoke 使用 SDK v2 version negotiation auto 模式，同时覆盖现代协议协商路径。
+
+
+- 桌面端新增 Tools 管理区，可直接启用/禁用聚合 Tool。
+- 新增 Tool enable/disable Management API；禁用 Tool 会立即从 Gateway `tools/list` 隐藏并拒绝调用。
+- upstream 刷新 `tools/list` 时保留当前进程内的 Tool 开关状态。
+- 清理桌面端旧 Filesystem PoC 控制视图，统一使用 Server Registry / UpstreamManager / ToolRegistry。
+- Gateway Tool inputSchema 类型收紧到 MCP SDK `Tool["inputSchema"]`。
+
+
+- 新增统一 GatewayServer，`127.0.0.1:24888/mcp` 直接聚合所有已连接 upstream Tools。
+- Gateway 使用 MCP SDK v2 低层 `Server` 动态返回上游 JSON Schema。
+- `tools/list` 读取内存 ToolRegistry；`tools/call` 通过 UpstreamManager 路由到原 MCP。
+- 新 Gateway 同时支持 2026-07-28 与 SDK 默认的 stateless 2025-era HTTP 请求。
+- 新增 `@modelcontextprotocol/server@2.0.0` 与 `@modelcontextprotocol/node@2.0.0`。
+- 旧 Filesystem mcp-proxy PoC 不再占用主 Gateway 端口，但代码暂时保留作兼容/回退。
+
+
 - stdio MCP connect 请求使用独立长超时，避免初始化超过 4 秒时 UI 误报失败。
 - 修复 upstream `connecting` 状态被错误显示为“已停止”。
 

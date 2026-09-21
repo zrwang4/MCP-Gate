@@ -1,12 +1,14 @@
 import { mkdir } from "node:fs/promises";
 import { loadConfig } from "./config.ts";
 import { CoreLogger } from "./logger.ts";
+import { GatewayServer } from "./gateway-server.ts";
+import { HttpUpstreamClient } from "./http-upstream-client.ts";
 import { ManagementServer } from "./management-server.ts";
 import { ServerRegistry } from "./server-registry.ts";
+import { ToolPolicyStore } from "./tool-policy-store.ts";
 import { ToolRegistry } from "./tool-registry.ts";
 import { StdioUpstreamClient } from "./stdio-upstream-client.ts";
 import { UpstreamManager } from "./upstream-manager.ts";
-import { McpProxyProcess } from "./proxy-process.ts";
 
 let shuttingDown = false;
 
@@ -16,23 +18,29 @@ async function main(): Promise<void> {
   const logger = new CoreLogger(config.logFile);
   await logger.init();
 
-  const proxy = new McpProxyProcess(logger);
   const registry = new ServerRegistry(config.serverConfigFile, logger);
   await registry.init();
-  const toolRegistry = new ToolRegistry();
+  const toolPolicy = new ToolPolicyStore(config.toolPolicyFile, logger);
+  await toolPolicy.init();
+  const toolRegistry = new ToolRegistry(toolPolicy);
   const upstreams = new UpstreamManager(
     registry,
     toolRegistry,
-    (serverConfig) => new StdioUpstreamClient(serverConfig),
+    (serverConfig) =>
+      serverConfig.transport === "http"
+        ? new HttpUpstreamClient(serverConfig)
+        : new StdioUpstreamClient(serverConfig),
     logger,
   );
   upstreams.syncConfigs();
+  const gateway = new GatewayServer(config, toolRegistry, upstreams, logger);
   const management = new ManagementServer(
     config,
-    proxy,
+    gateway,
     registry,
     upstreams,
     toolRegistry,
+    toolPolicy,
     logger,
   );
 
@@ -44,10 +52,10 @@ async function main(): Promise<void> {
     await management.stop().catch((error) => {
       logger.warn("management", `shutdown failed: ${String(error)}`);
     });
-    await upstreams.stopAll();
-    await proxy.stop().catch((error) => {
-      logger.warn("filesystem", `shutdown failed: ${String(error)}`);
+    await gateway.stop().catch((error) => {
+      logger.warn("gateway", `shutdown failed: ${String(error)}`);
     });
+    await upstreams.stopAll();
     await logger.flush();
     process.exit(0);
   }
@@ -66,11 +74,15 @@ async function main(): Promise<void> {
   await management.start();
 
   try {
-    await proxy.start(config);
+    await gateway.start();
+    await upstreams.connectAutoStart();
     logger.info("core", "Core is ready");
   } catch (error) {
-    logger.error("core", `initial MCP start failed: ${error instanceof Error ? error.message : String(error)}`);
-    logger.warn("core", "Management API remains available so the service can be retried from the UI");
+    logger.error(
+      "core",
+      `gateway start failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    logger.warn("core", "Management API remains available for diagnostics");
   }
 }
 

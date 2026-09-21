@@ -525,7 +525,8 @@ footer {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   border: 1px solid rgba(0,0,0,.11);
   border-radius: 10px;
@@ -535,6 +536,12 @@ footer {
   color: inherit;
   background: #fff;
   outline: none;
+}
+
+.field small {
+  color: #888;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .field textarea {
@@ -562,7 +569,8 @@ footer {
   }
 
   .field input,
-  .field textarea {
+  .field textarea,
+  .field select {
     background: #292927;
     border-color: rgba(255,255,255,.10);
     color: #f2f2f0;
@@ -583,5 +591,188 @@ footer {
     color: #f08a8a;
     background: rgba(220,80,80,.10);
     border-color: rgba(220,80,80,.18);
+  }
+}
+
+.emptyState {
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 20px;
+  border: 1px dashed rgba(0,0,0,.12);
+  border-radius: 14px;
+  color: #777;
+  text-align: center;
+}
+
+.emptyState strong {
+  color: #383835;
+  font-size: 13px;
+}
+
+.emptyState span {
+  font-size: 12px;
+}
+
+.emptyState.compact {
+  min-height: 72px;
+}
+
+.toolList {
+  display: grid;
+  gap: 8px;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 12px;
+  border: 1px solid rgba(0,0,0,.07);
+  border-radius: 12px;
+  background: rgba(255,255,255,.68);
+}
+
+.toolInfo {
+  min-width: 0;
+  flex: 1;
+}
+
+.toolInfo > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.toolInfo code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.toolInfo p {
+  margin: 4px 0 0;
+  color: #82827f;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.toolSource {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.05);
+  color: #777;
+  font-size: 10px;
+}
+
+.toolToggle {
+  flex: 0 0 auto;
+  min-width: 58px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: rgba(0,0,0,.035);
+  color: #777;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.toolToggle.enabled {
+  color: #137853;
+  background: rgba(34,160,107,.10);
+  border-color: rgba(34,160,107,.18);
+}
+
+.toolToggle:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+@media (prefers-color-scheme: dark) {
+  .emptyState {
+    border-color: rgba(255,255,255,.12);
+    color: #999;
+  }
+
+  .emptyState strong {
+    color: #e8e8e4;
+  }
+
+  .toolRow {
+    background: rgba(30,30,28,.78);
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .toolInfo p {
+    color: #999;
+  }
+
+  .toolSource {
+    color: #aaa;
+    background: rgba(255,255,255,.06);
+  }
+
+  .toolToggle {
+    color: #aaa;
+    background: rgba(255,255,255,.05);
+    border-color: rgba(255,255,255,.10);
+  }
+
+  .toolToggle.enabled {
+    color: #6ee3a8;
+    background: rgba(34,160,107,.15);
+    border-color: rgba(34,160,107,.22);
+  }
+}
+
+.settingButton.enabled {
+  color: #137853;
+  background: rgba(34,160,107,.08);
+  border-color: rgba(34,160,107,.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  .settingButton.enabled {
+    color: #6ee3a8;
+    background: rgba(34,160,107,.13);
+    border-color: rgba(34,160,107,.20);
+  }
+}
+
+.toolActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.toolTesterCard {
+  width: min(640px, 100%);
+}
+
+.toolResult {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f4f4f2;
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-color-scheme: dark) {
+  .toolResult {
+    background: #181817;
+    border-color: rgba(255,255,255,.08);
+    color: #e8e8e4;
   }
 }

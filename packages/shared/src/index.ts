@@ -39,19 +39,29 @@ export interface CoreStatus {
   gateway: GatewayInfo;
 }
 
-export interface StdioServerConfig {
+interface ServerConfigBase {
   id: string;
   name: string;
   alias: string;
-  transport: "stdio";
-  command: string;
-  args: string[];
-  cwd?: string;
   enabled: boolean;
   autoStart: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface StdioServerConfig extends ServerConfigBase {
+  transport: "stdio";
+  command: string;
+  args: string[];
+  cwd?: string;
+}
+
+export interface HttpServerConfig extends ServerConfigBase {
+  transport: "http";
+  url: string;
+}
+
+export type McpServerConfig = StdioServerConfig | HttpServerConfig;
 
 export type UpstreamStatus =
   | "configured"
@@ -65,6 +75,7 @@ export interface UpstreamInfo {
   id: string;
   name: string;
   alias: string;
+  transport: "stdio" | "http";
   status: UpstreamStatus;
   toolCount: number;
   lastError: string | null;
@@ -74,6 +85,12 @@ export interface ToolRouteInfo {
   publicName: string;
   serverId: string;
   serverAlias: string;
+  originalName: string;
+  enabled: boolean;
+}
+
+export interface ToolPolicyInfo {
+  serverId: string;
   originalName: string;
   enabled: boolean;
 }

@@ -1,5 +1,6 @@
+import type { CallToolResult } from "@modelcontextprotocol/client";
 import type { CoreLogger } from "./logger.ts";
-import type { ServerRegistry, StdioServerConfig } from "./server-registry.ts";
+import type { McpServerConfig, ServerRegistry } from "./server-registry.ts";
 import type { McpToolDefinition, ToolRegistry } from "./tool-registry.ts";
 
 export type UpstreamStatus =
@@ -14,24 +15,25 @@ export interface UpstreamClient {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   listTools(): Promise<McpToolDefinition[]>;
-  callTool(name: string, args: unknown): Promise<unknown>;
+  callTool(name: string, args: unknown): Promise<CallToolResult>;
 }
 
 export type UpstreamFactory = (
-  config: StdioServerConfig,
+  config: McpServerConfig,
 ) => Promise<UpstreamClient> | UpstreamClient;
 
 export interface UpstreamSnapshot {
   id: string;
   name: string;
   alias: string;
+  transport: "stdio" | "http";
   status: UpstreamStatus;
   toolCount: number;
   lastError: string | null;
 }
 
 interface Runtime {
-  config: StdioServerConfig;
+  config: McpServerConfig;
   status: UpstreamStatus;
   client: UpstreamClient | null;
   toolCount: number;
@@ -95,6 +97,7 @@ export class UpstreamManager {
         id: runtime.config.id,
         name: runtime.config.name,
         alias: runtime.config.alias,
+        transport: runtime.config.transport,
         status: runtime.status,
         toolCount: runtime.toolCount,
         lastError: runtime.lastError,
@@ -186,7 +189,7 @@ export class UpstreamManager {
     return this.#snapshot(runtime);
   }
 
-  async callTool(publicName: string, args: unknown): Promise<unknown> {
+  async callTool(publicName: string, args: unknown): Promise<CallToolResult> {
     const route = this.#tools.resolve(publicName);
     if (!route) throw new Error("tool not found");
     if (!route.enabled) throw new Error("tool is disabled");
@@ -197,6 +200,27 @@ export class UpstreamManager {
     }
 
     return runtime.client.callTool(route.originalName, args);
+  }
+
+  async connectAutoStart(): Promise<void> {
+    this.syncConfigs();
+    const ids = this.#registry
+      .list()
+      .filter((config) => config.enabled && config.autoStart)
+      .map((config) => config.id);
+
+    const results = await Promise.allSettled(
+      ids.map((id) => this.connect(id)),
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        this.#logger.warn(
+          "upstream",
+          `auto-start failed for ${ids[index]}: ${String(result.reason)}`,
+        );
+      }
+    });
   }
 
   async stopAll(): Promise<void> {
@@ -221,6 +245,7 @@ export class UpstreamManager {
       id: runtime.config.id,
       name: runtime.config.name,
       alias: runtime.config.alias,
+      transport: runtime.config.transport,
       status: runtime.status,
       toolCount: runtime.toolCount,
       lastError: runtime.lastError,

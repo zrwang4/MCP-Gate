@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
-import type { McpProxyProcess } from "./proxy-process.ts";
+import type { GatewayServer } from "./gateway-server.ts";
 import type { ServerRegistry } from "./server-registry.ts";
+import type { ToolPolicyStore } from "./tool-policy-store.ts";
 import type { ToolRegistry } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
@@ -60,28 +61,30 @@ function requireDesktopClient(req: IncomingMessage, res: ServerResponse): boolea
 
 export class ManagementServer {
   #config: CoreConfig;
-  #proxy: McpProxyProcess;
+  #gateway: GatewayServer;
   #registry: ServerRegistry;
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
+  #toolPolicy: ToolPolicyStore;
   #logger: CoreLogger;
   #server: ReturnType<typeof createServer> | null = null;
   #startedAt = new Date().toISOString();
-  #actionInFlight = false;
 
   constructor(
     config: CoreConfig,
-    proxy: McpProxyProcess,
+    gateway: GatewayServer,
     registry: ServerRegistry,
     upstreams: UpstreamManager,
     tools: ToolRegistry,
+    toolPolicy: ToolPolicyStore,
     logger: CoreLogger,
   ) {
     this.#config = config;
-    this.#proxy = proxy;
+    this.#gateway = gateway;
     this.#registry = registry;
     this.#upstreams = upstreams;
     this.#tools = tools;
+    this.#toolPolicy = toolPolicy;
     this.#logger = logger;
   }
 
@@ -140,18 +143,14 @@ export class ManagementServer {
     }
 
     if (req.method === "GET" && url.pathname === "/api/status") {
-      const server = this.#proxy.snapshot(this.#config);
+      const gateway = this.#gateway.snapshot();
       json(res, 200, {
         core: {
           version: CORE_VERSION,
           startedAt: this.#startedAt,
           logFile: this.#logger.filePath,
         },
-        gateway: {
-          endpoint: `http://${this.#config.host}:${this.#config.port}/mcp`,
-          healthEndpoint: `http://${this.#config.host}:${this.#config.port}/ping`,
-          status: server.status,
-        },
+        gateway,
         management: {
           endpoint: `http://${this.#config.managementHost}:${this.#config.managementPort}`,
         },
@@ -160,7 +159,7 @@ export class ManagementServer {
     }
 
     if (req.method === "GET" && url.pathname === "/api/servers") {
-      json(res, 200, { servers: [this.#proxy.snapshot(this.#config)] });
+      json(res, 200, { servers: [] });
       return;
     }
 
@@ -178,6 +177,71 @@ export class ManagementServer {
       json(res, 200, { tools: this.#tools.list({ includeDisabled: true }) });
       return;
     }
+
+    const toolCallMatch = url.pathname.match(
+      /^\/api\/tools\/([A-Za-z0-9_-]+)\/call$/,
+    );
+    if (req.method === "POST" && toolCallMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const [, publicName] = toolCallMatch;
+      try {
+        const body = await readJsonBody(req) as { arguments?: unknown };
+        const args = body.arguments ?? {};
+        if (!args || typeof args !== "object" || Array.isArray(args)) {
+          json(res, 400, { error: "arguments must be a JSON object" });
+          return;
+        }
+
+        const result = await this.#upstreams.callTool(publicName, args);
+        this.#logger.info("tools", `test call completed: ${publicName}`);
+        json(res, 200, { result });
+      } catch (error) {
+        this.#logger.warn(
+          "tools",
+          `test call failed: ${publicName}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const toolActionMatch = url.pathname.match(
+      /^\/api\/tools\/([A-Za-z0-9_-]+)\/(enable|disable)$/,
+    );
+    if (req.method === "POST" && toolActionMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const [, publicName, action] = toolActionMatch;
+      const tool = this.#tools.resolve(publicName);
+      if (!tool) {
+        json(res, 404, { error: "tool not found" });
+        return;
+      }
+
+      const enabled = action === "enable";
+      await this.#toolPolicy.setEnabled(
+        tool.serverId,
+        tool.originalName,
+        enabled,
+      );
+      const changed = this.#tools.setEnabled(publicName, enabled);
+      if (!changed) {
+        json(res, 404, { error: "tool not found" });
+        return;
+      }
+
+      const updatedTool = this.#tools.resolve(publicName);
+      this.#logger.info(
+        "tools",
+        `${action === "enable" ? "enabled" : "disabled"} ${publicName}`,
+      );
+      json(res, 200, { tool: updatedTool });
+      return;
+    }
+
 
     const upstreamActionMatch = url.pathname.match(
       /^\/api\/upstreams\/([0-9a-f-]+)\/(connect|disconnect|refresh-tools)$/i,
@@ -209,15 +273,19 @@ export class ManagementServer {
       try {
         const body = await readJsonBody(req) as {
           name?: unknown;
+          transport?: unknown;
           command?: unknown;
           args?: unknown;
           cwd?: unknown;
+          url?: unknown;
         };
         const server = await this.#registry.create({
           name: body.name as string,
-          command: body.command as string,
+          transport: body.transport === "http" ? "http" : "stdio",
+          command: typeof body.command === "string" ? body.command : undefined,
           args: Array.isArray(body.args) ? body.args as string[] : [],
           cwd: typeof body.cwd === "string" ? body.cwd : undefined,
+          url: typeof body.url === "string" ? body.url : undefined,
         });
         this.#upstreams.syncConfigs();
         json(res, 201, { server });
@@ -227,11 +295,107 @@ export class ManagementServer {
       return;
     }
 
+    const configEditMatch = url.pathname.match(
+      /^\/api\/server-configs\/([0-9a-f-]+)$/i,
+    );
+    if (req.method === "POST" && configEditMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          name?: unknown;
+          transport?: unknown;
+          command?: unknown;
+          args?: unknown;
+          cwd?: unknown;
+          url?: unknown;
+        };
+
+        await this.#upstreams
+          .disconnect(configEditMatch[1])
+          .catch(() => undefined);
+
+        const updated = await this.#registry.update(
+          configEditMatch[1],
+          {
+            name: body.name as string,
+            transport: body.transport === "http" ? "http" : body.transport === "stdio" ? "stdio" : undefined,
+            command: typeof body.command === "string" ? body.command : undefined,
+            args: Array.isArray(body.args) ? body.args as string[] : [],
+            cwd: typeof body.cwd === "string" ? body.cwd : undefined,
+            url: typeof body.url === "string" ? body.url : undefined,
+          },
+        );
+
+        if (!updated) {
+          json(res, 404, { error: "server configuration not found" });
+          return;
+        }
+
+        this.#upstreams.syncConfigs();
+        json(res, 200, { server: updated });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const configSettingsMatch = url.pathname.match(
+      /^\/api\/server-configs\/([0-9a-f-]+)\/settings$/i,
+    );
+    if (req.method === "POST" && configSettingsMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          enabled?: unknown;
+          autoStart?: unknown;
+        };
+
+        const updated = await this.#registry.updateSettings(
+          configSettingsMatch[1],
+          {
+            enabled:
+              body.enabled === undefined
+                ? undefined
+                : body.enabled as boolean,
+            autoStart:
+              body.autoStart === undefined
+                ? undefined
+                : body.autoStart as boolean,
+          },
+        );
+
+        if (!updated) {
+          json(res, 404, { error: "server configuration not found" });
+          return;
+        }
+
+        this.#upstreams.syncConfigs();
+
+        if (!updated.enabled) {
+          await this.#upstreams
+            .disconnect(updated.id)
+            .catch(() => undefined);
+        }
+
+        json(res, 200, { server: updated });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     const configDeleteMatch = url.pathname.match(/^\/api\/server-configs\/([0-9a-f-]+)$/i);
     if (req.method === "DELETE" && configDeleteMatch) {
       if (!requireDesktopClient(req, res)) return;
       await this.#upstreams.disconnect(configDeleteMatch[1]).catch(() => undefined);
       const removed = await this.#registry.remove(configDeleteMatch[1]);
+      await this.#toolPolicy.removeServer(configDeleteMatch[1]);
       this.#upstreams.syncConfigs();
       if (!removed) {
         json(res, 404, { error: "server configuration not found" });
@@ -255,38 +419,6 @@ export class ManagementServer {
           level,
         }),
       });
-      return;
-    }
-
-    const actionMatch = url.pathname.match(/^\/api\/servers\/filesystem-poc\/(start|stop|restart)$/);
-    if (req.method === "POST" && actionMatch) {
-      if (!requireDesktopClient(req, res)) return;
-      if (this.#actionInFlight) {
-        json(res, 409, { error: "another server action is already in progress" });
-        return;
-      }
-
-      this.#actionInFlight = true;
-      const action = actionMatch[1];
-
-      try {
-        if (action === "start") {
-          await this.#proxy.start(this.#config);
-        } else if (action === "stop") {
-          await this.#proxy.stop();
-        } else {
-          await this.#proxy.stop();
-          await this.#proxy.start(this.#config);
-        }
-        json(res, 200, { server: this.#proxy.snapshot(this.#config) });
-      } catch (error) {
-        json(res, 500, {
-          error: error instanceof Error ? error.message : String(error),
-          server: this.#proxy.snapshot(this.#config),
-        });
-      } finally {
-        this.#actionInFlight = false;
-      }
       return;
     }
 

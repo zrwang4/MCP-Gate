@@ -54,3 +54,66 @@ test("server registry rejects invalid configurations", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("server registry persists autoStart settings", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-registry-"));
+  try {
+    const logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const file = join(dir, "servers.json");
+    const registry = new ServerRegistry(file, logger);
+    await registry.init();
+
+    const created = await registry.create({
+      name: "Auto",
+      command: "fake",
+    });
+
+    const updated = await registry.updateSettings(created.id, {
+      autoStart: true,
+    });
+
+    assert.equal(updated?.autoStart, true);
+
+    const reloaded = new ServerRegistry(file, logger);
+    await reloaded.init();
+    assert.equal(reloaded.list()[0]?.autoStart, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("server registry persists and validates HTTP MCP configurations", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-registry-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const registry = new ServerRegistry(join(dir, "servers.json"), logger);
+    await registry.init();
+
+    const created = await registry.create({
+      name: "Remote",
+      transport: "http",
+      url: "https://example.com/mcp",
+    });
+
+    assert.equal(created.transport, "http");
+    if (created.transport === "http") {
+      assert.equal(created.url, "https://example.com/mcp");
+    }
+
+    await assert.rejects(
+      registry.create({
+        name: "Bad Remote",
+        transport: "http",
+        url: "file:///tmp/mcp",
+      }),
+      /http or https/,
+    );
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
