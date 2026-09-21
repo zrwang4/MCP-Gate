@@ -33,7 +33,9 @@ test("upstream manager connects, caches tools, and routes calls", async () => {
       },
       async callTool(name, args) {
         calls.push({ name, args });
-        return { ok: true };
+        return {
+          content: [{ type: "text" as const, text: "ok" }],
+        };
       },
     };
 
@@ -49,7 +51,9 @@ test("upstream manager connects, caches tools, and routes calls", async () => {
     assert.equal(snapshot.toolCount, 2);
 
     const result = await upstreams.callTool("github__create_issue", { title: "x" });
-    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(result, {
+      content: [{ type: "text", text: "ok" }],
+    });
     assert.deepEqual(calls, [{ name: "create_issue", args: { title: "x" } }]);
 
     await upstreams.disconnect(config.id);

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 修复 UpstreamManager test fake client 返回值不符合 MCP SDK v2 `CallToolResult` 类型导致的 typecheck 失败。
+
+
 - 修复 UpstreamManager 测试 teardown 与异步日志写入的竞争，删除临时目录前先 flush logger。
 
 
