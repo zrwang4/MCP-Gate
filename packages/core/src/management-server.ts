@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { AuditLogger, AuditSource } from "./audit-logger.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
@@ -91,6 +92,7 @@ export class ManagementServer {
   #tools: ToolRegistry;
   #toolPolicy: ToolPolicyStore;
   #secrets: SecretStore;
+  #audit: AuditLogger;
   #logger: CoreLogger;
   #server: ReturnType<typeof createServer> | null = null;
   #startedAt = new Date().toISOString();
@@ -105,6 +107,7 @@ export class ManagementServer {
     tools: ToolRegistry,
     toolPolicy: ToolPolicyStore,
     secrets: SecretStore,
+    audit: AuditLogger,
     logger: CoreLogger,
   ) {
     this.#config = config;
@@ -116,6 +119,7 @@ export class ManagementServer {
     this.#tools = tools;
     this.#toolPolicy = toolPolicy;
     this.#secrets = secrets;
+    this.#audit = audit;
     this.#logger = logger;
   }
 
@@ -569,7 +573,11 @@ export class ManagementServer {
           return;
         }
 
-        const result = await this.#upstreams.callTool(publicName, args);
+        const result = await this.#upstreams.callTool(
+          publicName,
+          args,
+          { source: "tester" },
+        );
         this.#logger.info("tools", `test call completed: ${publicName}`);
         json(res, 200, { result });
       } catch (error) {
@@ -976,6 +984,34 @@ export class ManagementServer {
       }
 
       json(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/audit") {
+      const after = Number(url.searchParams.get("after") ?? "0");
+      const limit = Number(url.searchParams.get("limit") ?? "100");
+      const rawSuccess = url.searchParams.get("success");
+      const rawSource = url.searchParams.get("source");
+      const success =
+        rawSuccess === "true"
+          ? true
+          : rawSuccess === "false"
+            ? false
+            : undefined;
+      const source: AuditSource | undefined =
+        rawSource === "gateway" || rawSource === "tester"
+          ? rawSource
+          : undefined;
+
+      json(res, 200, {
+        file: this.#audit.filePath,
+        entries: this.#audit.list({
+          after: Number.isFinite(after) ? after : 0,
+          limit: Number.isFinite(limit) ? limit : 100,
+          success,
+          source,
+        }),
+      });
       return;
     }
 

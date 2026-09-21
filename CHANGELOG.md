@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- 新增独立 Tool 调用审计日志 `~/Library/Logs/MCP Gate/audit.jsonl`，与 Core 运行日志分离。
+- 审计只记录 public Tool、upstream 路由、调用来源、耗时、成功/失败和脱敏后的错误，不记录 arguments 或 result。
+- 正常 MCP 客户端调用标记为 `gateway`，桌面 Tool 测试器调用标记为 `tester`。
+- 新增受 Management Token 保护的 `GET /api/audit`，支持 after/limit/success/source 过滤。
+- 桌面端新增 Tool 调用审计面板，显示最近调用与耗时。
+- Audit JSONL 启动时达到约 5 MB 会滚动为 `audit.jsonl.1`，Core 退出前 flush。
+- 新增审计最小化数据与错误 Secret 脱敏测试。
+
+
 - 修复 connection-test 单测调用新 options 签名时漏改的一处 factory 参数，恢复 Core strict typecheck。
 
 

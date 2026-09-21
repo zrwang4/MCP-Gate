@@ -1569,3 +1569,78 @@ footer {
     background: rgba(255,255,255,.06);
   }
 }
+
+.auditList {
+  display: grid;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid rgba(0,0,0,.07);
+  border-radius: 12px;
+  background: rgba(255,255,255,.58);
+}
+
+.auditRow {
+  display: grid;
+  grid-template-columns: 68px 42px minmax(160px, 1fr) 56px 60px;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 9px;
+  border-bottom: 1px solid rgba(0,0,0,.05);
+  font-size: 10px;
+}
+
+.auditRow:last-child {
+  border-bottom: 0;
+}
+
+.auditRow time,
+.auditSource,
+.auditDuration {
+  color: #8a8a86;
+}
+
+.auditRow code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditStatus {
+  font-weight: 750;
+}
+
+.auditStatus.success {
+  color: #197653;
+}
+
+.auditStatus.failure,
+.auditError {
+  color: #b3423d;
+}
+
+.auditError {
+  grid-column: 3 / -1;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-color-scheme: dark) {
+  .auditList {
+    background: rgba(24,24,23,.72);
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .auditRow {
+    border-bottom-color: rgba(255,255,255,.06);
+  }
+
+  .auditStatus.success {
+    color: #72d5a5;
+  }
+
+  .auditStatus.failure,
+  .auditError {
+    color: #ef8d88;
+  }
+}

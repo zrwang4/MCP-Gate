@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/client";
+import type { AuditLogger, AuditSource } from "./audit-logger.ts";
 import type { CoreLogger } from "./logger.ts";
 import type { McpServerConfig, ServerRegistry } from "./server-registry.ts";
 import type { McpToolDefinition, ToolRegistry } from "./tool-registry.ts";
@@ -44,6 +45,7 @@ export interface UpstreamSnapshot {
 
 export interface UpstreamManagerOptions {
   reconnectDelaysMs?: readonly number[];
+  audit?: AuditLogger;
 }
 
 export interface ProfileApplyFailure {
@@ -76,6 +78,7 @@ export class UpstreamManager {
   #tools: ToolRegistry;
   #factory: UpstreamFactory;
   #logger: CoreLogger;
+  #audit: AuditLogger | null;
   #reconnectDelaysMs: readonly number[];
   #runtimes = new Map<string, Runtime>();
   #busy = new Set<string>();
@@ -91,6 +94,7 @@ export class UpstreamManager {
     this.#tools = tools;
     this.#factory = factory;
     this.#logger = logger;
+    this.#audit = options.audit ?? null;
     this.#reconnectDelaysMs =
       options.reconnectDelaysMs && options.reconnectDelaysMs.length > 0
         ? options.reconnectDelaysMs
@@ -209,17 +213,59 @@ export class UpstreamManager {
     return this.#snapshot(runtime);
   }
 
-  async callTool(publicName: string, args: unknown): Promise<CallToolResult> {
+  async callTool(
+    publicName: string,
+    args: unknown,
+    context?: { source?: AuditSource },
+  ): Promise<CallToolResult> {
     const route = this.#tools.resolve(publicName);
     if (!route) throw new Error("tool not found");
-    if (!route.enabled) throw new Error("tool is disabled");
+
+    const startedAt = Date.now();
+    const source = context?.source ?? "gateway";
+
+    const auditFailure = (error: unknown): void => {
+      this.#audit?.record({
+        source,
+        publicName: route.publicName,
+        serverId: route.serverId,
+        serverAlias: route.serverAlias,
+        originalName: route.originalName,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    };
+
+    if (!route.enabled) {
+      const error = new Error("tool is disabled");
+      auditFailure(error);
+      throw error;
+    }
 
     const runtime = this.#requireRuntime(route.serverId);
     if (runtime.status !== "running" || !runtime.client) {
-      throw new Error("upstream is not running");
+      const error = new Error("upstream is not running");
+      auditFailure(error);
+      throw error;
     }
 
-    return runtime.client.callTool(route.originalName, args);
+    try {
+      const result = await runtime.client.callTool(route.originalName, args);
+      this.#audit?.record({
+        source,
+        publicName: route.publicName,
+        serverId: route.serverId,
+        serverAlias: route.serverAlias,
+        originalName: route.originalName,
+        success: true,
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    } catch (error) {
+      auditFailure(error);
+      throw error;
+    }
   }
 
   async applyExactSet(serverIds: string[]): Promise<ProfileApplyResult> {

@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { AuditLogger } from "./audit-logger.ts";
 import { loadConfig } from "./config.ts";
 import { CoreLogger } from "./logger.ts";
 import { GatewayAccessController } from "./gateway-access.ts";
@@ -20,6 +21,8 @@ async function main(): Promise<void> {
   await mkdir(config.filesystemRoot, { recursive: true });
   const logger = new CoreLogger(config.logFile);
   await logger.init();
+  const audit = new AuditLogger(config.auditFile);
+  await audit.init();
 
   const registry = new ServerRegistry(config.serverConfigFile, logger);
   await registry.init();
@@ -33,6 +36,7 @@ async function main(): Promise<void> {
     config.gatewayAccessFile,
     secrets,
     logger,
+    { audit },
   );
   await gatewayAccess.init();
   const upstreams = new UpstreamManager(
@@ -62,6 +66,7 @@ async function main(): Promise<void> {
     toolRegistry,
     toolPolicy,
     secrets,
+    audit,
     logger,
   );
 
@@ -77,6 +82,7 @@ async function main(): Promise<void> {
       logger.warn("gateway", `shutdown failed: ${String(error)}`);
     });
     await upstreams.stopAll();
+    await audit.flush();
     await logger.flush();
     process.exit(0);
   }

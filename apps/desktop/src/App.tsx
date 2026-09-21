@@ -158,6 +158,19 @@ interface LogEntry {
   message: string;
 }
 
+interface AuditEntry {
+  seq: number;
+  timestamp: string;
+  source: "gateway" | "tester";
+  publicName: string;
+  serverId: string;
+  serverAlias: string;
+  originalName: string;
+  success: boolean;
+  durationMs: number;
+  error?: string;
+}
+
 interface CoreRuntimeStatus {
   reachable: boolean;
   managed: boolean;
@@ -326,6 +339,7 @@ function formatTime(value: string | null): string {
 export function App() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [serverConfigs, setServerConfigs] = useState<ServerConfigInfo[]>([]);
   const [upstreams, setUpstreams] = useState<UpstreamInfo[]>([]);
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
@@ -404,13 +418,14 @@ export function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [statusResult, configsResult, upstreamsResult, profilesResult, toolsResult, logsResult] = await Promise.all([
+      const [statusResult, configsResult, upstreamsResult, profilesResult, toolsResult, logsResult, auditResult] = await Promise.all([
         api<StatusResponse>("/api/status"),
         api<{ servers: ServerConfigInfo[] }>("/api/server-configs"),
         api<{ upstreams: UpstreamInfo[] }>("/api/upstreams"),
         api<{ profiles: ProfileInfo[]; activeProfileId: string | null }>("/api/profiles"),
         api<{ tools: ToolInfo[] }>("/api/tools"),
         api<{ entries: LogEntry[] }>("/api/logs?limit=250"),
+        api<{ entries: AuditEntry[] }>("/api/audit?limit=120"),
       ]);
       setStatus(statusResult);
       setServerConfigs(configsResult.servers);
@@ -419,6 +434,7 @@ export function App() {
       setActiveProfileId(profilesResult.activeProfileId);
       setTools(toolsResult.tools);
       setLogs(logsResult.entries);
+      setAuditEntries(auditResult.entries);
       setManagementConnected(true);
       setError(null);
     } catch (cause) {
@@ -1587,6 +1603,41 @@ export function App() {
                 <span className={`logLevel ${entry.level}`}>{entry.level.toUpperCase()}</span>
                 <span className="logSource">{entry.source}</span>
                 <span className="logMessage">{entry.message}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="section auditSection">
+        <div className="sectionTitle">
+          <div>
+            <h2>Tool 调用审计</h2>
+            <p>只记录 Tool、来源、耗时和结果状态，不记录参数或返回值</p>
+          </div>
+          <span className="sectionCount">{auditEntries.length} 条</span>
+        </div>
+
+        <div className="auditList">
+          {auditEntries.length === 0 ? (
+            <div className="emptyLogs">
+              <Activity size={18} /> 暂无 Tool 调用
+            </div>
+          ) : (
+            auditEntries.slice(-80).reverse().map((entry) => (
+              <div className="auditRow" key={entry.seq}>
+                <time>{formatTime(entry.timestamp)}</time>
+                <span className={`auditStatus ${entry.success ? "success" : "failure"}`}>
+                  {entry.success ? "成功" : "失败"}
+                </span>
+                <code>{entry.publicName}</code>
+                <span className="auditSource">
+                  {entry.source === "tester" ? "测试器" : "Gateway"}
+                </span>
+                <span className="auditDuration">{entry.durationMs} ms</span>
+                {entry.error && (
+                  <span className="auditError">{entry.error}</span>
+                )}
               </div>
             ))
           )}
