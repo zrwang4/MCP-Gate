@@ -216,7 +216,9 @@ export class ManagementServer {
         };
         const serverIds = normalizeProfileServerIds(body.serverIds);
         assertKnownServers(serverIds, this.#registry.list());
-        const profile = await this.#profiles.update(profileMatch[1], {
+        const profileId = profileMatch[1];
+        const wasActive = this.#profiles.activeProfileId === profileId;
+        const profile = await this.#profiles.update(profileId, {
           name: body.name as string,
           serverIds,
         });
@@ -224,7 +226,16 @@ export class ManagementServer {
           json(res, 404, { error: "profile not found" });
           return;
         }
-        json(res, 200, { profile });
+
+        const result = wasActive
+          ? await this.#upstreams.applyExactSet(profile.serverIds)
+          : undefined;
+
+        json(res, 200, {
+          profile,
+          activeProfileId: this.#profiles.activeProfileId,
+          ...(result ? { result } : {}),
+        });
       } catch (error) {
         json(res, 400, {
           error: error instanceof Error ? error.message : String(error),
@@ -267,14 +278,29 @@ export class ManagementServer {
 
     if (req.method === "DELETE" && profileMatch) {
       if (!requireDesktopClient(req, res)) return;
-      const removed = await this.#profiles.remove(profileMatch[1]);
+
+      const profileId = profileMatch[1];
+      const profile = this.#profiles.get(profileId);
+      if (!profile) {
+        json(res, 404, { error: "profile not found" });
+        return;
+      }
+
+      const wasActive = this.#profiles.activeProfileId === profileId;
+      const result = wasActive
+        ? await this.#upstreams.disconnectSet(profile.serverIds)
+        : undefined;
+
+      const removed = await this.#profiles.remove(profileId);
       if (!removed) {
         json(res, 404, { error: "profile not found" });
         return;
       }
+
       json(res, 200, {
         ok: true,
         activeProfileId: this.#profiles.activeProfileId,
+        ...(result ? { result } : {}),
       });
       return;
     }

@@ -412,7 +412,10 @@ export function App() {
     setProfileBusy(true);
     setError(null);
     try {
-      await api(
+      const response = await api<{
+        activeProfileId?: string | null;
+        result?: ProfileApplyResult;
+      }>(
         editingProfileId ? `/api/profiles/${editingProfileId}` : "/api/profiles",
         {
           method: "POST",
@@ -422,6 +425,21 @@ export function App() {
           }),
         },
       );
+
+      if (response.activeProfileId !== undefined) {
+        setActiveProfileId(response.activeProfileId);
+      }
+      if (response.result?.failed.length) {
+        setError(
+          `Profile 已保存，但重算运行集合时有 ${response.result.failed.length} 个 MCP 失败：${response.result.failed
+            .map((item) => {
+              const server = serverConfigs.find((server) => server.id === item.serverId);
+              return `${server?.name ?? item.serverId}: ${item.error}`;
+            })
+            .join("；")}`,
+        );
+      }
+
       setShowProfileEditor(false);
       setEditingProfileId(null);
       setProfileName("");
@@ -477,7 +495,17 @@ export function App() {
     setProfileBusy(true);
     setError(null);
     try {
-      await api(`/api/profiles/${profileId}`, { method: "DELETE" });
+      const response = await api<{
+        activeProfileId: string | null;
+        result?: ProfileApplyResult;
+      }>(`/api/profiles/${profileId}`, { method: "DELETE" });
+
+      setActiveProfileId(response.activeProfileId);
+      if (response.result?.failed.length) {
+        setError(
+          `Profile 已删除，但停用成员时有 ${response.result.failed.length} 个 MCP 失败。`,
+        );
+      }
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -1205,7 +1233,9 @@ export function App() {
             <div className="modalHeader">
               <div>
                 <h2>{editingProfileId ? "编辑 Profile" : "新建 Profile"}</h2>
-                <p>激活后，只保留选中的 MCP 运行；未选中的已连接 MCP 会被断开。</p>
+                <p>
+                  激活后，只保留选中的 MCP 运行；编辑当前 Profile 并保存时也会立即按新成员重算运行集合。
+                </p>
               </div>
               <button
                 className="iconButton"
@@ -1229,7 +1259,44 @@ export function App() {
             </label>
 
             <div className="profilePicker">
-              <span className="profilePickerTitle">MCP 成员</span>
+              <div className="profilePickerToolbar">
+                <span className="profilePickerTitle">MCP 成员</span>
+                <div>
+                  <button
+                    type="button"
+                    className="profilePickerButton"
+                    onClick={() =>
+                      setProfileServerIds(
+                        upstreams
+                          .filter((upstream) => upstream.status === "running")
+                          .map((upstream) => upstream.id),
+                      )
+                    }
+                  >
+                    使用当前运行集合
+                  </button>
+                  <button
+                    type="button"
+                    className="profilePickerButton"
+                    onClick={() =>
+                      setProfileServerIds(
+                        serverConfigs
+                          .filter((server) => server.enabled)
+                          .map((server) => server.id),
+                      )
+                    }
+                  >
+                    全选已启用
+                  </button>
+                  <button
+                    type="button"
+                    className="profilePickerButton"
+                    onClick={() => setProfileServerIds([])}
+                  >
+                    清空
+                  </button>
+                </div>
+              </div>
               {serverConfigs.length === 0 ? (
                 <div className="emptyState compact">
                   <span>先添加 MCP，再创建 Profile。</span>

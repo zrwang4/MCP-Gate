@@ -1039,3 +1039,44 @@ footer {
     background: rgba(34,160,107,.15);
   }
 }
+
+.profilePickerToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profilePickerToolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.profilePickerButton {
+  padding: 4px 7px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 8px;
+  background: rgba(0,0,0,.035);
+  color: #6f6f6a;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.profilePickerButton:hover {
+  background: rgba(0,0,0,.065);
+}
+
+@media (prefers-color-scheme: dark) {
+  .profilePickerButton {
+    color: #aaa;
+    background: rgba(255,255,255,.05);
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .profilePickerButton:hover {
+    background: rgba(255,255,255,.09);
+  }
+}
