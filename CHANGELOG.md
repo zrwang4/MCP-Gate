@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Tauri 桌面端新增 single-instance 插件，防止登录自启后用户再次双击产生重复实例。
+- single-instance 按官方建议作为首个插件注册。
+- 第二实例启动时自动显示、取消最小化并聚焦已有主窗口。
+- 桌面设置区展示单实例保护状态。
+
+
 - macOS 桌面端新增系统托盘：可打开 MCP Gate、重启 Core、退出应用。
 - 主窗口关闭行为改为隐藏到托盘，后台 Gateway/Core 保持运行。
 - 新增 Tauri autostart plugin，支持 macOS LaunchAgent 登录时自动启动。

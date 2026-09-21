@@ -810,6 +810,14 @@ export function App() {
             </div>
             <span className="settingsStatus">{IS_TAURI ? "已启用" : "仅桌面版"}</span>
           </div>
+
+          <div className="settingsRow">
+            <div>
+              <strong>单实例保护</strong>
+              <span>重复启动只会唤醒已有窗口，不会重复启动 Tray 或 Core。</span>
+            </div>
+            <span className="settingsStatus">{IS_TAURI ? "已启用" : "仅桌面版"}</span>
+          </div>
         </div>
       </section>
 
@@ -971,7 +979,7 @@ export function App() {
 
       <footer>
         <span><Activity size={12} /> MG-018</span>
-        <span>统一 /mcp · Tray · Autostart · Core Supervisor</span>
+        <span>统一 /mcp · Tray · Autostart · Single Instance</span>
       </footer>
     </main>
   );
