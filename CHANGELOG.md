@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- 恢复可测试的 `createGatewayProtocolServer` 工厂，并让 HTTP GatewayServer 复用同一协议构造逻辑。
+- 修复 CI 中 gateway protocol test 因重构后导出缺失导致的失败。
+
+
 - 新增 GitHub Actions CI：自动运行 Core tests、全仓 typecheck 和 TypeScript/Web build。
 - CI 固定 Node.js 22 与 pnpm 10.17.1；提交 pnpm-lock.yaml 后可切换 frozen lockfile 安装。
 

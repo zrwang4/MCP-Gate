@@ -16,6 +16,36 @@ import type { ToolRegistry, ToolRoute } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
 
+export interface GatewayToolCaller {
+  callTool(publicName: string, args: unknown): Promise<CallToolResult>;
+}
+
+export function createGatewayProtocolServer(
+  tools: ToolRegistry,
+  caller: GatewayToolCaller,
+  _logger?: CoreLogger,
+): McpServer {
+  const server = new McpServer(
+    {
+      name: "mcp-gate",
+      version: CORE_VERSION,
+    },
+    {
+      capabilities: {
+        tools: {
+          listChanged: true,
+        },
+      },
+    },
+  );
+
+  for (const route of tools.list()) {
+    registerTool(server, route, caller);
+  }
+
+  return server;
+}
+
 export class GatewayServer {
   #config: CoreConfig;
   #tools: ToolRegistry;
@@ -139,40 +169,27 @@ export class GatewayServer {
   }
 
   #buildMcpServer(): McpServer {
-    const server = new McpServer(
-      {
-        name: "mcp-gate",
-        version: CORE_VERSION,
-      },
-      {
-        capabilities: {
-          tools: {
-            listChanged: true,
-          },
-        },
-      },
-    );
-
-    for (const route of this.#tools.list()) {
-      this.#registerTool(server, route);
-    }
-
-    return server;
-  }
-
-  #registerTool(server: McpServer, route: ToolRoute): void {
-    server.registerTool(
-      route.publicName,
-      {
-        description: route.definition.description,
-        inputSchema: schemaFromRoute(route),
-      },
-      async (args) => {
-        const result = await this.#upstreams.callTool(route.publicName, args);
-        return result as CallToolResult;
-      },
+    return createGatewayProtocolServer(
+      this.#tools,
+      this.#upstreams,
+      this.#logger,
     );
   }
+}
+
+function registerTool(
+  server: McpServer,
+  route: ToolRoute,
+  caller: GatewayToolCaller,
+): void {
+  server.registerTool(
+    route.publicName,
+    {
+      description: route.definition.description,
+      inputSchema: schemaFromRoute(route),
+    },
+    async (args) => caller.callTool(route.publicName, args),
+  );
 }
 
 function schemaFromRoute(route: ToolRoute) {
