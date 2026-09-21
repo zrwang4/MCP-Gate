@@ -1,0 +1,18 @@
+{
+  "name": "mcp-gate",
+  "version": "0.2.0",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "core:dev": "pnpm --filter @mcp-gate/core dev",
+    "core:smoke": "pnpm --filter @mcp-gate/core smoke",
+    "desktop:dev": "pnpm --filter @mcp-gate/desktop tauri dev",
+    "desktop:web": "pnpm --filter @mcp-gate/desktop dev",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "core:management-smoke": "pnpm --filter @mcp-gate/core management:smoke"
+  }
+}
