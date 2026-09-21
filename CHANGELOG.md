@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 修复 connection-test 单测调用新 options 签名时漏改的一处 factory 参数，恢复 Core strict typecheck。
+
+
 - 连接测试 timeout timer 不再 `unref()`，确保即使被测试操作本身不占用事件循环，Core 也会等待硬超时并执行主动断开。
 - 修复 timeout 单元测试在 Node test runner 中被 `cancelledByParent` 的问题。
 

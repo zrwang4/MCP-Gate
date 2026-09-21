@@ -192,8 +192,10 @@ test("connection test rejects a missing new secret value", async () => {
         registry,
         new MemorySecretStore(),
         logger,
-        () => {
-          throw new Error("factory should not be called");
+        {
+          factory: () => {
+            throw new Error("factory should not be called");
+          },
         },
       ),
       /secret environment value is required for API_TOKEN/,
