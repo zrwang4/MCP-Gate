@@ -306,7 +306,7 @@ export function App() {
               <FileText size={18} /> 暂无日志
             </div>
           ) : (
-            visibleLogs.slice(-120).map((entry) => (
+            visibleLogs.slice(-80).map((entry) => (
               <div className="logRow" key={entry.seq}>
                 <time>{formatTime(entry.timestamp)}</time>
                 <span className={`logLevel ${entry.level}`}>{entry.level.toUpperCase()}</span>
