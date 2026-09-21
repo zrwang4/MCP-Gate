@@ -36,3 +36,27 @@ test("disabled tools are hidden from normal list", () => {
   assert.equal(registry.list().length, 0);
   assert.equal(registry.list({ includeDisabled: true }).length, 1);
 });
+
+
+test("tool registry preserves enabled state when a server refreshes tools", () => {
+  const registry = new ToolRegistry();
+  registry.replaceServerTools("srv-1", "git", [
+    { name: "delete_repo" },
+    { name: "list_repo" },
+  ]);
+
+  registry.setEnabled("git__delete_repo", false);
+  registry.replaceServerTools("srv-1", "git", [
+    { name: "delete_repo", description: "updated" },
+    { name: "list_repo" },
+  ]);
+
+  assert.equal(
+    registry.resolve("git__delete_repo")?.enabled,
+    false,
+  );
+  assert.equal(
+    registry.resolve("git__list_repo")?.enabled,
+    true,
+  );
+});

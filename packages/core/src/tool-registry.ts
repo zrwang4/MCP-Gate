@@ -21,6 +21,12 @@ export class ToolRegistry {
     serverAlias: string,
     tools: McpToolDefinition[],
   ): ToolRoute[] {
+    const previousEnabled = new Map(
+      [...this.#routes.values()]
+        .filter((route) => route.serverId === serverId)
+        .map((route) => [route.originalName, route.enabled] as const),
+    );
+
     this.removeServer(serverId);
 
     const created: ToolRoute[] = [];
@@ -39,7 +45,7 @@ export class ToolRegistry {
         serverId,
         serverAlias,
         originalName,
-        enabled: true,
+        enabled: previousEnabled.get(originalName) ?? true,
         definition: {
           name: publicName,
           description: tool.description,

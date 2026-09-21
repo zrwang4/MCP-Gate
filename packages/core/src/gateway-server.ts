@@ -8,6 +8,7 @@ import {
   createMcpHandler,
   Server,
   type CallToolResult,
+  type Tool,
 } from "@modelcontextprotocol/server";
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger } from "./logger.ts";
@@ -217,9 +218,14 @@ export class GatewayServer {
   }
 }
 
-function normalizeInputSchema(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
+function normalizeInputSchema(value: unknown): Tool["inputSchema"] {
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as { type?: unknown }).type === "object"
+  ) {
+    return value as Tool["inputSchema"];
   }
 
   return {

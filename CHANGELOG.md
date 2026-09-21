@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 桌面端新增 Tools 管理区，可直接启用/禁用聚合 Tool。
+- 新增 Tool enable/disable Management API；禁用 Tool 会立即从 Gateway `tools/list` 隐藏并拒绝调用。
+- upstream 刷新 `tools/list` 时保留当前进程内的 Tool 开关状态。
+- 清理桌面端旧 Filesystem PoC 控制视图，统一使用 Server Registry / UpstreamManager / ToolRegistry。
+- Gateway Tool inputSchema 类型收紧到 MCP SDK `Tool["inputSchema"]`。
+
+
 - 新增统一 GatewayServer，`127.0.0.1:24888/mcp` 直接聚合所有已连接 upstream Tools。
 - Gateway 使用 MCP SDK v2 低层 `Server` 动态返回上游 JSON Schema。
 - `tools/list` 读取内存 ToolRegistry；`tools/call` 通过 UpstreamManager 路由到原 MCP。

@@ -174,6 +174,29 @@ export class ManagementServer {
       return;
     }
 
+    const toolActionMatch = url.pathname.match(
+      /^\/api\/tools\/([A-Za-z0-9_-]+)\/(enable|disable)$/,
+    );
+    if (req.method === "POST" && toolActionMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const [, publicName, action] = toolActionMatch;
+      const changed = this.#tools.setEnabled(publicName, action === "enable");
+      if (!changed) {
+        json(res, 404, { error: "tool not found" });
+        return;
+      }
+
+      const tool = this.#tools.resolve(publicName);
+      this.#logger.info(
+        "tools",
+        `${action === "enable" ? "enabled" : "disabled"} ${publicName}`,
+      );
+      json(res, 200, { tool });
+      return;
+    }
+
+
     const upstreamActionMatch = url.pathname.match(
       /^\/api\/upstreams\/([0-9a-f-]+)\/(connect|disconnect|refresh-tools)$/i,
     );
