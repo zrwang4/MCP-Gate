@@ -87,6 +87,15 @@ interface ProfileApplyResult {
   failed: ProfileApplyFailure[];
 }
 
+interface McpImportSourceInfo {
+  id: string;
+  label: string;
+  displayPath: string;
+  exists: boolean;
+  size: number | null;
+  modifiedAt: string | null;
+}
+
 interface McpImportIssue {
   sourceName?: string;
   message: string;
@@ -319,6 +328,9 @@ export function App() {
   const [autostartBusy, setAutostartBusy] = useState(false);
   const [showAddServer, setShowAddServer] = useState(false);
   const [showImportConfig, setShowImportConfig] = useState(false);
+  const [importSources, setImportSources] = useState<McpImportSourceInfo[]>([]);
+  const [importSourceId, setImportSourceId] = useState<string | null>(null);
+  const [importSourceSnapshot, setImportSourceSnapshot] = useState<McpImportSourceInfo | null>(null);
   const [importConfigText, setImportConfigText] = useState("");
   const [importPreview, setImportPreview] = useState<McpImportPreview | null>(null);
   const [importApplyResult, setImportApplyResult] = useState<McpImportApplyResult | null>(null);
@@ -450,11 +462,61 @@ export function App() {
     window.setTimeout(() => setCopied(false), 1200);
   }
 
+  async function refreshImportSources() {
+    try {
+      const response = await api<{ sources: McpImportSourceInfo[] }>(
+        "/api/import/mcp-config/sources",
+        {
+          method: "POST",
+          body: "{}",
+        },
+        10_000,
+      );
+      setImportSources(response.sources);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
   function openImportConfig() {
     setImportConfigText("");
     setImportPreview(null);
     setImportApplyResult(null);
+    setImportSourceId(null);
+    setImportSourceSnapshot(null);
     setShowImportConfig(true);
+    void refreshImportSources();
+  }
+
+  async function previewImportSource(sourceId: string) {
+    setImportBusy(true);
+    setError(null);
+    setImportApplyResult(null);
+    try {
+      const response = await api<{
+        source: McpImportSourceInfo;
+        preview: McpImportPreview;
+      }>(
+        "/api/import/mcp-config/source-preview",
+        {
+          method: "POST",
+          body: JSON.stringify({ sourceId }),
+        },
+        15_000,
+      );
+      setImportConfigText("");
+      setImportSourceId(sourceId);
+      setImportSourceSnapshot(response.source);
+      setImportPreview(response.preview);
+      await refreshImportSources();
+    } catch (cause) {
+      setImportSourceId(null);
+      setImportSourceSnapshot(null);
+      setImportPreview(null);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setImportBusy(false);
+    }
   }
 
   function parseImportConfig(): unknown {
@@ -497,15 +559,26 @@ export function App() {
     setImportBusy(true);
     setError(null);
     try {
-      const config = parseImportConfig();
-      const response = await api<{ result: McpImportApplyResult }>(
-        "/api/import/mcp-config/apply",
-        {
-          method: "POST",
-          body: JSON.stringify({ config }),
-        },
-        60_000,
-      );
+      const response = importSourceId
+        ? await api<{ result: McpImportApplyResult }>(
+            "/api/import/mcp-config/source-apply",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                sourceId: importSourceId,
+                expectedModifiedAt: importSourceSnapshot?.modifiedAt,
+              }),
+            },
+            60_000,
+          )
+        : await api<{ result: McpImportApplyResult }>(
+            "/api/import/mcp-config/apply",
+            {
+              method: "POST",
+              body: JSON.stringify({ config: parseImportConfig() }),
+            },
+            60_000,
+          );
 
       setImportApplyResult(response.result);
       await refresh();
@@ -1537,6 +1610,8 @@ export function App() {
             setShowImportConfig(false);
             setImportPreview(null);
             setImportApplyResult(null);
+            setImportSourceId(null);
+            setImportSourceSnapshot(null);
           }}
         >
           <section
@@ -1567,6 +1642,43 @@ export function App() {
               </button>
             </div>
 
+            <div className="importSources">
+              <div className="importSourcesHeader">
+                <div>
+                  <strong>本机配置</strong>
+                  <span>Core 直接读取，原始 JSON 和 Secret 不会发给 WebView</span>
+                </div>
+                <button
+                  type="button"
+                  className="profilePickerButton"
+                  disabled={importBusy}
+                  onClick={() => void refreshImportSources()}
+                >
+                  刷新检测
+                </button>
+              </div>
+
+              {importSources.map((source) => (
+                <button
+                  type="button"
+                  className={`importSourceRow ${importSourceId === source.id ? "selected" : ""}`}
+                  key={source.id}
+                  disabled={importBusy || !source.exists}
+                  onClick={() => void previewImportSource(source.id)}
+                >
+                  <div>
+                    <strong>{source.label}</strong>
+                    <code>{source.displayPath}</code>
+                  </div>
+                  <span className={source.exists ? "sourceFound" : "sourceMissing"}>
+                    {source.exists ? "预览" : "未发现"}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="importDivider"><span>或粘贴 JSON</span></div>
+
             <label className="field">
               <span>JSON 配置</span>
               <textarea
@@ -1576,6 +1688,8 @@ export function App() {
                   setImportConfigText(event.target.value);
                   setImportPreview(null);
                   setImportApplyResult(null);
+                  setImportSourceId(null);
+                  setImportSourceSnapshot(null);
                 }}
                 rows={10}
                 spellCheck={false}
@@ -1662,7 +1776,7 @@ export function App() {
               </button>
               <button
                 className="secondaryButton"
-                disabled={importBusy || !importConfigText.trim()}
+                disabled={importBusy || !importConfigText.trim() || Boolean(importSourceId)}
                 onClick={() => void previewImportConfig()}
               >
                 {importBusy ? "处理中…" : "预览"}

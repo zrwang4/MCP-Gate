@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 导入弹窗新增本机配置自动发现，可直接预览并导入 Cursor 全局配置和 Claude Desktop 本地配置。
+- 本机 Source 模式不把原始 JSON 或 Secret 值传给 WebView；UI 只显示固定的 ~ 路径、存在状态和脱敏 Preview。
+- Source Preview 与 Apply 增加 modifiedAt 一致性校验；文件在预览后发生变化时拒绝导入并要求重新预览。
+- 仍保留手工粘贴 JSON 模式，可在同一弹窗中切换使用。
+
+
 - 正式桌面模式新增 Management API 随机会话 Token，替代仅依赖固定 `X-MCP-Gate-Client` 的弱控制面边界。
 - Tauri 每次启动生成 64 字符随机 Token，通过 `MCP_GATE_MANAGEMENT_TOKEN` 只注入自己托管的 Core。
 - 前端通过 Tauri command 获取当前 Token，并在所有 Management API 请求发送 `X-MCP-Gate-Token`。

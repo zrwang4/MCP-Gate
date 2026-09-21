@@ -389,12 +389,20 @@ export class ManagementServer {
       try {
         const body = await readJsonBody(req) as {
           sourceId?: unknown;
+          expectedModifiedAt?: unknown;
         };
         if (typeof body.sourceId !== "string") {
           throw new Error("sourceId is required");
         }
 
         const loaded = await readMcpImportSource(body.sourceId);
+        if (
+          typeof body.expectedModifiedAt === "string" &&
+          loaded.source.modifiedAt !== body.expectedModifiedAt
+        ) {
+          throw new Error("import source changed since preview; preview it again before importing");
+        }
+
         const result = await applyMcpClientConfig(
           loaded.config,
           this.#registry,

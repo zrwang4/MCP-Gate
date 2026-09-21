@@ -1298,3 +1298,136 @@ footer {
     justify-content: flex-end;
   }
 }
+
+.importSources {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.importSourcesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.importSourcesHeader > div {
+  display: grid;
+  gap: 3px;
+}
+
+.importSourcesHeader strong {
+  font-size: 11px;
+}
+
+.importSourcesHeader span {
+  color: #858580;
+  font-size: 9px;
+}
+
+.importSourceRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 11px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 11px;
+  background: rgba(255,255,255,.66);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.importSourceRow:hover:not(:disabled) {
+  background: rgba(34,160,107,.05);
+  border-color: rgba(34,160,107,.20);
+}
+
+.importSourceRow.selected {
+  border-color: rgba(34,160,107,.28);
+  box-shadow: 0 0 0 3px rgba(34,160,107,.06);
+}
+
+.importSourceRow:disabled {
+  cursor: default;
+  opacity: .58;
+}
+
+.importSourceRow > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.importSourceRow strong {
+  font-size: 11px;
+}
+
+.importSourceRow code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #777;
+  font-size: 9px;
+}
+
+.sourceFound,
+.sourceMissing {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.sourceFound {
+  color: #137853;
+}
+
+.sourceMissing {
+  color: #999;
+}
+
+.importDivider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 2px;
+  color: #999;
+  font-size: 9px;
+}
+
+.importDivider::before,
+.importDivider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: rgba(0,0,0,.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .importSourcesHeader span,
+  .importSourceRow code {
+    color: #999;
+  }
+
+  .importSourceRow {
+    background: rgba(30,30,28,.78);
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .importSourceRow:hover:not(:disabled) {
+    background: rgba(34,160,107,.10);
+    border-color: rgba(34,160,107,.25);
+  }
+
+  .importDivider::before,
+  .importDivider::after {
+    background: rgba(255,255,255,.09);
+  }
+
+  .sourceFound {
+    color: #6ee3a8;
+  }
+}
