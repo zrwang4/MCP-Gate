@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 新增本机 MCP 配置源发现：Cursor 全局 `~/.cursor/mcp.json` 与 Claude Desktop macOS 本地配置。
+- Core 直接读取固定配置路径，WebView 只拿到存在状态、脱敏 Preview 和导入结果，不接收原始配置文件或 Secret 值。
+- 新增 `POST /api/import/mcp-config/sources`、`source-preview`、`source-apply`。
+- 配置源读取限制为 512 KiB，只接受普通文件和合法 JSON。
+- Source API 只返回 `displayPath`（~ 路径），不暴露真实 Home 绝对路径。
+- 新增配置源路径解析、存在性检测、读取与路径脱敏测试。
+
+
 - 桌面端 MCP 管理新增“导入配置”入口，支持粘贴 Claude/Cursor 风格 JSON。
 - 导入采用“粘贴 → 预览 → 应用”两阶段流程，预览列表显示 transport、启动目标、普通 env key、Keychain key 和 warnings。
 - 预览区不回显 Secret 值；不支持项逐条显示 issue，不会阻止其它合法 Server 预览。

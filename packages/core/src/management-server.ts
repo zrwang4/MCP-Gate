@@ -7,6 +7,10 @@ import {
   previewMcpClientConfig,
   toPublicMcpImportPreview,
 } from "./mcp-config-import.ts";
+import {
+  inspectMcpImportSources,
+  readMcpImportSource,
+} from "./mcp-import-source.ts";
 import type { GatewayServer } from "./gateway-server.ts";
 import type { HttpServerConfig, McpServerConfig, ServerRegistry } from "./server-registry.ts";
 import type { ProfileStore } from "./profile-store.ts";
@@ -310,6 +314,85 @@ export class ManagementServer {
       return;
     }
 
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/sources"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const sources = await inspectMcpImportSources();
+        json(res, 200, { sources });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/source-preview"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          sourceId?: unknown;
+        };
+        if (typeof body.sourceId !== "string") {
+          throw new Error("sourceId is required");
+        }
+
+        const loaded = await readMcpImportSource(body.sourceId);
+        const preview = previewMcpClientConfig(loaded.config);
+        json(res, 200, {
+          source: loaded.source,
+          preview: toPublicMcpImportPreview(preview),
+        });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/source-apply"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          sourceId?: unknown;
+        };
+        if (typeof body.sourceId !== "string") {
+          throw new Error("sourceId is required");
+        }
+
+        const loaded = await readMcpImportSource(body.sourceId);
+        const result = await applyMcpClientConfig(
+          loaded.config,
+          this.#registry,
+          this.#secrets,
+          this.#logger,
+        );
+        this.#upstreams.syncConfigs();
+        json(res, 200, {
+          source: loaded.source,
+          result,
+        });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
 
     if (
       req.method === "POST" &&
