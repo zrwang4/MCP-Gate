@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 补充临时 Tauri `icons/icon.png`，解除 `generate_context!()` 在 Rust CI 中对默认图标的硬依赖。
+- pnpm 显式允许 `@github/keytar` install script，确保 macOS Keychain native prebuild 正常安装。
+- CoreSupervisor 启动 Node Core 时工作目录修正为 monorepo root。
+
+
 - 显式设置 Tauri bundle icon 为空数组，避免尚未提交正式 App 图标时 `cargo check` 读取不存在的默认 `icons/icon.png`。
 
 

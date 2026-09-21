@@ -247,6 +247,7 @@ fn build_core_command() -> Result<(Command, &'static str), String> {
         .parent()
         .and_then(|path| path.parent())
         .and_then(|path| path.parent())
+        .and_then(|path| path.parent())
     {
         command.current_dir(workspace_root);
     }
