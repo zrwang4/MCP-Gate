@@ -12,10 +12,13 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:24888/mcp";
 const MANAGEMENT_URL = "http://127.0.0.1:24889";
+const IS_TAURI =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 type ServerStatus = "starting" | "running" | "stopping" | "stopped" | "error";
 type LogLevel = "debug" | "info" | "warn" | "error";
@@ -63,6 +66,13 @@ interface LogEntry {
   level: LogLevel;
   source: string;
   message: string;
+}
+
+interface CoreRuntimeStatus {
+  reachable: boolean;
+  managed: boolean;
+  pid: number | null;
+  launchMode: "none" | "external" | "managed-node" | "managed-executable";
 }
 
 interface StatusResponse {
@@ -139,6 +149,18 @@ function statusLabel(status: ServerStatus): string {
   }
 }
 
+function coreRuntimeLabel(status: CoreRuntimeStatus | null): string {
+  if (!IS_TAURI) return "Web 模式";
+  if (!status) return "检测中";
+  if (status.managed) {
+    return status.launchMode === "managed-executable"
+      ? "桌面托管 Sidecar"
+      : "桌面托管 Node";
+  }
+  if (status.reachable) return "外部 Core";
+  return "未运行";
+}
+
 function formatTime(value: string | null): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -159,6 +181,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [logLevel, setLogLevel] = useState<"all" | LogLevel>("all");
   const [managementConnected, setManagementConnected] = useState(false);
+  const [coreRuntime, setCoreRuntime] = useState<CoreRuntimeStatus | null>(null);
+  const [coreRestarting, setCoreRestarting] = useState(false);
   const [showAddServer, setShowAddServer] = useState(false);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [newServerName, setNewServerName] = useState("");
@@ -175,6 +199,17 @@ export function App() {
   const [testToolResult, setTestToolResult] = useState("");
   const [testToolBusy, setTestToolBusy] = useState(false);
   const logPanelRef = useRef<HTMLDivElement | null>(null);
+
+  const refreshCoreRuntime = useCallback(async () => {
+    if (!IS_TAURI) return;
+
+    try {
+      const runtime = await invoke<CoreRuntimeStatus>("core_runtime_status");
+      setCoreRuntime(runtime);
+    } catch {
+      setCoreRuntime(null);
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -195,8 +230,10 @@ export function App() {
     } catch (cause) {
       setManagementConnected(false);
       setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      void refreshCoreRuntime();
     }
-  }, []);
+  }, [refreshCoreRuntime]);
 
   useEffect(() => {
     void refresh();
@@ -211,6 +248,23 @@ export function App() {
   }, [logs, logLevel]);
 
   const gatewayUrl = status?.gateway.endpoint ?? DEFAULT_GATEWAY_URL;
+
+  async function restartManagedCore() {
+    if (!IS_TAURI) return;
+
+    setCoreRestarting(true);
+    setError(null);
+    try {
+      const runtime = await invoke<CoreRuntimeStatus>("restart_core");
+      setCoreRuntime(runtime);
+      await new Promise((resolve) => window.setTimeout(resolve, 600));
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setCoreRestarting(false);
+    }
+  }
 
   async function copyGatewayUrl() {
     await navigator.clipboard.writeText(gatewayUrl);
@@ -426,7 +480,17 @@ export function App() {
         <div className="errorBanner">
           <strong>运行异常</strong>
           <span>{error}</span>
-          <button onClick={() => void refresh()}>重试</button>
+          <div className="errorActions">
+            {IS_TAURI && (
+              <button
+                disabled={coreRestarting}
+                onClick={() => void restartManagedCore()}
+              >
+                {coreRestarting ? "重启中…" : "重启 Core"}
+              </button>
+            )}
+            <button onClick={() => void refresh()}>重试</button>
+          </div>
         </div>
       )}
 
@@ -462,6 +526,13 @@ export function App() {
           <div>
             <span>已启用 Tools</span>
             <strong>{enabledToolCount}</strong>
+          </div>
+          <div>
+            <span>Core 进程</span>
+            <strong>
+              {coreRuntimeLabel(coreRuntime)}
+              {coreRuntime?.pid ? ` · ${coreRuntime.pid}` : ""}
+            </strong>
           </div>
         </div>
       </section>
@@ -827,7 +898,7 @@ export function App() {
 
       <footer>
         <span><Activity size={12} /> MG-010</span>
-        <span>统一 /mcp · MCP 管理 · Tool 开关</span>
+        <span>统一 /mcp · Desktop Core Supervisor · Tool 管理</span>
       </footer>
     </main>
   );

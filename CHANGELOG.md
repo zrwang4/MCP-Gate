@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 桌面 UI 显示 CoreSupervisor 状态：桌面托管 Node、托管 Sidecar、外部 Core 或未运行。
+- Management API 连接失败时，Tauri 模式可直接点击“重启 Core”调用 Rust supervisor。
+- Gateway 指标新增托管 Core PID，Web-only 模式保持兼容。
+
+
 - Tauri 桌面端新增 CoreSupervisor：启动时自动检测并拉起 Core，退出时只回收自己启动的 Core。
 - 已存在的外部 Core 会被复用，不会被桌面端误杀。
 - 新增 `core_runtime_status` 与 `restart_core` Tauri command。

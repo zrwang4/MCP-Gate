@@ -215,7 +215,6 @@ footer {
 }
 
 .errorBanner button {
-  margin-left: auto;
   border-radius: 8px;
   border: 1px solid rgba(220,80,80,.2);
   background: rgba(220,80,80,.12);
@@ -224,14 +223,26 @@ footer {
   cursor: pointer;
 }
 
+.errorActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.errorActions button {
+  margin-left: 0;
+}
+
 .metrics {
   display: flex;
+  flex-wrap: wrap;
   gap: 14px;
   margin-top: 18px;
 }
 
 .metrics > div {
-  flex: 1;
+  flex: 1 1 135px;
   padding: 10px 12px;
   border-radius: 12px;
   background: #f5f5f3;
