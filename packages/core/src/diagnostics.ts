@@ -1,5 +1,4 @@
 import { arch, homedir, platform, release } from "node:os";
-import type { GatewaySnapshot } from "./gateway-server.ts";
 import type { LogEntry } from "./logger.ts";
 import { redactSecrets } from "./logger.ts";
 import type { McpProfile } from "./profile-store.ts";
@@ -7,10 +6,18 @@ import type { McpServerConfig } from "./server-registry.ts";
 import type { ToolRoute } from "./tool-registry.ts";
 import type { UpstreamSnapshot } from "./upstream-manager.ts";
 
+export interface DiagnosticGatewaySnapshot {
+  endpoint: string;
+  healthEndpoint: string;
+  status: string;
+  toolCount: number;
+  lastError: string | null;
+}
+
 export interface DiagnosticSnapshotInput {
   coreVersion: string;
   coreStartedAt: string;
-  gateway: GatewaySnapshot;
+  gateway: DiagnosticGatewaySnapshot;
   activeProfileId: string | null;
   profiles: McpProfile[];
   servers: McpServerConfig[];
@@ -77,12 +84,40 @@ export function buildDiagnosticSnapshot(input: DiagnosticSnapshotInput) {
   };
 }
 
-export function toDiagnosticServerConfig(server: McpServerConfig) {
-  const base = {
+export interface DiagnosticServerBase {
+  id: string;
+  name: string;
+  alias: string;
+  enabled: boolean;
+  autoStart: boolean;
+}
+
+export interface DiagnosticHttpServerConfig extends DiagnosticServerBase {
+  transport: "http";
+  url: string;
+  hasAuthorization: boolean;
+}
+
+export interface DiagnosticStdioServerConfig extends DiagnosticServerBase {
+  transport: "stdio";
+  command: string;
+  argCount: number;
+  cwd: string | null;
+  envKeys: string[];
+  secretEnvKeys: string[];
+}
+
+export type DiagnosticServerConfig =
+  | DiagnosticHttpServerConfig
+  | DiagnosticStdioServerConfig;
+
+export function toDiagnosticServerConfig(
+  server: McpServerConfig,
+): DiagnosticServerConfig {
+  const base: DiagnosticServerBase = {
     id: server.id,
     name: server.name,
     alias: server.alias,
-    transport: server.transport,
     enabled: server.enabled,
     autoStart: server.autoStart,
   };
@@ -90,6 +125,7 @@ export function toDiagnosticServerConfig(server: McpServerConfig) {
   if (server.transport === "http") {
     return {
       ...base,
+      transport: "http",
       url: sanitizeHttpUrl(server.url),
       hasAuthorization: Boolean(server.authSecretId),
     };
@@ -97,6 +133,7 @@ export function toDiagnosticServerConfig(server: McpServerConfig) {
 
   return {
     ...base,
+    transport: "stdio",
     command: sanitizePath(server.command),
     argCount: server.args.length,
     cwd: server.cwd ? sanitizePath(server.cwd) : null,

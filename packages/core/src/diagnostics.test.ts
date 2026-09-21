@@ -39,6 +39,7 @@ test("diagnostic stdio config excludes env values secret ids and args", () => {
   const serialized = JSON.stringify(diagnostic);
 
   assert.equal(diagnostic.transport, "stdio");
+  if (diagnostic.transport !== "stdio") assert.fail("expected stdio diagnostic");
   assert.equal(diagnostic.argCount, 3);
   assert.deepEqual(diagnostic.envKeys, ["INTERNAL_VALUE", "MODE"]);
   assert.deepEqual(diagnostic.secretEnvKeys, ["API_TOKEN"]);
@@ -56,6 +57,8 @@ test("diagnostic HTTP URL removes credentials query and fragment", () => {
   const diagnostic = toDiagnosticServerConfig(server);
   const serialized = JSON.stringify(diagnostic);
 
+  assert.equal(diagnostic.transport, "http");
+  if (diagnostic.transport !== "http") assert.fail("expected HTTP diagnostic");
   assert.equal(diagnostic.url, "https://example.com/mcp");
   assert.equal(diagnostic.hasAuthorization, true);
   assert.doesNotMatch(serialized, /user|pass|token=secret|opaque-id/);
