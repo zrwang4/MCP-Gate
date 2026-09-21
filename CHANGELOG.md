@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Tauri 桌面端新增 CoreSupervisor：启动时自动检测并拉起 Core，退出时只回收自己启动的 Core。
+- 已存在的外部 Core 会被复用，不会被桌面端误杀。
+- 新增 `core_runtime_status` 与 `restart_core` Tauri command。
+- CoreSupervisor 开发态默认启动 `packages/core/src/main.ts`，并支持 `MCP_GATE_CORE_EXECUTABLE` 为后续独立 sidecar 预留入口。
+- README 更新为当前统一 Gateway / stdio+HTTP / Keychain / 自动 Core 生命周期架构。
+
+
 - HTTP MCP 新增 Authorization 鉴权，Secret 通过 `@github/keytar` 写入 macOS Keychain。
 - `servers.json` 只保存 opaque `authSecretId`，Management API 只返回 `hasAuthorization`，不会返回 secret id 或 Token。
 - HTTP transport 连接时从 Keychain 读取 Authorization，并通过 MCP SDK `requestInit.headers.Authorization` 注入。

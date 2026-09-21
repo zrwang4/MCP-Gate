@@ -39,3 +39,15 @@ jobs:
 
       - name: Build TypeScript and web UI
         run: pnpm build
+
+
+  desktop-rust:
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Tauri Rust shell
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
