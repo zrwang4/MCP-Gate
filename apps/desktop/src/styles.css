@@ -20,9 +20,9 @@ body {
 button { font: inherit; }
 
 .shell {
-  width: min(760px, 100%);
+  width: min(920px, 100%);
   margin: 0 auto;
-  padding: 34px 34px 28px;
+  padding: 36px 36px 32px;
 }
 
 .topbar,
@@ -35,9 +35,9 @@ footer {
   align-items: center;
 }
 
-.topbar { justify-content: space-between; margin-bottom: 30px; }
+.topbar { justify-content: space-between; margin-bottom: 32px; }
 .eyebrow { font-size: 11px; letter-spacing: .14em; color: #777; font-weight: 700; }
-h1 { margin: 5px 0 0; font-size: 29px; letter-spacing: -.035em; }
+h1 { margin: 5px 0 0; font-size: 32px; letter-spacing: -.035em; }
 h2 { margin: 0; font-size: 16px; }
 
 .iconButton,
@@ -47,6 +47,7 @@ h2 { margin: 0; font-size: 16px; }
   background: rgba(255,255,255,.72);
   color: inherit;
   cursor: pointer;
+  transition: transform .08s ease, background .15s ease;
 }
 
 .iconButton {
@@ -54,12 +55,30 @@ h2 { margin: 0; font-size: 16px; }
   display: grid; place-items: center;
 }
 
+.iconButton:hover,
+.ghostButton:hover,
+.copyButton:hover {
+  background: rgba(255,255,255,.92);
+}
+
 .gatewayCard {
-  padding: 22px;
+  position: relative;
+  padding: 24px;
   border: 1px solid rgba(0,0,0,.08);
   border-radius: 18px;
-  background: rgba(255,255,255,.82);
-  box-shadow: 0 12px 36px rgba(0,0,0,.045);
+  background: rgba(255,255,255,.92);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.6),
+    0 18px 44px rgba(0,0,0,.06);
+}
+
+.gatewayCard::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 16px; bottom: 16px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, #22a06b, #1b8a5a);
 }
 
 .cardHeader { justify-content: space-between; }
@@ -67,7 +86,7 @@ h2 { margin: 0; font-size: 16px; }
   display: inline-block; width: 9px; height: 9px; border-radius: 50%;
   margin-right: 9px; background: #aaa;
 }
-.statusDot.online { background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,.10); }
+.statusDot.online { background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,.12); }
 .statusDot.checking { animation: pulse 1s ease-in-out infinite; }
 .statusText { font-size: 14px; font-weight: 650; }
 
@@ -81,41 +100,246 @@ h2 { margin: 0; font-size: 16px; }
   justify-content: space-between;
   gap: 14px;
   margin-top: 22px;
-  padding: 11px 12px 11px 14px;
+  padding: 12px 12px 12px 16px;
   border-radius: 12px;
   background: #f5f5f3;
+  border: 1px solid rgba(0,0,0,.05);
 }
 .endpointRow code { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
 .copyButton { flex: 0 0 auto; background: #fff; }
-.hint { margin: 13px 2px 0; color: #767676; font-size: 12px; line-height: 1.6; }
+.hint { margin: 14px 2px 0; color: #767676; font-size: 12px; line-height: 1.6; }
 
-.section { margin-top: 28px; }
-.sectionTitle { justify-content: space-between; margin: 0 2px 12px; }
+.section { margin-top: 32px; }
+.sectionTitle { justify-content: space-between; margin: 0 2px 14px; }
 .sectionTitle span { font-size: 12px; color: #888; }
 
 .serverCard {
   border: 1px solid rgba(0,0,0,.07);
-  background: rgba(255,255,255,.72);
-  border-radius: 15px;
-  padding: 15px 16px;
-  gap: 12px;
+  background: rgba(255,255,255,.78);
+  border-radius: 16px;
+  padding: 16px;
+  gap: 14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.03);
+  transition: transform .08s ease, box-shadow .15s ease;
 }
+
+.serverCard:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px rgba(0,0,0,.05);
+}
+
 .serverIcon {
-  width: 38px; height: 38px; display: grid; place-items: center;
-  border-radius: 11px; background: #eeeeeb;
+  width: 40px; height: 40px; display: grid; place-items: center;
+  border-radius: 12px; background: #eeeeeb;
+  color: #4a4a48;
 }
 .serverInfo { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .serverInfo strong { font-size: 14px; }
-.serverInfo span { font-size: 12px; color: #7d7d7d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pill { font-size: 11px; border-radius: 999px; padding: 5px 8px; }
-.pill.success { color: #137853; background: rgba(34,160,107,.10); }
-.pill.muted { color: #777; background: rgba(0,0,0,.05); }
+.serverInfo > span { font-size: 12px; color: #7d7d7d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { font-size: 11px; border-radius: 999px; padding: 5px 8px; font-weight: 600; }
+.pill.running { color: #137853; background: rgba(34,160,107,.12); }
+.pill.starting { color: #8a6d1b; background: rgba(196,160,48,.12); }
+.pill.stopping { color: #6e5b14; background: rgba(160,140,48,.12); }
+.pill.error { color: #b02a2a; background: rgba(220,80,80,.12); }
+.pill.stopped { color: #777; background: rgba(0,0,0,.05); }
+
+.serverMeta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.serverError {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #b02a2a;
+  background: rgba(220,80,80,.08);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.serverActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 72px;
+}
+
+.actionButton {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border-radius: 9px; padding: 7px 10px;
+  border: 1px solid rgba(0,0,0,.09);
+  background: rgba(255,255,255,.72);
+  color: inherit;
+  cursor: pointer;
+}
+
+.actionButton.primary {
+  background: #22a06b;
+  color: #fff;
+  border-color: rgba(34,160,107,.25);
+}
+
+.actionButton:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+}
 
 footer {
   justify-content: space-between;
-  margin-top: 34px;
+  margin-top: 36px;
   color: #999;
   font-size: 11px;
+}
+
+.errorBanner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(220,80,80,.08);
+  border: 1px solid rgba(220,80,80,.15);
+  color: #5a1e1e;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.errorBanner button {
+  margin-left: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(220,80,80,.2);
+  background: rgba(220,80,80,.12);
+  color: #5a1e1e;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.metrics {
+  display: flex;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.metrics > div {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f5f5f3;
+  border: 1px solid rgba(0,0,0,.05);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metrics span {
+  font-size: 11px;
+  color: #888;
+}
+
+.metrics strong {
+  font-size: 14px;
+  font-weight: 650;
+  color: #151515;
+}
+
+.logsSection {
+  margin-top: 32px;
+}
+
+.logToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logToolbar select {
+  font: inherit;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,.1);
+  background: #fff;
+  color: inherit;
+  padding: 5px 8px;
+}
+
+.logPanel {
+  margin-top: 10px;
+  border: 1px solid rgba(0,0,0,.07);
+  border-radius: 14px;
+  background: rgba(255,255,255,.78);
+  box-shadow: 0 8px 24px rgba(0,0,0,.03);
+  overflow: hidden;
+}
+
+.logHeader {
+  display: grid;
+  grid-template-columns: 96px 64px 110px 1fr;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+  background: #f7f7f5;
+  font-size: 11px;
+  color: #888;
+  font-weight: 700;
+}
+
+.logScroller {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.logRow {
+  display: grid;
+  grid-template-columns: 96px 64px 110px 1fr;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(0,0,0,.04);
+  font-size: 12px;
+}
+
+.logRow:last-child { border-bottom: none; }
+
+.logRow time {
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.logLevel {
+  font-weight: 650;
+  font-size: 11px;
+}
+
+.logLevel.debug { color: #6e6e6e; }
+.logLevel.info { color: #137853; }
+.logLevel.warn { color: #8a6d1b; }
+.logLevel.error { color: #b02a2a; }
+
+.logSource {
+  color: #777;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logMessage {
+  color: #2a2a28;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emptyLogs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 34px;
+  color: #999;
+  font-size: 13px;
 }
 
 @keyframes pulse { 50% { opacity: .35; } }
@@ -123,8 +347,76 @@ footer {
 @media (prefers-color-scheme: dark) {
   :root { color: #f2f2f0; background: #151514; }
   body { background: radial-gradient(circle at 15% 0%, #242421, transparent 35%), #151514; }
-  .gatewayCard, .serverCard { background: rgba(30,30,28,.82); border-color: rgba(255,255,255,.08); }
-  .endpointRow { background: #242421; }
-  .iconButton, .ghostButton, .copyButton { background: #242421; color: #f2f2f0; border-color: rgba(255,255,255,.09); }
-  .serverIcon { background: #292926; }
+
+  .gatewayCard,
+  .serverCard,
+  .logPanel {
+    background: rgba(30,30,28,.88);
+    border-color: rgba(255,255,255,.08);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,.04),
+      0 18px 44px rgba(0,0,0,.25);
+  }
+
+  .endpointRow,
+  .metrics > div,
+  .logHeader {
+    background: #242421;
+    border-color: rgba(255,255,255,.08);
+  }
+
+  .iconButton,
+  .ghostButton,
+  .copyButton,
+  .actionButton {
+    background: #2c2c29;
+    color: #f2f2f0;
+    border-color: rgba(255,255,255,.1);
+  }
+
+  .actionButton.primary {
+    background: #22a06b;
+    color: #fff;
+    border-color: rgba(34,160,107,.3);
+  }
+
+  .iconButton:hover,
+  .ghostButton:hover,
+  .copyButton:hover,
+  .actionButton:hover {
+    background: #333330;
+  }
+
+  .serverIcon { background: #2e2e2b; color: #d6d6d2; }
+  .pill.running { color: #6ee3a8; background: rgba(34,160,107,.16); }
+  .pill.starting { color: #e3c46e; background: rgba(196,160,48,.16); }
+  .pill.stopping { color: #d4b45c; background: rgba(160,140,48,.16); }
+  .pill.error { color: #f08a8a; background: rgba(220,80,80,.18); }
+  .pill.stopped { color: #aaa; background: rgba(255,255,255,.06); }
+
+  .serverError {
+    color: #f08a8a;
+    background: rgba(220,80,80,.14);
+  }
+
+  .errorBanner {
+    color: #f3cccc;
+    background: rgba(220,80,80,.14);
+    border-color: rgba(220,80,80,.25);
+  }
+
+  .errorBanner button {
+    color: #f3cccc;
+    background: rgba(220,80,80,.18);
+    border-color: rgba(220,80,80,.25);
+  }
+
+  .metrics strong { color: #f2f2f0; }
+  .logMessage { color: #e8e8e4; }
+  .logLevel.debug { color: #aaaaaa; }
+  .logLevel.info { color: #6ee3a8; }
+  .logLevel.warn { color: #e3c46e; }
+  .logLevel.error { color: #f08a8a; }
+  .logSource { color: #9e9e9a; }
+  .emptyLogs { color: #888; }
 }

@@ -1,16 +1,5 @@
-import {
-  Activity,
-  Check,
-  Copy,
-  FileText,
-  Folder,
-  Play,
-  RefreshCw,
-  RotateCw,
-  Settings2,
-  Square,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, Copy, FileText, Folder, Play, RefreshCw, RotateCw, Settings2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:24888/mcp";
 const MANAGEMENT_URL = "http://127.0.0.1:24889";
@@ -110,6 +99,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [logLevel, setLogLevel] = useState<"all" | LogLevel>("all");
   const [managementConnected, setManagementConnected] = useState(false);
+  const logPanelRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -134,6 +124,12 @@ export function App() {
     const timer = window.setInterval(() => void refresh(), 2000);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    const el = logPanelRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [logs, logLevel]);
 
   const gatewayUrl = status?.gateway.endpoint ?? DEFAULT_GATEWAY_URL;
 
