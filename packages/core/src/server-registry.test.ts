@@ -151,3 +151,49 @@ test("HTTP registry stores only an opaque auth secret id", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("server registry persists stdio environment metadata without secret values", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-registry-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const file = join(dir, "servers.json");
+    const registry = new ServerRegistry(file, logger);
+    await registry.init();
+
+    const created = await registry.create({
+      name: "Env MCP",
+      command: "fake",
+    });
+
+    await registry.updateEnvironment(created.id, {
+      env: {
+        MODE: "production",
+      },
+      envSecretIds: {
+        GITHUB_TOKEN: "stdio-env:test-token",
+      },
+    });
+
+    const reloaded = new ServerRegistry(file, logger);
+    await reloaded.init();
+    const server = reloaded.list()[0];
+
+    assert.equal(server?.transport, "stdio");
+    if (server?.transport === "stdio") {
+      assert.deepEqual(server.env, { MODE: "production" });
+      assert.deepEqual(server.envSecretIds, {
+        GITHUB_TOKEN: "stdio-env:test-token",
+      });
+    }
+
+    const raw = await readFile(file, "utf8");
+    assert.match(raw, /stdio-env:test-token/);
+    assert.doesNotMatch(raw, /super-secret-token/);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

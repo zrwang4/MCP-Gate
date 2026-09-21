@@ -54,6 +54,8 @@ export interface StdioServerConfig extends ServerConfigBase {
   command: string;
   args: string[];
   cwd?: string;
+  env?: Record<string, string>;
+  secretEnvKeys: string[];
 }
 
 export interface HttpServerConfig extends ServerConfigBase {

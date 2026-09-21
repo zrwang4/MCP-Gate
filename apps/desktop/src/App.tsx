@@ -44,6 +44,8 @@ interface ServerConfigInfo {
   command?: string;
   args?: string[];
   cwd?: string;
+  env?: Record<string, string>;
+  secretEnvKeys?: string[];
   url?: string;
   hasAuthorization?: boolean;
   enabled: boolean;
@@ -172,6 +174,43 @@ function coreRuntimeLabel(status: CoreRuntimeStatus | null): string {
   return "未运行";
 }
 
+function environmentToText(values: Record<string, string> | undefined): string {
+  return Object.entries(values ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+}
+
+function secretEnvironmentToText(keys: string[] | undefined): string {
+  return [...(keys ?? [])]
+    .sort((a, b) => a.localeCompare(b))
+    .map((key) => `${key}=`)
+    .join("\n");
+}
+
+function parseEnvironmentText(text: string): Record<string, string> {
+  const result: Record<string, string> = {};
+
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const separator = line.indexOf("=");
+    if (separator <= 0) {
+      throw new Error(`环境变量格式错误：${line}`);
+    }
+
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new Error(`环境变量名无效：${key}`);
+    }
+    result[key] = value;
+  }
+
+  return result;
+}
+
 function formatTime(value: string | null): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -203,6 +242,8 @@ export function App() {
   const [newServerCommand, setNewServerCommand] = useState("");
   const [newServerArgs, setNewServerArgs] = useState("");
   const [newServerCwd, setNewServerCwd] = useState("");
+  const [newServerEnv, setNewServerEnv] = useState("");
+  const [newServerSecretEnv, setNewServerSecretEnv] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
   const [newServerAuthorization, setNewServerAuthorization] = useState("");
   const [clearServerAuthorization, setClearServerAuthorization] = useState(false);
@@ -321,6 +362,8 @@ export function App() {
     setNewServerCommand("");
     setNewServerArgs("");
     setNewServerCwd("");
+    setNewServerEnv("");
+    setNewServerSecretEnv("");
     setNewServerUrl("");
     setNewServerAuthorization("");
     setClearServerAuthorization(false);
@@ -334,6 +377,8 @@ export function App() {
     setNewServerCommand(server.command ?? "");
     setNewServerArgs((server.args ?? []).join("\n"));
     setNewServerCwd(server.cwd ?? "");
+    setNewServerEnv(environmentToText(server.env));
+    setNewServerSecretEnv(secretEnvironmentToText(server.secretEnvKeys));
     setNewServerUrl(server.url ?? "");
     setNewServerAuthorization("");
     setClearServerAuthorization(false);
@@ -343,26 +388,68 @@ export function App() {
   async function saveServerConfig() {
     setConfigBusy(true);
     setError(null);
+    let createdServerId: string | null = null;
+
     try {
-      await api(editingServerId ? `/api/server-configs/${editingServerId}` : "/api/server-configs", {
-        method: "POST",
-        body: JSON.stringify({
-          name: newServerName,
-          transport: newServerTransport,
-          command: newServerTransport === "stdio" ? newServerCommand : undefined,
-          args: newServerTransport === "stdio"
-            ? newServerArgs.split("\n").map((value) => value.trim()).filter(Boolean)
-            : undefined,
-          cwd: newServerTransport === "stdio" ? (newServerCwd.trim() || undefined) : undefined,
-          url: newServerTransport === "http" ? newServerUrl.trim() : undefined,
-          authorization:
-            newServerTransport === "http" && newServerAuthorization.trim()
-              ? newServerAuthorization.trim()
+      const plainEnv =
+        newServerTransport === "stdio"
+          ? parseEnvironmentText(newServerEnv)
+          : {};
+      const secretEnv =
+        newServerTransport === "stdio"
+          ? parseEnvironmentText(newServerSecretEnv)
+          : {};
+      const secretEnvKeys = Object.keys(secretEnv);
+
+      for (const key of Object.keys(plainEnv)) {
+        if (secretEnvKeys.includes(key)) {
+          throw new Error(`环境变量 ${key} 不能同时是普通变量和 Secret`);
+        }
+      }
+
+      const response = await api<{ server: ServerConfigInfo }>(
+        editingServerId
+          ? `/api/server-configs/${editingServerId}`
+          : "/api/server-configs",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: newServerName,
+            transport: newServerTransport,
+            command: newServerTransport === "stdio" ? newServerCommand : undefined,
+            args: newServerTransport === "stdio"
+              ? newServerArgs.split("\n").map((value) => value.trim()).filter(Boolean)
               : undefined,
-          clearAuthorization:
-            newServerTransport === "http" && clearServerAuthorization,
-        }),
-      });
+            cwd: newServerTransport === "stdio" ? (newServerCwd.trim() || undefined) : undefined,
+            url: newServerTransport === "http" ? newServerUrl.trim() : undefined,
+            authorization:
+              newServerTransport === "http" && newServerAuthorization.trim()
+                ? newServerAuthorization.trim()
+                : undefined,
+            clearAuthorization:
+              newServerTransport === "http" && clearServerAuthorization,
+          }),
+        },
+      );
+
+      if (!editingServerId) {
+        createdServerId = response.server.id;
+      }
+
+      if (newServerTransport === "stdio") {
+        await api<{ server: ServerConfigInfo }>(
+          `/api/server-configs/${response.server.id}/environment`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              env: plainEnv,
+              secretEnvKeys,
+              secretEnv,
+            }),
+          },
+        );
+      }
+
       setShowAddServer(false);
       setEditingServerId(null);
       setNewServerName("");
@@ -370,12 +457,20 @@ export function App() {
       setNewServerCommand("");
       setNewServerArgs("");
       setNewServerCwd("");
+      setNewServerEnv("");
+      setNewServerSecretEnv("");
       setNewServerUrl("");
       setNewServerAuthorization("");
       setClearServerAuthorization(false);
       await refresh();
     } catch (cause) {
+      if (createdServerId) {
+        await api(`/api/server-configs/${createdServerId}`, {
+          method: "DELETE",
+        }).catch(() => undefined);
+      }
       setError(cause instanceof Error ? cause.message : String(cause));
+      await refresh();
     } finally {
       setConfigBusy(false);
     }
@@ -640,6 +735,11 @@ export function App() {
                         <span>Keychain 鉴权</span>
                       )}
                       <span>{server.cwd || "默认工作目录"}</span>
+                      {server.transport === "stdio" && (
+                        <span>
+                          {Object.keys(server.env ?? {}).length + (server.secretEnvKeys?.length ?? 0)} 个环境变量
+                        </span>
+                      )}
                       {server.autoStart && <span>自动连接</span>}
                     </div>
                     {upstream?.lastError && <div className="serverError">{upstream.lastError}</div>}
@@ -910,6 +1010,28 @@ export function App() {
             <label className="field">
               <span>工作目录（可选）</span>
               <input value={newServerCwd} onChange={(event) => setNewServerCwd(event.target.value)} placeholder="/Users/me/project" />
+            </label>
+            <label className="field">
+              <span>环境变量（每行 KEY=VALUE）</span>
+              <textarea
+                value={newServerEnv}
+                onChange={(event) => setNewServerEnv(event.target.value)}
+                rows={3}
+                placeholder={"API_URL=https://example.com\nMODE=production"}
+                spellCheck={false}
+              />
+              <small>普通变量会保存在 servers.json；SDK 仍会自动继承 HOME、PATH、SHELL 等安全默认环境。</small>
+            </label>
+            <label className="field">
+              <span>Secret 环境变量（每行 KEY=VALUE）</span>
+              <textarea
+                value={newServerSecretEnv}
+                onChange={(event) => setNewServerSecretEnv(event.target.value)}
+                rows={3}
+                placeholder={"GITHUB_TOKEN=...\nAPI_KEY=..."}
+                spellCheck={false}
+              />
+              <small>Secret 只写入 macOS Keychain。编辑已有 Secret 时保留 KEY= 空值即可保持原值；删除整行会清除它。</small>
             </label>
               </>
             ) : (

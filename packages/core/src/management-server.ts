@@ -250,6 +250,97 @@ export class ManagementServer {
     }
 
 
+    const environmentMatch = url.pathname.match(
+      /^\/api\/server-configs\/([0-9a-f-]+)\/environment$/i,
+    );
+    if (req.method === "POST" && environmentMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const serverId = environmentMatch[1];
+      const existing = this.#registry.get(serverId);
+      if (!existing) {
+        json(res, 404, { error: "server configuration not found" });
+        return;
+      }
+      if (existing.transport !== "stdio") {
+        json(res, 400, { error: "environment is only available for stdio servers" });
+        return;
+      }
+
+      const createdSecretIds: string[] = [];
+      try {
+        const body = await readJsonBody(req) as {
+          env?: unknown;
+          secretEnvKeys?: unknown;
+          secretEnv?: unknown;
+        };
+
+        const env = normalizeEnvironmentRecord(body.env);
+        const secretEnvKeys = normalizeEnvironmentKeys(body.secretEnvKeys);
+        const secretEnv = normalizeEnvironmentRecord(body.secretEnv);
+
+        for (const key of Object.keys(env)) {
+          if (secretEnvKeys.includes(key)) {
+            throw new Error(`environment variable ${key} cannot be both plain and secret`);
+          }
+        }
+        for (const key of Object.keys(secretEnv)) {
+          if (!secretEnvKeys.includes(key)) {
+            throw new Error(`secret value supplied for unlisted key: ${key}`);
+          }
+        }
+
+        await this.#upstreams.disconnect(serverId).catch(() => undefined);
+
+        const oldSecretIds = existing.envSecretIds ?? {};
+        const nextSecretIds: Record<string, string> = {};
+
+        for (const key of secretEnvKeys) {
+          const suppliedValue = secretEnv[key];
+          if (suppliedValue !== undefined && suppliedValue !== "") {
+            const secretId = `stdio-env:${randomUUID()}`;
+            await this.#secrets.set(secretId, suppliedValue);
+            createdSecretIds.push(secretId);
+            nextSecretIds[key] = secretId;
+            continue;
+          }
+
+          const existingSecretId = oldSecretIds[key];
+          if (!existingSecretId) {
+            throw new Error(`secret environment value is required for ${key}`);
+          }
+          nextSecretIds[key] = existingSecretId;
+        }
+
+        const updated = await this.#registry.updateEnvironment(serverId, {
+          env,
+          envSecretIds: nextSecretIds,
+        });
+        if (!updated) {
+          throw new Error("server configuration not found");
+        }
+
+        const retainedIds = new Set(Object.values(nextSecretIds));
+        for (const oldSecretId of Object.values(oldSecretIds)) {
+          if (!retainedIds.has(oldSecretId)) {
+            await this.#secrets.delete(oldSecretId).catch(() => false);
+          }
+        }
+
+        this.#upstreams.syncConfigs();
+        json(res, 200, { server: toPublicServerConfig(updated) });
+      } catch (error) {
+        for (const secretId of createdSecretIds) {
+          await this.#secrets.delete(secretId).catch(() => false);
+        }
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+
     const upstreamActionMatch = url.pathname.match(
       /^\/api\/upstreams\/([0-9a-f-]+)\/(connect|disconnect|refresh-tools)$/i,
     );
@@ -478,6 +569,11 @@ export class ManagementServer {
 
       if (existing?.transport === "http" && existing.authSecretId) {
         await this.#secrets.delete(existing.authSecretId).catch(() => false);
+      }
+      if (existing?.transport === "stdio") {
+        for (const secretId of Object.values(existing.envSecretIds ?? {})) {
+          await this.#secrets.delete(secretId).catch(() => false);
+        }
       }
 
       json(res, 200, { ok: true });

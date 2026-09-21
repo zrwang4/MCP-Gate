@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     (serverConfig) =>
       serverConfig.transport === "http"
         ? new HttpUpstreamClient(serverConfig, secrets)
-        : new StdioUpstreamClient(serverConfig),
+        : new StdioUpstreamClient(serverConfig, secrets),
     logger,
   );
   upstreams.syncConfigs();

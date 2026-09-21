@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- stdio MCP 新增环境变量配置；普通变量写入 servers.json，Secret 变量只保存 opaque Keychain 引用。
+- 新增 `POST /api/server-configs/:id/environment`，独立管理 stdio env 与 Secret env。
+- Secret env 编辑时 `KEY=` 表示保留已有 Keychain 值，删除整行表示删除对应 Secret。
+- StdioUpstreamClient 连接前从 SecretStore 解析 Secret env，再交给 MCP SDK stdio transport；SDK 会继续合并 HOME/PATH/SHELL 等安全默认环境。
+- stdio → HTTP 切换或删除 Server 时自动清理对应 Secret env Keychain 项。
+- 桌面端添加普通/Secret 环境变量编辑区，并显示每个 stdio MCP 的环境变量数量。
+- 新增 Registry 环境元数据持久化测试与 stdio Secret env 解析测试。
+
+
 - 新增 Upstream 意外断线检测：MCP SDK Client 的 onclose/onerror 生命周期接入 UpstreamManager。
 - 已成功运行的 MCP 意外断线后自动从 ToolRegistry 移除 Tools，避免继续暴露失效工具。
 - 自动重连采用 1s → 2s → 5s → 10s → 30s 退避；重连成功后恢复 Tools 并重置计数。

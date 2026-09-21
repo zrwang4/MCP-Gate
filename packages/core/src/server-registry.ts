@@ -18,6 +18,8 @@ export interface StdioServerConfig extends ServerConfigBase {
   command: string;
   args: string[];
   cwd?: string;
+  env?: Record<string, string>;
+  envSecretIds?: Record<string, string>;
 }
 
 export interface HttpServerConfig extends ServerConfigBase {
@@ -136,6 +138,13 @@ export class ServerRegistry {
       },
     );
 
+    if (updated.transport === "stdio" && current.transport === "stdio") {
+      updated.env = current.env ? { ...current.env } : undefined;
+      updated.envSecretIds = current.envSecretIds
+        ? { ...current.envSecretIds }
+        : undefined;
+    }
+
     this.#servers[index] = updated;
     await this.#persist();
     this.#logger.info(
@@ -148,6 +157,31 @@ export class ServerRegistry {
   get(id: string): McpServerConfig | undefined {
     const server = this.#servers.find((item) => item.id === id);
     return server ? cloneServer(server) : undefined;
+  }
+
+  async updateEnvironment(
+    id: string,
+    input: {
+      env: Record<string, string>;
+      envSecretIds: Record<string, string>;
+    },
+  ): Promise<StdioServerConfig | undefined> {
+    const server = this.#servers.find((item) => item.id === id);
+    if (!server) return undefined;
+    if (server.transport !== "stdio") {
+      throw new Error("environment variables are only supported for stdio MCP servers");
+    }
+
+    server.env = compactRecord(validateEnvironment(input.env));
+    server.envSecretIds = compactRecord(validateSecretIds(input.envSecretIds));
+    server.updatedAt = new Date().toISOString();
+
+    await this.#persist();
+    this.#logger.info(
+      "registry",
+      `updated environment for ${server.name}: plain=${Object.keys(server.env ?? {}).length} secret=${Object.keys(server.envSecretIds ?? {}).length}`,
+    );
+    return cloneServer(server) as StdioServerConfig;
   }
 
   async updateSettings(
@@ -269,6 +303,48 @@ function validateArgs(values: string[]): string[] {
   });
 }
 
+function validateEnvironment(values: Record<string, string>): Record<string, string> {
+  return validateStringRecord(values, "environment value", 65_536);
+}
+
+function validateSecretIds(values: Record<string, string>): Record<string, string> {
+  return validateStringRecord(values, "secret id", 512);
+}
+
+function validateStringRecord(
+  values: Record<string, string>,
+  valueLabel: string,
+  maxValueLength: number,
+): Record<string, string> {
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    throw new Error("environment must be an object");
+  }
+
+  const entries = Object.entries(values);
+  if (entries.length > 128) throw new Error("too many environment variables");
+
+  const result: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new Error(`invalid environment variable name: ${key}`);
+    }
+    if (typeof value !== "string") {
+      throw new Error(`${valueLabel} for ${key} must be a string`);
+    }
+    if (value.length > maxValueLength) {
+      throw new Error(`${valueLabel} for ${key} is too long`);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function compactRecord(
+  values: Record<string, string>,
+): Record<string, string> | undefined {
+  return Object.keys(values).length > 0 ? values : undefined;
+}
+
 function validateHttpUrl(value: unknown): string {
   const raw = validateText("url", value, 4096);
   let url: URL;
@@ -285,9 +361,15 @@ function validateHttpUrl(value: unknown): string {
 }
 
 function cloneServer(server: McpServerConfig): McpServerConfig {
-  return server.transport === "stdio"
-    ? { ...server, args: [...server.args] }
-    : { ...server };
+  if (server.transport === "stdio") {
+    return {
+      ...server,
+      args: [...server.args],
+      env: server.env ? { ...server.env } : undefined,
+      envSecretIds: server.envSecretIds ? { ...server.envSecretIds } : undefined,
+    };
+  }
+  return { ...server };
 }
 
 function isServerConfig(value: unknown): value is McpServerConfig {
@@ -317,6 +399,20 @@ function isServerConfig(value: unknown): value is McpServerConfig {
     typeof server.command === "string" &&
     Array.isArray(server.args) &&
     server.args.every((arg) => typeof arg === "string") &&
-    (server.cwd === undefined || typeof server.cwd === "string")
+    (server.cwd === undefined || typeof server.cwd === "string") &&
+    (server.env === undefined || isStringRecord(server.env)) &&
+    (server.envSecretIds === undefined || isStringRecord(server.envSecretIds))
+  );
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.entries(value).every(
+      ([key, item]) =>
+        /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof item === "string",
+    )
   );
 }
