@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 新增手动触发的 macOS Release Preview workflow，实际构建 Tauri production bundle。
+- Release Preview 验证 .app 内包含 MCP Gate、Node sidecar、Core dist 与 production node_modules。
+- 构建成功后上传 .app 和 .dmg artifact，保留 7 天供测试。
+- Preview 当前为 unsigned 构建；Developer ID 签名与 notarization 留到正式发布阶段。
+
+
 - 修复 sidecar staging 提交时 package.json 结尾误写字面量 `\\n` 导致 pnpm 无法解析的问题。
 - 清理 production Core runtime 文档中的内部检索引用标记。
 
