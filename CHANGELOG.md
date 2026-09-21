@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 新增受 Management Token 保护的 `GET /api/diagnostics`，生成结构化诊断快照。
+- 诊断快照包含 Core/Gateway、Profiles、MCP 状态、Tools 和最近 warn/error 日志。
+- 默认不导出 Keychain Secret、Secret ID、普通 env 值或完整 stdio args。
+- HTTP URL 会移除 username/password/query/hash，Home 路径缩写为 `~`，日志再次执行 Secret 脱敏。
+- 桌面设置新增“一键复制诊断信息”，方便用户提交支持信息。
+- 新增诊断 stdio / HTTP 脱敏测试。
+
+
 - 补充 Vite `import.meta.env` 类型声明，修复 Management API session-token 前端代码在 strict typecheck 下的 TS2339。
 - 保留桌面 Tauri command 获取 token 与 Web 开发模式 `VITE_MCP_GATE_MANAGEMENT_TOKEN` 两种路径。
 

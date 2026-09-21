@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
+import { buildDiagnosticSnapshot } from "./diagnostics.ts";
 import {
   isManagementRequestAuthorized,
   MANAGEMENT_TOKEN_HEADER,
@@ -192,6 +193,23 @@ export class ManagementServer {
         management: {
           endpoint: `http://${this.#config.managementHost}:${this.#config.managementPort}`,
         },
+      });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/diagnostics") {
+      json(res, 200, {
+        snapshot: buildDiagnosticSnapshot({
+          coreVersion: CORE_VERSION,
+          coreStartedAt: this.#startedAt,
+          gateway: this.#gateway.snapshot(),
+          activeProfileId: this.#profiles.activeProfileId,
+          profiles: this.#profiles.list(),
+          servers: this.#registry.list(),
+          upstreams: this.#upstreams.list(),
+          tools: this.#tools.list({ includeDisabled: true }),
+          logs: this.#logger.list({ limit: 500 }),
+        }),
       });
       return;
     }

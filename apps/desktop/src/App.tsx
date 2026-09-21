@@ -318,6 +318,8 @@ export function App() {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [copied, setCopied] = useState(false);
+  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [logLevel, setLogLevel] = useState<"all" | LogLevel>("all");
@@ -460,6 +462,27 @@ export function App() {
     await navigator.clipboard.writeText(gatewayUrl);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  async function copyDiagnosticsSnapshot() {
+    setDiagnosticsBusy(true);
+    setError(null);
+    try {
+      const response = await api<{ snapshot: unknown }>(
+        "/api/diagnostics",
+        undefined,
+        10_000,
+      );
+      await navigator.clipboard.writeText(
+        JSON.stringify(response.snapshot, null, 2),
+      );
+      setDiagnosticsCopied(true);
+      window.setTimeout(() => setDiagnosticsCopied(false), 1600);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setDiagnosticsBusy(false);
+    }
   }
 
   async function refreshImportSources() {
@@ -1472,6 +1495,24 @@ export function App() {
               <span>重新打开 MCP Gate 时恢复上次的窗口大小和位置。</span>
             </div>
             <span className="settingsStatus">{IS_TAURI ? "已启用" : "仅桌面版"}</span>
+          </div>
+
+          <div className="settingsRow">
+            <div>
+              <strong>诊断快照</strong>
+              <span>复制脱敏后的 Core、MCP、Profile、Tool 和最近错误信息。</span>
+            </div>
+            <button
+              className="secondaryButton"
+              disabled={diagnosticsBusy || !managementConnected}
+              onClick={() => void copyDiagnosticsSnapshot()}
+            >
+              {diagnosticsBusy
+                ? "生成中…"
+                : diagnosticsCopied
+                  ? "已复制"
+                  : "复制诊断信息"}
+            </button>
           </div>
         </div>
       </section>
