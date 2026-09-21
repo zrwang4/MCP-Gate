@@ -41,28 +41,36 @@ KEYCHAIN_PASSWORD
 
 `APPLE_CERTIFICATE` is the base64-encoded Developer ID Application `.p12` certificate. `APPLE_PASSWORD` should be an Apple app-specific password.
 
+## Architectures
+
+Formal releases build two native macOS variants in parallel:
+
+```text
+macos-latest    → arm64   → Apple Silicon
+macos-15-intel → x86_64  → Intel Mac
+```
+
+Each runner stages its own matching Node sidecar, so the bundled runtime architecture matches the Tauri binary.
+
 ## Release flow
 
 ```text
 push vX.Y.Z tag
   ↓
-tests + typecheck + web/Core build
+version consistency + tests + typecheck + build
   ↓
-version consistency check
-  ↓
-temporary CI keychain + Developer ID certificate
-  ↓
-production Core/Node sidecar staging
-  ↓
-Tauri signed build
-  ↓
-Apple notarization + stapling
-  ↓
-codesign / stapler / spctl verification
-  ↓
-DMG + app.zip + SHA256SUMS.txt
-  ↓
-draft GitHub Release
+┌──────────────────────────┬──────────────────────────┐
+│ macos-latest / arm64     │ macos-15-intel / x86_64│
+│ Developer ID signing     │ Developer ID signing     │
+│ notarization + stapling  │ notarization + stapling  │
+│ DMG + app.zip            │ DMG + app.zip            │
+└──────────────────────────┴──────────────────────────┘
+                  ↓
+       download both artifacts
+                  ↓
+       combined SHA256SUMS.txt
+                  ↓
+          draft GitHub Release
 ```
 
 The GitHub Release is intentionally created as a draft so the assets can be tested before publishing publicly.

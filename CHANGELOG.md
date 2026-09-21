@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 正式 macOS Release 改为双架构矩阵：`macos-latest` 原生构建 arm64，`macos-15-intel` 原生构建 x86_64。
+- 两个架构各自 staging 匹配架构的 Node sidecar、完成 Developer ID 签名/notarization/stapling，并上传独立 artifact。
+- 新增单独 `publish-release` job，在两个架构都成功后统一下载产物、生成跨架构 `SHA256SUMS.txt` 并创建 draft GitHub Release，避免并发发布竞争。
+- Release 与 Preview 的 artifact actions 升级到 Node 24 主版本。
+
+
 - 修复 `release:check` 在普通 branch CI 中误把 `GITHUB_REF_NAME=main` 当作发布 tag；现在仅在 `GITHUB_REF_TYPE=tag` 或显式 `RELEASE_TAG` 时校验 tag。
 
 

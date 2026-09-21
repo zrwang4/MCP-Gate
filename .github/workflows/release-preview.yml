@@ -53,7 +53,7 @@ jobs:
           echo "Verified dmg: $DMG_PATH"
 
       - name: Upload macOS app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-gate-macos-app
           path: ${{ env.APP_PATH }}
@@ -61,7 +61,7 @@ jobs:
           retention-days: 7
 
       - name: Upload macOS DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-gate-macos-dmg
           path: ${{ env.DMG_PATH }}

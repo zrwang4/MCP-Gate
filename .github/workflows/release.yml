@@ -13,8 +13,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release-macos:
-    runs-on: macos-latest
+  build-macos:
+    name: build-${{ matrix.asset_arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            asset_arch: arm64
+            uname_arch: arm64
+          - runner: macos-15-intel
+            asset_arch: x86_64
+            uname_arch: x86_64
+
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
 
     steps:
@@ -28,6 +40,17 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify runner architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(uname -m)"
+          expected="${{ matrix.uname_arch }}"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Expected runner architecture $expected, got $actual"
+            exit 1
+          fi
 
       - name: Enable pnpm
         run: |
@@ -140,37 +163,68 @@ jobs:
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
           echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
 
-      - name: Prepare release assets
+      - name: Prepare architecture-specific assets
         shell: bash
         run: |
           set -euo pipefail
 
           VERSION="${GITHUB_REF_NAME#v}"
-          ARCH="$(uname -m)"
+          ASSET_ARCH="${{ matrix.asset_arch }}"
           RELEASE_DIR="$RUNNER_TEMP/release-assets"
           mkdir -p "$RELEASE_DIR"
 
-          DMG_ASSET="$RELEASE_DIR/MCP-Gate-${VERSION}-macOS-${ARCH}.dmg"
-          APP_ZIP="$RELEASE_DIR/MCP-Gate-${VERSION}-macOS-${ARCH}.app.zip"
+          DMG_ASSET="$RELEASE_DIR/MCP-Gate-${VERSION}-macOS-${ASSET_ARCH}.dmg"
+          APP_ZIP="$RELEASE_DIR/MCP-Gate-${VERSION}-macOS-${ASSET_ARCH}.app.zip"
 
           cp "$DMG_PATH" "$DMG_ASSET"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$APP_ZIP"
 
-          (
-            cd "$RELEASE_DIR"
-            shasum -a 256 *.dmg *.zip > SHA256SUMS.txt
-          )
-
           echo "RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
           ls -lah "$RELEASE_DIR"
 
-      - name: Upload signed release artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload architecture artifacts
+        uses: actions/upload-artifact@v7
         with:
-          name: mcp-gate-${{ github.ref_name }}-macos
+          name: mcp-gate-${{ github.ref_name }}-macos-${{ matrix.asset_arch }}
           path: ${{ env.RELEASE_DIR }}
           if-no-files-found: error
           retention-days: 30
+
+      - name: Remove temporary signing keychain
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${KEYCHAIN_PATH:-}" ]]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+  publish-release:
+    name: publish-draft-release
+    needs: build-macos
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Download signed macOS artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: mcp-gate-${{ github.ref_name }}-macos-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate combined checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-arm64.dmg"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-arm64.app.zip"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-x86_64.dmg"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-x86_64.app.zip"
+
+          sha256sum *.dmg *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Create or update draft GitHub Release
         env:
@@ -180,15 +234,7 @@ jobs:
           set -euo pipefail
 
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$RELEASE_DIR"/* --clobber
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$RELEASE_DIR"/*               --draft               --verify-tag               --title "MCP Gate $GITHUB_REF_NAME"               --generate-notes
-          fi
-
-      - name: Remove temporary signing keychain
-        if: always()
-        shell: bash
-        run: |
-          if [[ -n "${KEYCHAIN_PATH:-}" ]]; then
-            security delete-keychain "$KEYCHAIN_PATH" || true
+            gh release create "$GITHUB_REF_NAME" release-assets/*               --draft               --verify-tag               --title "MCP Gate $GITHUB_REF_NAME"               --generate-notes
           fi
