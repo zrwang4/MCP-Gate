@@ -178,6 +178,36 @@ export class ManagementServer {
       return;
     }
 
+    const toolCallMatch = url.pathname.match(
+      /^\/api\/tools\/([A-Za-z0-9_-]+)\/call$/,
+    );
+    if (req.method === "POST" && toolCallMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const [, publicName] = toolCallMatch;
+      try {
+        const body = await readJsonBody(req) as { arguments?: unknown };
+        const args = body.arguments ?? {};
+        if (!args || typeof args !== "object" || Array.isArray(args)) {
+          json(res, 400, { error: "arguments must be a JSON object" });
+          return;
+        }
+
+        const result = await this.#upstreams.callTool(publicName, args);
+        this.#logger.info("tools", `test call completed: ${publicName}`);
+        json(res, 200, { result });
+      } catch (error) {
+        this.#logger.warn(
+          "tools",
+          `test call failed: ${publicName}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
     const toolActionMatch = url.pathname.match(
       /^\/api\/tools\/([A-Za-z0-9_-]+)\/(enable|disable)$/,
     );

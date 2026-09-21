@@ -163,6 +163,10 @@ export function App() {
   const [newServerArgs, setNewServerArgs] = useState("");
   const [newServerCwd, setNewServerCwd] = useState("");
   const [configBusy, setConfigBusy] = useState(false);
+  const [testTool, setTestTool] = useState<ToolInfo | null>(null);
+  const [testToolArgs, setTestToolArgs] = useState("{}");
+  const [testToolResult, setTestToolResult] = useState("");
+  const [testToolBusy, setTestToolBusy] = useState(false);
   const logPanelRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback(async () => {
@@ -308,6 +312,51 @@ export function App() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setConfigBusy(false);
+    }
+  }
+
+  function openToolTester(tool: ToolInfo) {
+    setTestTool(tool);
+    setTestToolArgs("{}");
+    setTestToolResult("");
+  }
+
+  async function runToolTest() {
+    if (!testTool) return;
+
+    setTestToolBusy(true);
+    setTestToolResult("");
+    setError(null);
+
+    try {
+      const args = JSON.parse(testToolArgs) as unknown;
+      if (!args || typeof args !== "object" || Array.isArray(args)) {
+        throw new Error("参数必须是 JSON 对象");
+      }
+
+      const response = await api<{ result: unknown }>(
+        `/api/tools/${testTool.publicName}/call`,
+        {
+          method: "POST",
+          body: JSON.stringify({ arguments: args }),
+        },
+        65_000,
+      );
+
+      setTestToolResult(JSON.stringify(response.result, null, 2));
+      await refresh();
+    } catch (cause) {
+      setTestToolResult(
+        JSON.stringify(
+          {
+            error: cause instanceof Error ? cause.message : String(cause),
+          },
+          null,
+          2,
+        ),
+      );
+    } finally {
+      setTestToolBusy(false);
     }
   }
 
@@ -521,14 +570,23 @@ export function App() {
                       <p>{tool.definition.description}</p>
                     )}
                   </div>
-                  <button
+                  <div className="toolActions">
+                    <button
+                      className="actionButton"
+                      disabled={!tool.enabled || changing}
+                      onClick={() => openToolTester(tool)}
+                    >
+                      测试
+                    </button>
+                    <button
                     className={`toolToggle ${tool.enabled ? "enabled" : ""}`}
                     disabled={changing}
                     onClick={() => void toggleTool(tool)}
                     aria-pressed={tool.enabled}
                   >
                     {tool.enabled ? "已启用" : "已禁用"}
-                  </button>
+                    </button>
+                  </div>
                 </article>
               );
             })}
@@ -619,6 +677,53 @@ export function App() {
                 onClick={() => void saveServerConfig()}
               >
                 {configBusy ? "保存中…" : editingServerId ? "保存修改" : "保存配置"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {testTool && (
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => setTestTool(null)}>
+          <section
+            className="modalCard toolTesterCard"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Tool 测试器"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modalHeader">
+              <div>
+                <h2>Tool 测试器</h2>
+                <p><code>{testTool.publicName}</code> · 调用可能产生真实副作用，请确认参数。</p>
+              </div>
+              <button className="iconButton" onClick={() => setTestTool(null)} aria-label="关闭">
+                <X size={17} />
+              </button>
+            </div>
+            <label className="field">
+              <span>Arguments JSON</span>
+              <textarea
+                value={testToolArgs}
+                onChange={(event) => setTestToolArgs(event.target.value)}
+                rows={7}
+                spellCheck={false}
+              />
+            </label>
+            {testToolResult && (
+              <label className="field">
+                <span>Result</span>
+                <pre className="toolResult">{testToolResult}</pre>
+              </label>
+            )}
+            <div className="modalActions">
+              <button className="secondaryButton" onClick={() => setTestTool(null)}>关闭</button>
+              <button
+                className="actionButton primary"
+                disabled={testToolBusy}
+                onClick={() => void runToolTest()}
+              >
+                {testToolBusy ? "运行中…" : "运行 Tool"}
               </button>
             </div>
           </section>

@@ -736,3 +736,35 @@ footer {
     border-color: rgba(34,160,107,.20);
   }
 }
+
+.toolActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.toolTesterCard {
+  width: min(640px, 100%);
+}
+
+.toolResult {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f4f4f2;
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-color-scheme: dark) {
+  .toolResult {
+    background: #181817;
+    border-color: rgba(255,255,255,.08);
+    color: #e8e8e4;
+  }
+}

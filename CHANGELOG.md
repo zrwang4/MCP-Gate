@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 桌面端新增 Tool 测试器，可手工输入 JSON arguments 并查看调用结果。
+- 新增 Management API `POST /api/tools/:publicName/call` 供本地调试使用。
+- `core:gateway-smoke` 支持通过 `MCP_GATE_SMOKE_TOOL` 和 `MCP_GATE_SMOKE_ARGS` 显式执行端到端 `tools/call`。
+- smoke 默认仍只执行 `tools/list`，避免自动触发有副作用的 Tool。
+
+
 - Tool enable/disable 状态持久化到 `tool-policy.json`，Core 重启和 upstream 重连后继续生效。
 - MCP Server 配置支持编辑 name/command/args/cwd；编辑时自动断开 upstream 并保持 alias 稳定。
 - 删除 MCP 配置时同步清理对应 Tool policy。
