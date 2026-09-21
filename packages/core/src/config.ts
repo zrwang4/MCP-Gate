@@ -13,6 +13,7 @@ export interface CoreConfig {
   logFile: string;
   serverConfigFile: string;
   toolPolicyFile: string;
+  profileFile: string;
 }
 
 function readPositiveInt(name: string, fallback: number): number {
@@ -49,5 +50,8 @@ export function loadConfig(): CoreConfig {
     toolPolicyFile:
       process.env.MCP_GATE_TOOL_POLICY_FILE ??
       join(appSupportDir, "tool-policy.json"),
+    profileFile:
+      process.env.MCP_GATE_PROFILE_FILE ??
+      join(appSupportDir, "profiles.json"),
   };
 }

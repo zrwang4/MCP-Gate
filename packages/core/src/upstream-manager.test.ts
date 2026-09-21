@@ -268,3 +268,54 @@ async function waitFor(
   }
   throw new Error("condition not met before timeout");
 }
+
+
+test("upstream manager applies an exact profile server set", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const first = await servers.create({ name: "First", command: "fake" });
+    const second = await servers.create({ name: "Second", command: "fake" });
+
+    const tools = new ToolRegistry();
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      (config) => ({
+        async connect() {},
+        async disconnect() {},
+        async listTools() {
+          return [{ name: `tool_${config.id.slice(0, 4)}` }];
+        },
+        async callTool() {
+          return {
+            content: [{ type: "text" as const, text: "ok" }],
+          };
+        },
+      }),
+      logger,
+    );
+
+    await upstreams.connect(first.id);
+    const result = await upstreams.applyExactSet([second.id]);
+
+    assert.deepEqual(result.disconnected, [first.id]);
+    assert.deepEqual(result.connected, [second.id]);
+    assert.equal(
+      upstreams.list().find((item) => item.id === first.id)?.status,
+      "stopped",
+    );
+    assert.equal(
+      upstreams.list().find((item) => item.id === second.id)?.status,
+      "running",
+    );
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

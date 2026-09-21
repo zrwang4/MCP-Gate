@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- 新增 Profiles 持久化到 `~/Library/Application Support/MCP Gate/profiles.json`。
+- Profile 保存一组 MCP Server ID；激活 Profile 会把运行集合精确切换到该组，停用会断开该组成员。
+- 当前 active Profile 持久化；Core 重启时优先恢复 active Profile，没有 active Profile 时才执行各 Server 的 autoStart。
+- Management API 新增 Profile CRUD、activate/deactivate。
+- 删除 MCP Server 时自动从所有 Profile 移除，删除 active Profile 会清空 activeProfileId。
+- UpstreamManager 新增 applyExactSet / disconnectSet，并返回 connected/disconnected/failed 结果。
+- 新增 ProfileStore 持久化测试与 Profile 运行集合切换测试。
+
+
 - 修复 stdio env Management API 缺少环境变量校验 helper 导致的 typecheck / production staging 失败。
 - stdio Server 的 Management API 响应不再暴露 opaque envSecretIds，只返回 secretEnvKeys。
 - stdio → HTTP transport 切换时同步清理旧的 Secret env Keychain 项。

@@ -4,6 +4,7 @@ import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
 import type { GatewayServer } from "./gateway-server.ts";
 import type { HttpServerConfig, McpServerConfig, ServerRegistry } from "./server-registry.ts";
+import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
 import type { ToolRegistry } from "./tool-registry.ts";
@@ -65,6 +66,7 @@ export class ManagementServer {
   #config: CoreConfig;
   #gateway: GatewayServer;
   #registry: ServerRegistry;
+  #profiles: ProfileStore;
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
   #toolPolicy: ToolPolicyStore;
@@ -77,6 +79,7 @@ export class ManagementServer {
     config: CoreConfig,
     gateway: GatewayServer,
     registry: ServerRegistry,
+    profiles: ProfileStore,
     upstreams: UpstreamManager,
     tools: ToolRegistry,
     toolPolicy: ToolPolicyStore,
@@ -86,6 +89,7 @@ export class ManagementServer {
     this.#config = config;
     this.#gateway = gateway;
     this.#registry = registry;
+    this.#profiles = profiles;
     this.#upstreams = upstreams;
     this.#tools = tools;
     this.#toolPolicy = toolPolicy;
@@ -167,6 +171,114 @@ export class ManagementServer {
       json(res, 200, { servers: [] });
       return;
     }
+
+    if (req.method === "GET" && url.pathname === "/api/profiles") {
+      json(res, 200, {
+        profiles: this.#profiles.list(),
+        activeProfileId: this.#profiles.activeProfileId,
+      });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/profiles") {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          name?: unknown;
+          serverIds?: unknown;
+        };
+        const serverIds = normalizeProfileServerIds(body.serverIds);
+        assertKnownServers(serverIds, this.#registry.list());
+        const profile = await this.#profiles.create(
+          body.name as string,
+          serverIds,
+        );
+        json(res, 201, { profile });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const profileMatch = url.pathname.match(
+      /^\/api\/profiles\/([0-9a-f-]+)$/i,
+    );
+    if (req.method === "POST" && profileMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          name?: unknown;
+          serverIds?: unknown;
+        };
+        const serverIds = normalizeProfileServerIds(body.serverIds);
+        assertKnownServers(serverIds, this.#registry.list());
+        const profile = await this.#profiles.update(profileMatch[1], {
+          name: body.name as string,
+          serverIds,
+        });
+        if (!profile) {
+          json(res, 404, { error: "profile not found" });
+          return;
+        }
+        json(res, 200, { profile });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const profileActionMatch = url.pathname.match(
+      /^\/api\/profiles\/([0-9a-f-]+)\/(activate|deactivate)$/i,
+    );
+    if (req.method === "POST" && profileActionMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const [, profileId, action] = profileActionMatch;
+      const profile = this.#profiles.get(profileId);
+      if (!profile) {
+        json(res, 404, { error: "profile not found" });
+        return;
+      }
+
+      const result =
+        action === "activate"
+          ? await this.#upstreams.applyExactSet(profile.serverIds)
+          : await this.#upstreams.disconnectSet(profile.serverIds);
+
+      if (action === "activate") {
+        await this.#profiles.setActive(profileId);
+      } else if (this.#profiles.activeProfileId === profileId) {
+        await this.#profiles.setActive(null);
+      }
+
+      json(res, 200, {
+        profile,
+        activeProfileId: this.#profiles.activeProfileId,
+        result,
+      });
+      return;
+    }
+
+    if (req.method === "DELETE" && profileMatch) {
+      if (!requireDesktopClient(req, res)) return;
+      const removed = await this.#profiles.remove(profileMatch[1]);
+      if (!removed) {
+        json(res, 404, { error: "profile not found" });
+        return;
+      }
+      json(res, 200, {
+        ok: true,
+        activeProfileId: this.#profiles.activeProfileId,
+      });
+      return;
+    }
+
 
     if (req.method === "GET" && url.pathname === "/api/server-configs") {
       json(res, 200, {
@@ -567,6 +679,7 @@ export class ManagementServer {
       await this.#upstreams.disconnect(serverId).catch(() => undefined);
       const removed = await this.#registry.remove(serverId);
       await this.#toolPolicy.removeServer(serverId);
+      await this.#profiles.removeServer(serverId);
       this.#upstreams.syncConfigs();
       if (!removed) {
         json(res, 404, { error: "server configuration not found" });
@@ -604,6 +717,40 @@ export class ManagementServer {
     }
 
     json(res, 404, { error: "not found" });
+  }
+}
+
+function normalizeProfileServerIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error("serverIds must be an array");
+  }
+  if (value.length > 100) {
+    throw new Error("too many servers in profile");
+  }
+
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string" || !item.trim()) {
+      throw new Error("serverIds must contain non-empty strings");
+    }
+    const id = item.trim();
+    if (!seen.has(id)) {
+      seen.add(id);
+      result.push(id);
+    }
+  }
+  return result;
+}
+
+function assertKnownServers(
+  serverIds: string[],
+  servers: McpServerConfig[],
+): void {
+  const known = new Set(servers.map((server) => server.id));
+  const missing = serverIds.filter((id) => !known.has(id));
+  if (missing.length > 0) {
+    throw new Error(`unknown server id(s): ${missing.join(", ")}`);
   }
 }
 

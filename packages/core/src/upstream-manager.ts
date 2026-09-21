@@ -46,6 +46,18 @@ export interface UpstreamManagerOptions {
   reconnectDelaysMs?: readonly number[];
 }
 
+export interface ProfileApplyFailure {
+  serverId: string;
+  error: string;
+}
+
+export interface ProfileApplyResult {
+  connected: string[];
+  disconnected: string[];
+  alreadyRunning: string[];
+  failed: ProfileApplyFailure[];
+}
+
 interface Runtime {
   config: McpServerConfig;
   status: UpstreamStatus;
@@ -208,6 +220,131 @@ export class UpstreamManager {
     }
 
     return runtime.client.callTool(route.originalName, args);
+  }
+
+  async applyExactSet(serverIds: string[]): Promise<ProfileApplyResult> {
+    this.syncConfigs();
+
+    const desired = new Set(serverIds);
+    const knownIds = new Set(this.#registry.list().map((config) => config.id));
+    const result: ProfileApplyResult = {
+      connected: [],
+      disconnected: [],
+      alreadyRunning: [],
+      failed: [],
+    };
+
+    for (const serverId of desired) {
+      if (!knownIds.has(serverId)) {
+        result.failed.push({
+          serverId,
+          error: "server configuration not found",
+        });
+      }
+    }
+
+    for (const [id, runtime] of this.#runtimes) {
+      if (desired.has(id)) continue;
+      if (
+        runtime.status === "configured" &&
+        !runtime.client &&
+        !runtime.desiredConnected &&
+        !runtime.reconnectTimer
+      ) {
+        continue;
+      }
+      if (
+        runtime.status === "stopped" &&
+        !runtime.client &&
+        !runtime.desiredConnected &&
+        !runtime.reconnectTimer
+      ) {
+        continue;
+      }
+
+      try {
+        await this.disconnect(id);
+        result.disconnected.push(id);
+      } catch (error) {
+        result.failed.push({
+          serverId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    for (const serverId of desired) {
+      const runtime = this.#runtimes.get(serverId);
+      if (!runtime) continue;
+
+      if (!runtime.config.enabled) {
+        result.failed.push({
+          serverId,
+          error: "server is disabled",
+        });
+        continue;
+      }
+
+      if (runtime.status === "running") {
+        result.alreadyRunning.push(serverId);
+        continue;
+      }
+
+      try {
+        await this.connect(serverId);
+        result.connected.push(serverId);
+      } catch (error) {
+        result.failed.push({
+          serverId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return result;
+  }
+
+  async disconnectSet(serverIds: string[]): Promise<ProfileApplyResult> {
+    this.syncConfigs();
+    const target = new Set(serverIds);
+    const result: ProfileApplyResult = {
+      connected: [],
+      disconnected: [],
+      alreadyRunning: [],
+      failed: [],
+    };
+
+    for (const serverId of target) {
+      const runtime = this.#runtimes.get(serverId);
+      if (!runtime) {
+        result.failed.push({
+          serverId,
+          error: "server configuration not found",
+        });
+        continue;
+      }
+
+      if (
+        runtime.status === "configured" ||
+        runtime.status === "stopped"
+      ) {
+        runtime.desiredConnected = false;
+        this.#cancelReconnect(runtime, true);
+        continue;
+      }
+
+      try {
+        await this.disconnect(serverId);
+        result.disconnected.push(serverId);
+      } catch (error) {
+        result.failed.push({
+          serverId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return result;
   }
 
   async connectAutoStart(): Promise<void> {

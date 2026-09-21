@@ -99,3 +99,23 @@ export interface ToolPolicyInfo {
   originalName: string;
   enabled: boolean;
 }
+
+export interface McpProfileInfo {
+  id: string;
+  name: string;
+  serverIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProfileApplyFailure {
+  serverId: string;
+  error: string;
+}
+
+export interface ProfileApplyResult {
+  connected: string[];
+  disconnected: string[];
+  alreadyRunning: string[];
+  failed: ProfileApplyFailure[];
+}

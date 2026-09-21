@@ -4,6 +4,7 @@ import { CoreLogger } from "./logger.ts";
 import { GatewayServer } from "./gateway-server.ts";
 import { HttpUpstreamClient } from "./http-upstream-client.ts";
 import { ManagementServer } from "./management-server.ts";
+import { ProfileStore } from "./profile-store.ts";
 import { ServerRegistry } from "./server-registry.ts";
 import { createPlatformSecretStore } from "./secret-store.ts";
 import { ToolPolicyStore } from "./tool-policy-store.ts";
@@ -21,6 +22,8 @@ async function main(): Promise<void> {
 
   const registry = new ServerRegistry(config.serverConfigFile, logger);
   await registry.init();
+  const profiles = new ProfileStore(config.profileFile, logger);
+  await profiles.init();
   const toolPolicy = new ToolPolicyStore(config.toolPolicyFile, logger);
   await toolPolicy.init();
   const toolRegistry = new ToolRegistry(toolPolicy);
@@ -40,6 +43,7 @@ async function main(): Promise<void> {
     config,
     gateway,
     registry,
+    profiles,
     upstreams,
     toolRegistry,
     toolPolicy,
@@ -78,7 +82,18 @@ async function main(): Promise<void> {
 
   try {
     await gateway.start();
-    await upstreams.connectAutoStart();
+    const activeProfile = profiles.getActive();
+    if (activeProfile) {
+      const result = await upstreams.applyExactSet(activeProfile.serverIds);
+      if (result.failed.length > 0) {
+        logger.warn(
+          "profiles",
+          `active profile restored with ${result.failed.length} failure(s)`,
+        );
+      }
+    } else {
+      await upstreams.connectAutoStart();
+    }
     logger.info("core", "Core is ready");
   } catch (error) {
     logger.error(
