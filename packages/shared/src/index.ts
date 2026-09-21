@@ -9,6 +9,9 @@ export interface GatewayInfo {
   status: GatewayStatus;
   endpoint: string;
   healthEndpoint: string;
+  authRequired?: boolean;
+  authReady?: boolean;
+  authError?: string | null;
 }
 
 export interface ManagedServerInfo {

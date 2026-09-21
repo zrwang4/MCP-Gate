@@ -193,6 +193,9 @@ interface StatusResponse {
     status: ServerStatus;
     toolCount: number;
     lastError: string | null;
+    authRequired?: boolean;
+    authReady?: boolean;
+    authError?: string | null;
   };
 }
 
@@ -331,6 +334,9 @@ export function App() {
   const [copied, setCopied] = useState(false);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [gatewayKeyBusy, setGatewayKeyBusy] = useState(false);
+  const [generatedGatewayKey, setGeneratedGatewayKey] = useState<string | null>(null);
+  const [gatewayKeyCopied, setGatewayKeyCopied] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [logLevel, setLogLevel] = useState<"all" | LogLevel>("all");
@@ -476,6 +482,49 @@ export function App() {
     await navigator.clipboard.writeText(gatewayUrl);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  async function rotateGatewayApiKey() {
+    setGatewayKeyBusy(true);
+    setError(null);
+    try {
+      const response = await api<{
+        access: { enabled: boolean; ready: boolean; lastError: string | null };
+        apiKey: string;
+      }>(
+        "/api/gateway-access/rotate",
+        { method: "POST", body: "{}" },
+        15_000,
+      );
+
+      setGeneratedGatewayKey(response.apiKey);
+      await navigator.clipboard.writeText(response.apiKey);
+      setGatewayKeyCopied(true);
+      window.setTimeout(() => setGatewayKeyCopied(false), 1600);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setGatewayKeyBusy(false);
+    }
+  }
+
+  async function disableGatewayApiKey() {
+    setGatewayKeyBusy(true);
+    setError(null);
+    try {
+      await api(
+        "/api/gateway-access/disable",
+        { method: "POST", body: "{}" },
+        15_000,
+      );
+      setGeneratedGatewayKey(null);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setGatewayKeyBusy(false);
+    }
   }
 
   async function copyDiagnosticsSnapshot() {
@@ -1616,6 +1665,62 @@ export function App() {
                   : "复制诊断信息"}
             </button>
           </div>
+
+          <div className="settingsRow gatewayAccessRow">
+            <div>
+              <strong>Gateway API Key</strong>
+              <span>
+                {status?.gateway.authRequired
+                  ? status.gateway.authReady
+                    ? "已开启；MCP 客户端需要 Authorization: Bearer <key>。"
+                    : status.gateway.authError ?? "Keychain 中的 API Key 不可用。"
+                  : "默认关闭；开启后统一 /mcp 需要 Bearer Token。"}
+              </span>
+            </div>
+            <div className="settingsActions">
+              <button
+                className="secondaryButton"
+                disabled={gatewayKeyBusy || !managementConnected}
+                onClick={() => void rotateGatewayApiKey()}
+              >
+                {gatewayKeyBusy
+                  ? "处理中…"
+                  : status?.gateway.authRequired
+                    ? "轮换并复制 Key"
+                    : "启用并复制 Key"}
+              </button>
+              {status?.gateway.authRequired && (
+                <button
+                  className="actionButton danger"
+                  disabled={gatewayKeyBusy}
+                  onClick={() => void disableGatewayApiKey()}
+                >
+                  关闭
+                </button>
+              )}
+            </div>
+          </div>
+
+          {generatedGatewayKey && (
+            <div className="gatewayKeyReveal">
+              <div>
+                <strong>新 API Key（只显示这一次）</strong>
+                <span>
+                  {gatewayKeyCopied
+                    ? "已复制到剪贴板"
+                    : "请立即保存到 MCP Client 配置"}
+                </span>
+              </div>
+              <button
+                className="iconButton"
+                onClick={() => setGeneratedGatewayKey(null)}
+                aria-label="隐藏 API Key"
+              >
+                <X size={15} />
+              </button>
+              <code>{generatedGatewayKey}</code>
+            </div>
+          )}
         </div>
       </section>
 

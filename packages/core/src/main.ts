@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { loadConfig } from "./config.ts";
 import { CoreLogger } from "./logger.ts";
+import { GatewayAccessController } from "./gateway-access.ts";
 import { GatewayServer } from "./gateway-server.ts";
 import { HttpUpstreamClient } from "./http-upstream-client.ts";
 import { ManagementServer } from "./management-server.ts";
@@ -28,6 +29,12 @@ async function main(): Promise<void> {
   await toolPolicy.init();
   const toolRegistry = new ToolRegistry(toolPolicy);
   const secrets = createPlatformSecretStore();
+  const gatewayAccess = new GatewayAccessController(
+    config.gatewayAccessFile,
+    secrets,
+    logger,
+  );
+  await gatewayAccess.init();
   const upstreams = new UpstreamManager(
     registry,
     toolRegistry,
@@ -38,10 +45,17 @@ async function main(): Promise<void> {
     logger,
   );
   upstreams.syncConfigs();
-  const gateway = new GatewayServer(config, toolRegistry, upstreams, logger);
+  const gateway = new GatewayServer(
+    config,
+    toolRegistry,
+    upstreams,
+    gatewayAccess,
+    logger,
+  );
   const management = new ManagementServer(
     config,
     gateway,
+    gatewayAccess,
     registry,
     profiles,
     upstreams,

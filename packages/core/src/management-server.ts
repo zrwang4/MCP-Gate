@@ -16,6 +16,7 @@ import {
   inspectMcpImportSources,
   readMcpImportSource,
 } from "./mcp-import-source.ts";
+import type { GatewayAccessController } from "./gateway-access.ts";
 import type { GatewayServer } from "./gateway-server.ts";
 import type { HttpServerConfig, McpServerConfig, ServerRegistry } from "./server-registry.ts";
 import type { ProfileStore } from "./profile-store.ts";
@@ -83,6 +84,7 @@ function requireDesktopClient(req: IncomingMessage, res: ServerResponse): boolea
 export class ManagementServer {
   #config: CoreConfig;
   #gateway: GatewayServer;
+  #gatewayAccess: GatewayAccessController;
   #registry: ServerRegistry;
   #profiles: ProfileStore;
   #upstreams: UpstreamManager;
@@ -96,6 +98,7 @@ export class ManagementServer {
   constructor(
     config: CoreConfig,
     gateway: GatewayServer,
+    gatewayAccess: GatewayAccessController,
     registry: ServerRegistry,
     profiles: ProfileStore,
     upstreams: UpstreamManager,
@@ -106,6 +109,7 @@ export class ManagementServer {
   ) {
     this.#config = config;
     this.#gateway = gateway;
+    this.#gatewayAccess = gatewayAccess;
     this.#registry = registry;
     this.#profiles = profiles;
     this.#upstreams = upstreams;
@@ -195,6 +199,50 @@ export class ManagementServer {
           endpoint: `http://${this.#config.managementHost}:${this.#config.managementPort}`,
         },
       });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/gateway-access") {
+      json(res, 200, {
+        access: this.#gatewayAccess.snapshot(),
+      });
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/gateway-access/rotate"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const rotated = await this.#gatewayAccess.rotate();
+        json(res, 200, {
+          access: rotated.snapshot,
+          apiKey: rotated.apiKey,
+        });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/gateway-access/disable"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const access = await this.#gatewayAccess.disable();
+        json(res, 200, { access });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 

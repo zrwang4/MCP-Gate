@@ -11,6 +11,7 @@ import {
   toNodeHandler,
 } from "@modelcontextprotocol/node";
 import type { CoreConfig } from "./config.ts";
+import type { GatewayAccessController } from "./gateway-access.ts";
 import type { CoreLogger } from "./logger.ts";
 import type { ToolRegistry, ToolRoute } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
@@ -50,6 +51,7 @@ export class GatewayServer {
   #config: CoreConfig;
   #tools: ToolRegistry;
   #upstreams: UpstreamManager;
+  #access: GatewayAccessController;
   #logger: CoreLogger;
   #server: HttpServer | null = null;
   #handler: ReturnType<typeof createMcpHandler> | null = null;
@@ -61,11 +63,13 @@ export class GatewayServer {
     config: CoreConfig,
     tools: ToolRegistry,
     upstreams: UpstreamManager,
+    access: GatewayAccessController,
     logger: CoreLogger,
   ) {
     this.#config = config;
     this.#tools = tools;
     this.#upstreams = upstreams;
+    this.#access = access;
     this.#logger = logger;
   }
 
@@ -76,6 +80,9 @@ export class GatewayServer {
       status: this.#status,
       toolCount: this.#tools.list().length,
       lastError: this.#lastError,
+      authRequired: this.#access.snapshot().enabled,
+      authReady: this.#access.snapshot().ready,
+      authError: this.#access.snapshot().lastError,
     };
   }
 
@@ -108,6 +115,18 @@ export class GatewayServer {
       }
 
       if (!validateHost(req, res) || !validateOrigin(req, res)) return;
+
+      const access = this.#access.authorize(req.headers.authorization);
+      if (!access.allowed) {
+        res.statusCode = access.status;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Cache-Control", "no-store");
+        if (access.status === 401) {
+          res.setHeader("WWW-Authenticate", 'Bearer realm="MCP Gate"');
+        }
+        res.end(JSON.stringify({ error: access.error }));
+        return;
+      }
 
       Promise.resolve(nodeHandler(req, res)).catch((error) => {
         this.#logger.error(

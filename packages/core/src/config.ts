@@ -15,6 +15,7 @@ export interface CoreConfig {
   serverConfigFile: string;
   toolPolicyFile: string;
   profileFile: string;
+  gatewayAccessFile: string;
 }
 
 function readPositiveInt(name: string, fallback: number): number {
@@ -56,5 +57,8 @@ export function loadConfig(): CoreConfig {
     profileFile:
       process.env.MCP_GATE_PROFILE_FILE ??
       join(appSupportDir, "profiles.json"),
+    gatewayAccessFile:
+      process.env.MCP_GATE_GATEWAY_ACCESS_FILE ??
+      join(appSupportDir, "gateway-access.json"),
   };
 }

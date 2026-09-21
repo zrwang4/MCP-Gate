@@ -12,6 +12,9 @@ export interface DiagnosticGatewaySnapshot {
   status: string;
   toolCount: number;
   lastError: string | null;
+  authRequired?: boolean;
+  authReady?: boolean;
+  authError?: string | null;
 }
 
 export interface DiagnosticSnapshotInput {
@@ -44,6 +47,9 @@ export function buildDiagnosticSnapshot(input: DiagnosticSnapshotInput) {
       status: input.gateway.status,
       toolCount: input.gateway.toolCount,
       lastError: sanitizeText(input.gateway.lastError),
+      authRequired: Boolean(input.gateway.authRequired),
+      authReady: input.gateway.authReady ?? true,
+      authError: sanitizeText(input.gateway.authError ?? null),
     },
     profiles: {
       activeProfileId: input.activeProfileId,

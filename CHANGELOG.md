@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- 统一 `/mcp` 新增可选 Gateway API Key，默认关闭；开启后要求 `Authorization: Bearer <key>`。
+- API Key 明文只在启用/轮换时返回一次，持久化仅保存 Keychain opaque Secret ID。
+- Gateway Access 配置存放于 `gateway-access.json`；Keychain Secret 缺失时 fail closed，`/mcp` 返回 503 而不是静默放开。
+- Management API 新增 `GET /api/gateway-access`、`POST /rotate`、`POST /disable`。
+- 桌面设置支持启用、轮换、关闭 Gateway API Key；新 Key 自动复制并只在当前 UI 会话显示。
+- Gateway status / 诊断快照新增 authRequired/authReady/authError。
+- 新增 Gateway access Keychain 持久化、Bearer 验证与 fail-closed 测试。
+
+
 - 修复 upstream 初始化失败时的 transport 清理：stdio/HTTP client 在 connect 前记录生命周期引用，失败后显式 close。
 - stdio connect 失败会调用 Client.close，确保 SDK 按 stdin → SIGTERM → SIGKILL 顺序回收子进程。
 - HTTP connect 失败会先 terminateSession，再 close Client；无 session 时 terminateSession 安全返回。
