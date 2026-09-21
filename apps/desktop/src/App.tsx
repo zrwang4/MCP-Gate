@@ -826,6 +826,14 @@ export function App() {
             </div>
             <span className="settingsStatus">{IS_TAURI ? "已启用" : "仅桌面版"}</span>
           </div>
+
+          <div className="settingsRow">
+            <div>
+              <strong>记住窗口位置</strong>
+              <span>重新打开 MCP Gate 时恢复上次的窗口大小和位置。</span>
+            </div>
+            <span className="settingsStatus">{IS_TAURI ? "已启用" : "仅桌面版"}</span>
+          </div>
         </div>
       </section>
 

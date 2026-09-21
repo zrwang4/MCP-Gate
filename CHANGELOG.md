@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Tauri 桌面端新增 window-state plugin，自动保存并恢复主窗口位置和尺寸。
+- Window state 完全在 Rust 侧启用，不向 WebView 开放额外插件权限。
+- 桌面设置区展示窗口状态持久化能力。
+
+
 - 新增 production Core runtime staging：复制固定 Node runtime 为 Tauri target-triple sidecar，并通过 `pnpm deploy --prod --legacy` 生成自包含 Core resources。
 - 新增 `tauri.production.conf.json`：打包 `mcp-gate-node` external binary 与 `core-runtime` resources。
 - CoreSupervisor 在正式 App 中自动发现 `Contents/MacOS/mcp-gate-node` 与资源目录的 `core-runtime/dist/main.js`，优先使用内置 runtime。
