@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
+import {
+  applyMcpClientConfig,
+  previewMcpClientConfig,
+  toPublicMcpImportPreview,
+} from "./mcp-config-import.ts";
 import type { GatewayServer } from "./gateway-server.ts";
 import type { HttpServerConfig, McpServerConfig, ServerRegistry } from "./server-registry.ts";
 import type { ProfileStore } from "./profile-store.ts";
@@ -305,6 +310,54 @@ export class ManagementServer {
       return;
     }
 
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/preview"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req, 512 * 1024) as {
+          config?: unknown;
+        };
+        const preview = previewMcpClientConfig(body.config);
+        json(res, 200, {
+          preview: toPublicMcpImportPreview(preview),
+        });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/apply"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req, 512 * 1024) as {
+          config?: unknown;
+        };
+        const result = await applyMcpClientConfig(
+          body.config,
+          this.#registry,
+          this.#secrets,
+          this.#logger,
+        );
+        this.#upstreams.syncConfigs();
+        json(res, 200, { result });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
 
     if (req.method === "GET" && url.pathname === "/api/server-configs") {
       json(res, 200, {

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- 新增 Claude/Cursor 风格 MCP JSON 导入解析，支持顶层 `mcpServers` 与直接 server map。
+- 新增 `POST /api/import/mcp-config/preview`：只返回可导入项、Secret key 和问题，不回显 Secret 值。
+- 新增 `POST /api/import/mcp-config/apply`：批量写入 Server Registry，并把敏感 env / HTTP Authorization 保存到 Keychain。
+- 导入时按环境变量名称识别常见 Token/Key/Secret/Password 等敏感项；普通 env 仍保存在 servers.json。
+- HTTP 导入当前只接受 Authorization Header；其它自定义 Header、static OAuth、legacy SSE type 会明确报不支持，不静默丢弃。
+- Cursor 配置插值（如 `${env:NAME}`、`${workspaceFolder}`）当前明确拒绝，避免导入后作为错误字面量传给 MCP。
+- 重复导入同名且同启动目标的配置会跳过，不创建重复 Server。
+- 新增导入预览脱敏、非法 Header/插值和 Keychain 持久化测试。
+
+
 - Gateway 概览新增 Profile 快捷切换，下拉可直接激活目标 Profile。
 - 顶部指标显示当前 Profile；无 active Profile 时明确显示“手动模式”。
 - 选择“手动模式（无 Profile）”会停用当前 Profile，并保留各 Server 的 autoStart 配置不变。
