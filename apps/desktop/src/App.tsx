@@ -1,4 +1,4 @@
-import { Check, Copy, FileText, Folder, Play, RefreshCw, RotateCw, Settings2 } from "lucide-react";
+import { Check, Copy, FileText, Folder, Play, RefreshCw, RotateCw, Settings2, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:24888/mcp";

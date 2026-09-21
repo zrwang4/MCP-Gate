@@ -42,7 +42,8 @@ h2 { margin: 0; font-size: 16px; }
 
 .iconButton,
 .ghostButton,
-.copyButton {
+.copyButton,
+.secondaryButton {
   border: 1px solid rgba(0,0,0,.09);
   background: rgba(255,255,255,.72);
   color: inherit;
@@ -57,7 +58,8 @@ h2 { margin: 0; font-size: 16px; }
 
 .iconButton:hover,
 .ghostButton:hover,
-.copyButton:hover {
+.copyButton:hover,
+.secondaryButton:hover {
   background: rgba(255,255,255,.92);
 }
 
