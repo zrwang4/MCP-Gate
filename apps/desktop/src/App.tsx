@@ -60,7 +60,7 @@ interface StatusResponse {
   };
 }
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
+async function api<T>(path: string, init?: RequestInit, timeoutMs = 4000): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.method && init.method !== "GET") {
     headers.set("X-MCP-Gate-Client", "desktop");
@@ -68,7 +68,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), 4000);
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${MANAGEMENT_URL}${path}`, {
@@ -84,6 +84,23 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     return body;
   } finally {
     globalThis.clearTimeout(timeout);
+  }
+}
+
+function upstreamStatusLabel(status: UpstreamInfo["status"]): string {
+  switch (status) {
+    case "configured":
+      return "已配置";
+    case "connecting":
+      return "连接中";
+    case "running":
+      return "运行中";
+    case "stopping":
+      return "断开中";
+    case "error":
+      return "异常";
+    default:
+      return "已断开";
   }
 }
 
@@ -220,10 +237,14 @@ export function App() {
     setBusy(`${serverId}:${action}`);
     setError(null);
     try {
-      await api(`/api/upstreams/${serverId}/${action}`, {
-        method: "POST",
-        body: "{}",
-      });
+      await api(
+        `/api/upstreams/${serverId}/${action}`,
+        {
+          method: "POST",
+          body: "{}",
+        },
+        action === "connect" ? 65_000 : 15_000,
+      );
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -391,7 +412,7 @@ export function App() {
                     <div className="serverNameRow">
                       <strong>{server.name}</strong>
                       <span className={`pill ${upstreamStatus === "configured" ? "configured" : upstreamStatus}`}>
-                        {upstreamStatus === "configured" ? "已配置" : statusLabel(upstreamStatus as ServerStatus)}
+                        {upstreamStatusLabel(upstreamStatus)}
                       </span>
                     </div>
                     <span>{server.command} {server.args.join(" ")}</span>

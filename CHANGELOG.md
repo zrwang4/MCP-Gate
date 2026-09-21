@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- stdio MCP connect 请求使用独立长超时，避免初始化超过 4 秒时 UI 误报失败。
+- 修复 upstream `connecting` 状态被错误显示为“已停止”。
+
+
 - 接入 MCP TypeScript SDK v2 客户端 `@modelcontextprotocol/client@2.0.0`。
 - 新增真实 `StdioUpstreamClient`，通过 stdio 启动并初始化已保存 MCP Server。
 - 已配置 MCP 支持连接、断开、刷新 Tools。
