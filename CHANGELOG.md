@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 显式设置 Tauri bundle icon 为空数组，避免尚未提交正式 App 图标时 `cargo check` 读取不存在的默认 `icons/icon.png`。
+
+
 - 桌面 UI 显示 CoreSupervisor 状态：桌面托管 Node、托管 Sidecar、外部 Core 或未运行。
 - Management API 连接失败时，Tauri 模式可直接点击“重启 Core”调用 Rust supervisor。
 - Gateway 指标新增托管 Core PID，Web-only 模式保持兼容。
