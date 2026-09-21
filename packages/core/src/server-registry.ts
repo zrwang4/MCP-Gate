@@ -24,6 +24,8 @@ export interface CreateStdioServerInput {
   cwd?: string;
 }
 
+export type UpdateStdioServerInput = CreateStdioServerInput;
+
 interface RegistryFile {
   version: 1;
   servers: StdioServerConfig[];
@@ -81,12 +83,7 @@ export class ServerRegistry {
       throw new Error("cwd is too long");
     }
 
-    const args = (input.args ?? []).map((arg, index) => {
-      if (typeof arg !== "string") throw new Error(`args[${index}] must be a string`);
-      if (arg.length > 4096) throw new Error(`args[${index}] is too long`);
-      return arg;
-    });
-    if (args.length > 100) throw new Error("too many arguments");
+    const args = validateArgs(input.args ?? []);
 
     const now = new Date().toISOString();
     const id = randomUUID();
@@ -107,6 +104,34 @@ export class ServerRegistry {
     this.#servers.push(server);
     await this.#persist();
     this.#logger.info("registry", `added MCP configuration: ${server.name} (${server.alias})`);
+    return cloneServer(server);
+  }
+
+  async update(
+    id: string,
+    input: UpdateStdioServerInput,
+  ): Promise<StdioServerConfig | undefined> {
+    const server = this.#servers.find((item) => item.id === id);
+    if (!server) return undefined;
+
+    const name = validateText("name", input.name, 80);
+    const command = validateText("command", input.command, 2048);
+    const cwd = input.cwd?.trim() || undefined;
+    if (cwd && cwd.length > 4096) throw new Error("cwd is too long");
+
+    const args = validateArgs(input.args ?? []);
+
+    server.name = name;
+    server.command = command;
+    server.args = args;
+    server.cwd = cwd;
+    server.updatedAt = new Date().toISOString();
+
+    await this.#persist();
+    this.#logger.info(
+      "registry",
+      `updated MCP configuration: ${server.name} (${server.alias})`,
+    );
     return cloneServer(server);
   }
 
@@ -208,4 +233,15 @@ function isServerConfig(value: unknown): value is StdioServerConfig {
     typeof server.createdAt === "string" &&
     typeof server.updatedAt === "string"
   );
+}
+
+function validateArgs(values: string[]): string[] {
+  if (!Array.isArray(values)) throw new Error("args must be an array");
+  if (values.length > 100) throw new Error("too many arguments");
+
+  return values.map((arg, index) => {
+    if (typeof arg !== "string") throw new Error(`args[${index}] must be a string`);
+    if (arg.length > 4096) throw new Error(`args[${index}] is too long`);
+    return arg;
+  });
 }

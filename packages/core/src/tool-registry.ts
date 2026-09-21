@@ -1,3 +1,5 @@
+import type { ToolPolicyStore } from "./tool-policy-store.ts";
+
 export interface McpToolDefinition {
   name: string;
   description?: string;
@@ -15,6 +17,11 @@ export interface ToolRoute {
 
 export class ToolRegistry {
   #routes = new Map<string, ToolRoute>();
+  #policy: ToolPolicyStore | null;
+
+  constructor(policy?: ToolPolicyStore) {
+    this.#policy = policy ?? null;
+  }
 
   replaceServerTools(
     serverId: string,
@@ -45,7 +52,10 @@ export class ToolRegistry {
         serverId,
         serverAlias,
         originalName,
-        enabled: previousEnabled.get(originalName) ?? true,
+        enabled:
+          previousEnabled.get(originalName) ??
+          this.#policy?.isEnabled(serverId, originalName) ??
+          true,
         definition: {
           name: publicName,
           description: tool.description,

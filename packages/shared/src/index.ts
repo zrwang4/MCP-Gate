@@ -77,3 +77,9 @@ export interface ToolRouteInfo {
   originalName: string;
   enabled: boolean;
 }
+
+export interface ToolPolicyInfo {
+  serverId: string;
+  originalName: string;
+  enabled: boolean;
+}

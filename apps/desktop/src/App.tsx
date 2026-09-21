@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   FileText,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -156,6 +157,7 @@ export function App() {
   const [logLevel, setLogLevel] = useState<"all" | LogLevel>("all");
   const [managementConnected, setManagementConnected] = useState(false);
   const [showAddServer, setShowAddServer] = useState(false);
+  const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [newServerName, setNewServerName] = useState("");
   const [newServerCommand, setNewServerCommand] = useState("");
   const [newServerArgs, setNewServerArgs] = useState("");
@@ -205,11 +207,29 @@ export function App() {
     window.setTimeout(() => setCopied(false), 1200);
   }
 
-  async function addServerConfig() {
+  function openCreateServer() {
+    setEditingServerId(null);
+    setNewServerName("");
+    setNewServerCommand("");
+    setNewServerArgs("");
+    setNewServerCwd("");
+    setShowAddServer(true);
+  }
+
+  function openEditServer(server: ServerConfigInfo) {
+    setEditingServerId(server.id);
+    setNewServerName(server.name);
+    setNewServerCommand(server.command);
+    setNewServerArgs(server.args.join("\n"));
+    setNewServerCwd(server.cwd ?? "");
+    setShowAddServer(true);
+  }
+
+  async function saveServerConfig() {
     setConfigBusy(true);
     setError(null);
     try {
-      await api("/api/server-configs", {
+      await api(editingServerId ? `/api/server-configs/${editingServerId}` : "/api/server-configs", {
         method: "POST",
         body: JSON.stringify({
           name: newServerName,
@@ -219,6 +239,7 @@ export function App() {
         }),
       });
       setShowAddServer(false);
+      setEditingServerId(null);
       setNewServerName("");
       setNewServerCommand("");
       setNewServerArgs("");
@@ -373,7 +394,7 @@ export function App() {
             <h2>MCP 管理</h2>
             <p>配置并连接本机 stdio MCP Server</p>
           </div>
-          <button className="secondaryButton" onClick={() => setShowAddServer(true)}>
+          <button className="secondaryButton" onClick={openCreateServer}>
             <Plus size={14} /> 添加 MCP
           </button>
         </div>
@@ -449,6 +470,13 @@ export function App() {
                       )}
                     >
                       自动 {server.autoStart ? "开" : "关"}
+                    </button>
+                    <button
+                      className="actionButton"
+                      disabled={configBusy || changing}
+                      onClick={() => openEditServer(server)}
+                    >
+                      <Pencil size={14} /> 编辑
                     </button>
                     <button
                       className="actionButton danger"
@@ -547,14 +575,20 @@ export function App() {
       </section>
 
       {showAddServer && (
-        <div className="modalBackdrop" role="presentation" onMouseDown={() => setShowAddServer(false)}>
-          <section className="modalCard" role="dialog" aria-modal="true" aria-label="添加 MCP" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => {
+          setShowAddServer(false);
+          setEditingServerId(null);
+        }}>
+          <section className="modalCard" role="dialog" aria-modal="true" aria-label={editingServerId ? "编辑 MCP" : "添加 MCP"} onMouseDown={(event) => event.stopPropagation()}>
             <div className="modalHeader">
               <div>
-                <h2>添加 MCP</h2>
-                <p>保存后可直接连接 stdio MCP；Tools 会注册到统一 Gateway。</p>
+                <h2>{editingServerId ? "编辑 MCP" : "添加 MCP"}</h2>
+                <p>{editingServerId ? "保存时会先断开当前连接，alias 保持不变。" : "保存后可直接连接 stdio MCP；Tools 会注册到统一 Gateway。"}</p>
               </div>
-              <button className="iconButton" onClick={() => setShowAddServer(false)} aria-label="关闭">
+              <button className="iconButton" onClick={() => {
+                setShowAddServer(false);
+                setEditingServerId(null);
+              }} aria-label="关闭">
                 <X size={17} />
               </button>
             </div>
@@ -575,13 +609,16 @@ export function App() {
               <input value={newServerCwd} onChange={(event) => setNewServerCwd(event.target.value)} placeholder="/Users/me/project" />
             </label>
             <div className="modalActions">
-              <button className="secondaryButton" onClick={() => setShowAddServer(false)}>取消</button>
+              <button className="secondaryButton" onClick={() => {
+                setShowAddServer(false);
+                setEditingServerId(null);
+              }}>取消</button>
               <button
                 className="actionButton primary"
                 disabled={configBusy || !newServerName.trim() || !newServerCommand.trim()}
-                onClick={() => void addServerConfig()}
+                onClick={() => void saveServerConfig()}
               >
-                {configBusy ? "保存中…" : "保存配置"}
+                {configBusy ? "保存中…" : editingServerId ? "保存修改" : "保存配置"}
               </button>
             </div>
           </section>

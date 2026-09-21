@@ -4,6 +4,7 @@ import { CoreLogger } from "./logger.ts";
 import { GatewayServer } from "./gateway-server.ts";
 import { ManagementServer } from "./management-server.ts";
 import { ServerRegistry } from "./server-registry.ts";
+import { ToolPolicyStore } from "./tool-policy-store.ts";
 import { ToolRegistry } from "./tool-registry.ts";
 import { StdioUpstreamClient } from "./stdio-upstream-client.ts";
 import { UpstreamManager } from "./upstream-manager.ts";
@@ -18,7 +19,9 @@ async function main(): Promise<void> {
 
   const registry = new ServerRegistry(config.serverConfigFile, logger);
   await registry.init();
-  const toolRegistry = new ToolRegistry();
+  const toolPolicy = new ToolPolicyStore(config.toolPolicyFile, logger);
+  await toolPolicy.init();
+  const toolRegistry = new ToolRegistry(toolPolicy);
   const upstreams = new UpstreamManager(
     registry,
     toolRegistry,
@@ -33,6 +36,7 @@ async function main(): Promise<void> {
     registry,
     upstreams,
     toolRegistry,
+    toolPolicy,
     logger,
   );
 

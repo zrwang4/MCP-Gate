@@ -3,6 +3,7 @@ import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
 import type { GatewayServer } from "./gateway-server.ts";
 import type { ServerRegistry } from "./server-registry.ts";
+import type { ToolPolicyStore } from "./tool-policy-store.ts";
 import type { ToolRegistry } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
@@ -64,6 +65,7 @@ export class ManagementServer {
   #registry: ServerRegistry;
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
+  #toolPolicy: ToolPolicyStore;
   #logger: CoreLogger;
   #server: ReturnType<typeof createServer> | null = null;
   #startedAt = new Date().toISOString();
@@ -74,6 +76,7 @@ export class ManagementServer {
     registry: ServerRegistry,
     upstreams: UpstreamManager,
     tools: ToolRegistry,
+    toolPolicy: ToolPolicyStore,
     logger: CoreLogger,
   ) {
     this.#config = config;
@@ -81,6 +84,7 @@ export class ManagementServer {
     this.#registry = registry;
     this.#upstreams = upstreams;
     this.#tools = tools;
+    this.#toolPolicy = toolPolicy;
     this.#logger = logger;
   }
 
@@ -181,18 +185,30 @@ export class ManagementServer {
       if (!requireDesktopClient(req, res)) return;
 
       const [, publicName, action] = toolActionMatch;
-      const changed = this.#tools.setEnabled(publicName, action === "enable");
+      const tool = this.#tools.resolve(publicName);
+      if (!tool) {
+        json(res, 404, { error: "tool not found" });
+        return;
+      }
+
+      const enabled = action === "enable";
+      await this.#toolPolicy.setEnabled(
+        tool.serverId,
+        tool.originalName,
+        enabled,
+      );
+      const changed = this.#tools.setEnabled(publicName, enabled);
       if (!changed) {
         json(res, 404, { error: "tool not found" });
         return;
       }
 
-      const tool = this.#tools.resolve(publicName);
+      const updatedTool = this.#tools.resolve(publicName);
       this.#logger.info(
         "tools",
         `${action === "enable" ? "enabled" : "disabled"} ${publicName}`,
       );
-      json(res, 200, { tool });
+      json(res, 200, { tool: updatedTool });
       return;
     }
 
@@ -241,6 +257,49 @@ export class ManagementServer {
         json(res, 201, { server });
       } catch (error) {
         json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
+
+    const configEditMatch = url.pathname.match(
+      /^\/api\/server-configs\/([0-9a-f-]+)$/i,
+    );
+    if (req.method === "POST" && configEditMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          name?: unknown;
+          command?: unknown;
+          args?: unknown;
+          cwd?: unknown;
+        };
+
+        await this.#upstreams
+          .disconnect(configEditMatch[1])
+          .catch(() => undefined);
+
+        const updated = await this.#registry.update(
+          configEditMatch[1],
+          {
+            name: body.name as string,
+            command: body.command as string,
+            args: Array.isArray(body.args) ? body.args as string[] : [],
+            cwd: typeof body.cwd === "string" ? body.cwd : undefined,
+          },
+        );
+
+        if (!updated) {
+          json(res, 404, { error: "server configuration not found" });
+          return;
+        }
+
+        this.#upstreams.syncConfigs();
+        json(res, 200, { server: updated });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
       return;
     }
@@ -298,6 +357,7 @@ export class ManagementServer {
       if (!requireDesktopClient(req, res)) return;
       await this.#upstreams.disconnect(configDeleteMatch[1]).catch(() => undefined);
       const removed = await this.#registry.remove(configDeleteMatch[1]);
+      await this.#toolPolicy.removeServer(configDeleteMatch[1]);
       this.#upstreams.syncConfigs();
       if (!removed) {
         json(res, 404, { error: "server configuration not found" });

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Tool enable/disable 状态持久化到 `tool-policy.json`，Core 重启和 upstream 重连后继续生效。
+- MCP Server 配置支持编辑 name/command/args/cwd；编辑时自动断开 upstream 并保持 alias 稳定。
+- 删除 MCP 配置时同步清理对应 Tool policy。
+- 新增 ToolPolicyStore 持久化测试。
+
+
 - 修复并发开发合并后重复导入 `GatewayServer` 的构建错误。
 - GatewayServer 新增运行状态 snapshot，Management API 可准确返回 Gateway 状态、Tool 数和最近错误。
 - 显式添加 MCP SDK v2 所需的 `zod@4.6.5` peer dependency。
