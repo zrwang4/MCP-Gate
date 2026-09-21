@@ -67,9 +67,11 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
-            None,
+            Some(vec!["--hidden"]),
         ))
         .setup(|app| {
+            let start_hidden = std::env::args().any(|arg| arg == "--hidden");
+
             let bundled_node = std::env::current_exe()
                 .ok()
                 .and_then(|path| path.parent().map(|parent| parent.join("mcp-gate-node")))
@@ -99,6 +101,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&open_item, &restart_item, &quit_item])?;
 
             TrayIconBuilder::with_id("mcp-gate-tray")
+                .title("MCP")
                 .tooltip("MCP Gate")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -113,6 +116,12 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+
+            if start_hidden {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
 
             Ok(())
         })

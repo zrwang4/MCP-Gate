@@ -793,7 +793,7 @@ export function App() {
           <div className="settingsRow">
             <div>
               <strong>登录时自动启动</strong>
-              <span>使用 macOS LaunchAgent 启动 MCP Gate。</span>
+              <span>使用 macOS LaunchAgent 静默启动，并驻留系统托盘。</span>
             </div>
             <button
               className={`toolToggle ${autostartEnabled ? "enabled" : ""}`}

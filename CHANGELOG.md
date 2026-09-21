@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- macOS 登录自启改为静默模式：LaunchAgent 传入 `--hidden`，启动后仅驻留托盘，不弹主窗口。
+- 用户手动启动仍正常显示窗口；托盘“打开”或第二实例会重新 show/unminimize/focus。
+- Tray 增加 macOS 菜单栏标题 `MCP`，在正式图标落地前确保托盘入口可见。
+
+
 - 新增手动触发的 macOS Release Preview workflow，实际构建 Tauri production bundle。
 - Release Preview 验证 .app 内包含 MCP Gate、Node sidecar、Core dist 与 production node_modules。
 - 构建成功后上传 .app 和 .dmg artifact，保留 7 天供测试。
