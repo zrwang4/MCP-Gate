@@ -488,6 +488,7 @@ export function App() {
       setLogs(logsResult.entries);
       setAuditEntries(auditResult.entries);
       setManagementConnected(true);
+      setError(null);
     } catch (cause) {
       setManagementConnected(false);
       setError((current) => current ?? (cause instanceof Error ? cause.message : String(cause)));
@@ -511,6 +512,7 @@ export function App() {
       setProfiles(profilesResult.profiles);
       setActiveProfileId(profilesResult.activeProfileId);
       setTools(toolsResult.tools);
+      setError(null);
     } catch (cause) {
       setError((current) => current ?? (cause instanceof Error ? cause.message : String(cause)));
     } finally {
