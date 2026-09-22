@@ -151,7 +151,8 @@ h2 { margin: 0; font-size: 16px; }
 
 .serverMeta {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   font-size: 11px;
   color: #888;
   margin-top: 2px;
@@ -167,12 +168,12 @@ h2 { margin: 0; font-size: 16px; }
 }
 
 .serverActions {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
   gap: 6px;
+  justify-content: end;
+  align-items: center;
   min-width: 72px;
-  justify-content: flex-end;
 }
 
 .actionButton {
@@ -183,6 +184,13 @@ h2 { margin: 0; font-size: 16px; }
   color: inherit;
   cursor: pointer;
   font-size: 11px;
+  white-space: nowrap;
+}
+
+.actionButton.iconOnly {
+  width: 26px;
+  height: 26px;
+  padding: 0;
 }
 
 .actionButton.primary {

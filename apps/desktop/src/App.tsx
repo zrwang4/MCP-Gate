@@ -1641,18 +1641,22 @@ export function App() {
                       自动 {server.autoStart ? "开" : "关"}
                     </button>
                     <button
-                      className="actionButton"
+                      className="actionButton iconOnly"
                       disabled={configBusy || changing}
                       onClick={() => openEditServer(server)}
+                      aria-label="编辑"
+                      title="编辑"
                     >
-                      <Pencil size={14} /> 编辑
+                      <Pencil size={14} />
                     </button>
                     <button
-                      className="actionButton danger"
+                      className="actionButton danger iconOnly"
                       disabled={configBusy || changing}
                       onClick={() => setDeletingServerId(server.id)}
+                      aria-label="删除"
+                      title="删除"
                     >
-                      <Trash2 size={14} /> 删除
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </article>
