@@ -1553,7 +1553,7 @@ export function App() {
 
         {serverConfigs.length === 0 ? (
           <div className="emptyState">
-            <Terminal size={20} />
+            <Server size={20} />
             <strong>还没有 MCP 配置</strong>
             <span>添加一个 stdio MCP 后即可连接并聚合 Tools。</span>
           </div>
