@@ -385,6 +385,7 @@ export function App() {
   const [newServerCommand, setNewServerCommand] = useState("");
   const [newServerArgs, setNewServerArgs] = useState("");
   const [newServerCwd, setNewServerCwd] = useState("");
+  const [deletingServerId, setDeletingServerId] = useState<string | null>(null);
   const [newServerEnv, setNewServerEnv] = useState("");
   const [newServerSecretEnv, setNewServerSecretEnv] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
@@ -1159,6 +1160,7 @@ export function App() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setConfigBusy(false);
+      setDeletingServerId(null);
     }
   }
 
@@ -1496,7 +1498,7 @@ export function App() {
                     <button
                       className="actionButton danger"
                       disabled={configBusy || changing}
-                      onClick={() => void removeServerConfig(server.id)}
+                      onClick={() => setDeletingServerId(server.id)}
                     >
                       <Trash2 size={14} /> 删除
                     </button>
@@ -1507,6 +1509,33 @@ export function App() {
           </div>
         )}
       </section>
+
+      {deletingServerId && (
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => setDeletingServerId(null)}>
+          <section className="modalCard confirmCard" role="dialog" aria-modal="true" aria-label="删除确认" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <h2>删除 MCP</h2>
+                <p>此操作会移除本地配置，不会影响已安装的依赖。</p>
+              </div>
+              <button className="iconButton" onClick={() => setDeletingServerId(null)} aria-label="关闭">
+                <X size={17} />
+              </button>
+            </div>
+            <p className="confirmText">确定要删除这个 MCP 吗？</p>
+            <div className="modalActions">
+              <button className="secondaryButton" onClick={() => setDeletingServerId(null)}>取消</button>
+              <button
+                className="actionButton danger"
+                disabled={configBusy}
+                onClick={() => void removeServerConfig(deletingServerId)}
+              >
+                删除
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <section className="section">
         <div className="sectionTitle">
