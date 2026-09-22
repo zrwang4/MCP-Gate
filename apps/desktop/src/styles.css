@@ -727,6 +727,30 @@ footer {
   max-width: 260px;
 }
 
+.searchWithClear {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.clearSearchButton {
+  position: absolute;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 6px;
+  background: rgba(0,0,0,.06);
+  color: #666;
+  display: grid;
+  place-items: center;
+}
+
+.clearSearchButton:hover {
+  background: rgba(0,0,0,.1);
+  color: #000;
+}
+
 .toolCount {
   font-size: 12px;
   color: #888;
@@ -790,6 +814,22 @@ footer {
 
   .pagination {
     color: #aaa;
+  }
+
+  .searchWithClear {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .clearSearchButton {
+    background: rgba(255,255,255,.08);
+    color: #ccc;
+  }
+
+  .clearSearchButton:hover {
+    background: rgba(255,255,255,.14);
+    color: #fff;
   }
 }
 

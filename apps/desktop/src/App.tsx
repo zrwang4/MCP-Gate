@@ -1638,12 +1638,24 @@ export function App() {
             <p>只有启用的 Tool 会出现在统一 /mcp 的 tools/list</p>
           </div>
           <div className="toolToolbar">
-            <input
-              className="toolSearch"
-              value={toolSearch}
-              onChange={(event) => setToolSearch(event.target.value)}
-              placeholder="搜索工具名、来源或描述..."
-            />
+            <div className="searchWithClear">
+              <input
+                className="toolSearch"
+                value={toolSearch}
+                onChange={(event) => setToolSearch(event.target.value)}
+                placeholder="搜索工具名、来源或描述..."
+              />
+              {toolSearch && (
+                <button
+                  className="iconButton clearSearchButton"
+                  onClick={() => setToolSearch("")}
+                  aria-label="清空搜索"
+                  title="清空搜索"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
             <span className="toolCount">{filteredTools.length} 个工具</span>
           </div>
         </div>
