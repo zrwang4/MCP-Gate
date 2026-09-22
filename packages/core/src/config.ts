@@ -10,9 +10,13 @@ export interface CoreConfig {
   sessionIdleTimeoutMs: number;
   managementHost: string;
   managementPort: number;
+  managementToken: string | null;
   logFile: string;
   serverConfigFile: string;
   toolPolicyFile: string;
+  profileFile: string;
+  gatewayAccessFile: string;
+  auditFile: string;
 }
 
 function readPositiveInt(name: string, fallback: number): number {
@@ -40,6 +44,8 @@ export function loadConfig(): CoreConfig {
     sessionIdleTimeoutMs: readPositiveInt("MCP_GATE_SESSION_IDLE_TIMEOUT_MS", 30 * 60_000),
     managementHost: process.env.MCP_GATE_MANAGEMENT_HOST ?? "127.0.0.1",
     managementPort: readPositiveInt("MCP_GATE_MANAGEMENT_PORT", 24889),
+    managementToken:
+      process.env.MCP_GATE_MANAGEMENT_TOKEN?.trim() || null,
     logFile:
       process.env.MCP_GATE_LOG_FILE ??
       join(homedir(), "Library", "Logs", "MCP Gate", "core.jsonl"),
@@ -49,5 +55,14 @@ export function loadConfig(): CoreConfig {
     toolPolicyFile:
       process.env.MCP_GATE_TOOL_POLICY_FILE ??
       join(appSupportDir, "tool-policy.json"),
+    profileFile:
+      process.env.MCP_GATE_PROFILE_FILE ??
+      join(appSupportDir, "profiles.json"),
+    gatewayAccessFile:
+      process.env.MCP_GATE_GATEWAY_ACCESS_FILE ??
+      join(appSupportDir, "gateway-access.json"),
+    auditFile:
+      process.env.MCP_GATE_AUDIT_FILE ??
+      join(homedir(), "Library", "Logs", "MCP Gate", "audit.jsonl"),
   };
 }

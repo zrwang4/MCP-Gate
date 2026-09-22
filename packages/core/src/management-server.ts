@@ -1,11 +1,29 @@
 import { randomUUID } from "node:crypto";
+import type { AuditLogger, AuditSource } from "./audit-logger.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { CoreConfig } from "./config.ts";
 import type { CoreLogger, LogLevel } from "./logger.ts";
+import { buildDiagnosticSnapshot } from "./diagnostics.ts";
+import {
+  isManagementRequestAuthorized,
+  MANAGEMENT_TOKEN_HEADER,
+} from "./management-auth.ts";
+import {
+  applyMcpClientConfig,
+  previewMcpClientConfig,
+  toPublicMcpImportPreview,
+} from "./mcp-config-import.ts";
+import {
+  inspectMcpImportSources,
+  readMcpImportSource,
+} from "./mcp-import-source.ts";
+import type { GatewayAccessController } from "./gateway-access.ts";
 import type { GatewayServer } from "./gateway-server.ts";
 import type { HttpServerConfig, McpServerConfig, ServerRegistry } from "./server-registry.ts";
+import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
+import { testMcpConnection } from "./test-mcp-connection.ts";
 import type { ToolRegistry } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
@@ -25,7 +43,10 @@ function setCors(req: IncomingMessage, res: ServerResponse): boolean {
 
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-MCP-Gate-Client");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-MCP-Gate-Client, X-MCP-Gate-Token",
+  );
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   return true;
 }
@@ -64,11 +85,14 @@ function requireDesktopClient(req: IncomingMessage, res: ServerResponse): boolea
 export class ManagementServer {
   #config: CoreConfig;
   #gateway: GatewayServer;
+  #gatewayAccess: GatewayAccessController;
   #registry: ServerRegistry;
+  #profiles: ProfileStore;
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
   #toolPolicy: ToolPolicyStore;
   #secrets: SecretStore;
+  #audit: AuditLogger;
   #logger: CoreLogger;
   #server: ReturnType<typeof createServer> | null = null;
   #startedAt = new Date().toISOString();
@@ -76,20 +100,26 @@ export class ManagementServer {
   constructor(
     config: CoreConfig,
     gateway: GatewayServer,
+    gatewayAccess: GatewayAccessController,
     registry: ServerRegistry,
+    profiles: ProfileStore,
     upstreams: UpstreamManager,
     tools: ToolRegistry,
     toolPolicy: ToolPolicyStore,
     secrets: SecretStore,
+    audit: AuditLogger,
     logger: CoreLogger,
   ) {
     this.#config = config;
     this.#gateway = gateway;
+    this.#gatewayAccess = gatewayAccess;
     this.#registry = registry;
+    this.#profiles = profiles;
     this.#upstreams = upstreams;
     this.#tools = tools;
     this.#toolPolicy = toolPolicy;
     this.#secrets = secrets;
+    this.#audit = audit;
     this.#logger = logger;
   }
 
@@ -147,6 +177,19 @@ export class ManagementServer {
       return;
     }
 
+    if (!isManagementRequestAuthorized(req.headers, this.#config.managementToken)) {
+      this.#logger.warn(
+        "management",
+        `management access denied: ${req.method ?? "UNKNOWN"} ${url.pathname}`,
+      );
+      json(res, 403, {
+        error: this.#config.managementToken
+          ? `missing or invalid ${MANAGEMENT_TOKEN_HEADER}`
+          : "missing desktop client header",
+      });
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/status") {
       const gateway = this.#gateway.snapshot();
       json(res, 200, {
@@ -163,8 +206,387 @@ export class ManagementServer {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/gateway-access") {
+      json(res, 200, {
+        access: this.#gatewayAccess.snapshot(),
+      });
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/gateway-access/lan"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const previous = this.#gatewayAccess.snapshot().lanEnabled;
+      try {
+        const body = await readJsonBody(req) as { enabled?: unknown };
+        if (typeof body.enabled !== "boolean") {
+          throw new Error("enabled must be a boolean");
+        }
+
+        await this.#gatewayAccess.setLanEnabled(body.enabled);
+        await this.#gateway.stop();
+        await this.#gateway.start();
+
+        json(res, 200, {
+          access: this.#gatewayAccess.snapshot(),
+          gateway: this.#gateway.snapshot(),
+        });
+      } catch (error) {
+        const current = this.#gatewayAccess.snapshot().lanEnabled;
+        if (current !== previous) {
+          await this.#gatewayAccess
+            .setLanEnabled(previous)
+            .catch(() => undefined);
+          await this.#gateway.stop().catch(() => undefined);
+          await this.#gateway.start().catch(() => undefined);
+        }
+
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+          gateway: this.#gateway.snapshot(),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/gateway-access/rotate"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const rotated = await this.#gatewayAccess.rotate();
+        json(res, 200, {
+          access: rotated.snapshot,
+          apiKey: rotated.apiKey,
+        });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/gateway-access/disable"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const wasLanEnabled = this.#gatewayAccess.snapshot().lanEnabled;
+        const access = await this.#gatewayAccess.disable();
+
+        if (wasLanEnabled) {
+          await this.#gateway.stop();
+          await this.#gateway.start();
+        }
+
+        json(res, 200, {
+          access,
+          gateway: this.#gateway.snapshot(),
+        });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/diagnostics") {
+      json(res, 200, {
+        snapshot: buildDiagnosticSnapshot({
+          coreVersion: CORE_VERSION,
+          coreStartedAt: this.#startedAt,
+          gateway: this.#gateway.snapshot(),
+          activeProfileId: this.#profiles.activeProfileId,
+          profiles: this.#profiles.list(),
+          servers: this.#registry.list(),
+          upstreams: this.#upstreams.list(),
+          tools: this.#tools.list({ includeDisabled: true }),
+          logs: this.#logger.list({ limit: 500 }),
+        }),
+      });
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/servers") {
       json(res, 200, { servers: [] });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/profiles") {
+      json(res, 200, {
+        profiles: this.#profiles.list(),
+        activeProfileId: this.#profiles.activeProfileId,
+      });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/profiles") {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          name?: unknown;
+          serverIds?: unknown;
+        };
+        const serverIds = normalizeProfileServerIds(body.serverIds);
+        assertKnownServers(serverIds, this.#registry.list());
+        const profile = await this.#profiles.create(
+          body.name as string,
+          serverIds,
+        );
+        json(res, 201, { profile });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const profileMatch = url.pathname.match(
+      /^\/api\/profiles\/([0-9a-f-]+)$/i,
+    );
+    if (req.method === "POST" && profileMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          name?: unknown;
+          serverIds?: unknown;
+        };
+        const serverIds = normalizeProfileServerIds(body.serverIds);
+        assertKnownServers(serverIds, this.#registry.list());
+        const profileId = profileMatch[1];
+        const wasActive = this.#profiles.activeProfileId === profileId;
+        const profile = await this.#profiles.update(profileId, {
+          name: body.name as string,
+          serverIds,
+        });
+        if (!profile) {
+          json(res, 404, { error: "profile not found" });
+          return;
+        }
+
+        const result = wasActive
+          ? await this.#upstreams.applyExactSet(profile.serverIds)
+          : undefined;
+
+        json(res, 200, {
+          profile,
+          activeProfileId: this.#profiles.activeProfileId,
+          ...(result ? { result } : {}),
+        });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    const profileActionMatch = url.pathname.match(
+      /^\/api\/profiles\/([0-9a-f-]+)\/(activate|deactivate)$/i,
+    );
+    if (req.method === "POST" && profileActionMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const [, profileId, action] = profileActionMatch;
+      const profile = this.#profiles.get(profileId);
+      if (!profile) {
+        json(res, 404, { error: "profile not found" });
+        return;
+      }
+
+      const result =
+        action === "activate"
+          ? await this.#upstreams.applyExactSet(profile.serverIds)
+          : await this.#upstreams.disconnectSet(profile.serverIds);
+
+      if (action === "activate") {
+        await this.#profiles.setActive(profileId);
+      } else if (this.#profiles.activeProfileId === profileId) {
+        await this.#profiles.setActive(null);
+      }
+
+      json(res, 200, {
+        profile,
+        activeProfileId: this.#profiles.activeProfileId,
+        result,
+      });
+      return;
+    }
+
+    if (req.method === "DELETE" && profileMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const profileId = profileMatch[1];
+      const profile = this.#profiles.get(profileId);
+      if (!profile) {
+        json(res, 404, { error: "profile not found" });
+        return;
+      }
+
+      const wasActive = this.#profiles.activeProfileId === profileId;
+      const result = wasActive
+        ? await this.#upstreams.disconnectSet(profile.serverIds)
+        : undefined;
+
+      const removed = await this.#profiles.remove(profileId);
+      if (!removed) {
+        json(res, 404, { error: "profile not found" });
+        return;
+      }
+
+      json(res, 200, {
+        ok: true,
+        activeProfileId: this.#profiles.activeProfileId,
+        ...(result ? { result } : {}),
+      });
+      return;
+    }
+
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/sources"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const sources = await inspectMcpImportSources();
+        json(res, 200, { sources });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/source-preview"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          sourceId?: unknown;
+        };
+        if (typeof body.sourceId !== "string") {
+          throw new Error("sourceId is required");
+        }
+
+        const loaded = await readMcpImportSource(body.sourceId);
+        const preview = previewMcpClientConfig(loaded.config);
+        json(res, 200, {
+          source: loaded.source,
+          preview: toPublicMcpImportPreview(preview),
+        });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/source-apply"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req) as {
+          sourceId?: unknown;
+          expectedModifiedAt?: unknown;
+        };
+        if (typeof body.sourceId !== "string") {
+          throw new Error("sourceId is required");
+        }
+
+        const loaded = await readMcpImportSource(body.sourceId);
+        if (
+          typeof body.expectedModifiedAt === "string" &&
+          loaded.source.modifiedAt !== body.expectedModifiedAt
+        ) {
+          throw new Error("import source changed since preview; preview it again before importing");
+        }
+
+        const result = await applyMcpClientConfig(
+          loaded.config,
+          this.#registry,
+          this.#secrets,
+          this.#logger,
+        );
+        this.#upstreams.syncConfigs();
+        json(res, 200, {
+          source: loaded.source,
+          result,
+        });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/preview"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req, 512 * 1024) as {
+          config?: unknown;
+        };
+        const preview = previewMcpClientConfig(body.config);
+        json(res, 200, {
+          preview: toPublicMcpImportPreview(preview),
+        });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/import/mcp-config/apply"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req, 512 * 1024) as {
+          config?: unknown;
+        };
+        const result = await applyMcpClientConfig(
+          body.config,
+          this.#registry,
+          this.#secrets,
+          this.#logger,
+        );
+        this.#upstreams.syncConfigs();
+        json(res, 200, { result });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 
@@ -200,7 +622,11 @@ export class ManagementServer {
           return;
         }
 
-        const result = await this.#upstreams.callTool(publicName, args);
+        const result = await this.#upstreams.callTool(
+          publicName,
+          args,
+          { source: "tester" },
+        );
         this.#logger.info("tools", `test call completed: ${publicName}`);
         json(res, 200, { result });
       } catch (error) {
@@ -250,6 +676,97 @@ export class ManagementServer {
     }
 
 
+    const environmentMatch = url.pathname.match(
+      /^\/api\/server-configs\/([0-9a-f-]+)\/environment$/i,
+    );
+    if (req.method === "POST" && environmentMatch) {
+      if (!requireDesktopClient(req, res)) return;
+
+      const serverId = environmentMatch[1];
+      const existing = this.#registry.get(serverId);
+      if (!existing) {
+        json(res, 404, { error: "server configuration not found" });
+        return;
+      }
+      if (existing.transport !== "stdio") {
+        json(res, 400, { error: "environment is only available for stdio servers" });
+        return;
+      }
+
+      const createdSecretIds: string[] = [];
+      try {
+        const body = await readJsonBody(req) as {
+          env?: unknown;
+          secretEnvKeys?: unknown;
+          secretEnv?: unknown;
+        };
+
+        const env = normalizeEnvironmentRecord(body.env);
+        const secretEnvKeys = normalizeEnvironmentKeys(body.secretEnvKeys);
+        const secretEnv = normalizeEnvironmentRecord(body.secretEnv);
+
+        for (const key of Object.keys(env)) {
+          if (secretEnvKeys.includes(key)) {
+            throw new Error(`environment variable ${key} cannot be both plain and secret`);
+          }
+        }
+        for (const key of Object.keys(secretEnv)) {
+          if (!secretEnvKeys.includes(key)) {
+            throw new Error(`secret value supplied for unlisted key: ${key}`);
+          }
+        }
+
+        await this.#upstreams.disconnect(serverId).catch(() => undefined);
+
+        const oldSecretIds = existing.envSecretIds ?? {};
+        const nextSecretIds: Record<string, string> = {};
+
+        for (const key of secretEnvKeys) {
+          const suppliedValue = secretEnv[key];
+          if (suppliedValue !== undefined && suppliedValue !== "") {
+            const secretId = `stdio-env:${randomUUID()}`;
+            await this.#secrets.set(secretId, suppliedValue);
+            createdSecretIds.push(secretId);
+            nextSecretIds[key] = secretId;
+            continue;
+          }
+
+          const existingSecretId = oldSecretIds[key];
+          if (!existingSecretId) {
+            throw new Error(`secret environment value is required for ${key}`);
+          }
+          nextSecretIds[key] = existingSecretId;
+        }
+
+        const updated = await this.#registry.updateEnvironment(serverId, {
+          env,
+          envSecretIds: nextSecretIds,
+        });
+        if (!updated) {
+          throw new Error("server configuration not found");
+        }
+
+        const retainedIds = new Set(Object.values(nextSecretIds));
+        for (const oldSecretId of Object.values(oldSecretIds)) {
+          if (!retainedIds.has(oldSecretId)) {
+            await this.#secrets.delete(oldSecretId).catch(() => false);
+          }
+        }
+
+        this.#upstreams.syncConfigs();
+        json(res, 200, { server: toPublicServerConfig(updated) });
+      } catch (error) {
+        for (const secretId of createdSecretIds) {
+          await this.#secrets.delete(secretId).catch(() => false);
+        }
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+
     const upstreamActionMatch = url.pathname.match(
       /^\/api\/upstreams\/([0-9a-f-]+)\/(connect|disconnect|refresh-tools)$/i,
     );
@@ -274,6 +791,29 @@ export class ManagementServer {
       return;
     }
 
+
+    if (
+      req.method === "POST" &&
+      url.pathname === "/api/server-configs/test-connection"
+    ) {
+      if (!requireDesktopClient(req, res)) return;
+
+      try {
+        const body = await readJsonBody(req, 256 * 1024);
+        const result = await testMcpConnection(
+          body as Record<string, unknown>,
+          this.#registry,
+          this.#secrets,
+          this.#logger,
+        );
+        json(res, 200, { result });
+      } catch (error) {
+        json(res, 400, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
 
     if (req.method === "POST" && url.pathname === "/api/server-configs") {
       if (!requireDesktopClient(req, res)) return;
@@ -401,6 +941,12 @@ export class ManagementServer {
             .catch(() => false);
         }
 
+        if (existing.transport === "stdio" && updated.transport !== "stdio") {
+          for (const secretId of Object.values(existing.envSecretIds ?? {})) {
+            await this.#secrets.delete(secretId).catch(() => false);
+          }
+        }
+
         this.#upstreams.syncConfigs();
         json(res, 200, { server: toPublicServerConfig(updated) });
       } catch (error) {
@@ -470,6 +1016,7 @@ export class ManagementServer {
       await this.#upstreams.disconnect(serverId).catch(() => undefined);
       const removed = await this.#registry.remove(serverId);
       await this.#toolPolicy.removeServer(serverId);
+      await this.#profiles.removeServer(serverId);
       this.#upstreams.syncConfigs();
       if (!removed) {
         json(res, 404, { error: "server configuration not found" });
@@ -479,8 +1026,41 @@ export class ManagementServer {
       if (existing?.transport === "http" && existing.authSecretId) {
         await this.#secrets.delete(existing.authSecretId).catch(() => false);
       }
+      if (existing?.transport === "stdio") {
+        for (const secretId of Object.values(existing.envSecretIds ?? {})) {
+          await this.#secrets.delete(secretId).catch(() => false);
+        }
+      }
 
       json(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/audit") {
+      const after = Number(url.searchParams.get("after") ?? "0");
+      const limit = Number(url.searchParams.get("limit") ?? "100");
+      const rawSuccess = url.searchParams.get("success");
+      const rawSource = url.searchParams.get("source");
+      const success =
+        rawSuccess === "true"
+          ? true
+          : rawSuccess === "false"
+            ? false
+            : undefined;
+      const source: AuditSource | undefined =
+        rawSource === "gateway" || rawSource === "tester"
+          ? rawSource
+          : undefined;
+
+      json(res, 200, {
+        file: this.#audit.filePath,
+        entries: this.#audit.list({
+          after: Number.isFinite(after) ? after : 0,
+          limit: Number.isFinite(limit) ? limit : 100,
+          success,
+          source,
+        }),
+      });
       return;
     }
 
@@ -505,6 +1085,40 @@ export class ManagementServer {
   }
 }
 
+function normalizeProfileServerIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error("serverIds must be an array");
+  }
+  if (value.length > 100) {
+    throw new Error("too many servers in profile");
+  }
+
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string" || !item.trim()) {
+      throw new Error("serverIds must contain non-empty strings");
+    }
+    const id = item.trim();
+    if (!seen.has(id)) {
+      seen.add(id);
+      result.push(id);
+    }
+  }
+  return result;
+}
+
+function assertKnownServers(
+  serverIds: string[],
+  servers: McpServerConfig[],
+): void {
+  const known = new Set(servers.map((server) => server.id));
+  const missing = serverIds.filter((id) => !known.has(id));
+  if (missing.length > 0) {
+    throw new Error(`unknown server id(s): ${missing.join(", ")}`);
+  }
+}
+
 function normalizeOptionalAuthorization(value: unknown): string | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   if (typeof value !== "string") {
@@ -519,9 +1133,59 @@ function normalizeOptionalAuthorization(value: unknown): string | undefined {
   return trimmed;
 }
 
+function normalizeEnvironmentRecord(value: unknown): Record<string, string> {
+  if (value === undefined || value === null) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("environment must be an object");
+  }
+
+  const entries = Object.entries(value);
+  if (entries.length > 128) throw new Error("too many environment variables");
+
+  const result: Record<string, string> = {};
+  for (const [key, item] of entries) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new Error(`invalid environment variable name: ${key}`);
+    }
+    if (typeof item !== "string") {
+      throw new Error(`environment value for ${key} must be a string`);
+    }
+    if (item.length > 65_536) {
+      throw new Error(`environment value for ${key} is too long`);
+    }
+    result[key] = item;
+  }
+  return result;
+}
+
+function normalizeEnvironmentKeys(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new Error("secretEnvKeys must be an array");
+  }
+  if (value.length > 128) throw new Error("too many secret environment variables");
+
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(item)) {
+      throw new Error(`invalid secret environment variable name: ${String(item)}`);
+    }
+    if (!seen.has(item)) {
+      seen.add(item);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
 function toPublicServerConfig(server: McpServerConfig): Record<string, unknown> {
-  if (server.transport !== "http") {
-    return { ...server };
+  if (server.transport === "stdio") {
+    const { envSecretIds, ...publicConfig } = server;
+    return {
+      ...publicConfig,
+      secretEnvKeys: Object.keys(envSecretIds ?? {}).sort(),
+    };
   }
 
   const { authSecretId, ...publicConfig } = server as HttpServerConfig;

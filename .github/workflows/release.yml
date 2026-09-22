@@ -1,0 +1,240 @@
+name: macOS Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-macos:
+    name: build-${{ matrix.asset_arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            asset_arch: arm64
+            uname_arch: arm64
+          - runner: macos-15-intel
+            asset_arch: x86_64
+            uname_arch: x86_64
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify runner architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(uname -m)"
+          expected="${{ matrix.uname_arch }}"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Expected runner architecture $expected, got $actual"
+            exit 1
+          fi
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.17.1 --activate
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: pnpm release:check
+
+      - name: Run release checks
+        run: |
+          pnpm test
+          pnpm typecheck
+          pnpm build
+
+      - name: Validate Apple release secrets
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in             APPLE_CERTIFICATE             APPLE_CERTIFICATE_PASSWORD             APPLE_ID             APPLE_PASSWORD             APPLE_TEAM_ID             KEYCHAIN_PASSWORD
+          do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/mcp-gate-release.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/mcp-gate-release.keychain-db"
+
+          printf '%s' "$APPLE_CERTIFICATE" |
+            openssl base64 -d -A -out "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH"             -k "$KEYCHAIN_PATH"             -P "$APPLE_CERTIFICATE_PASSWORD"             -T /usr/bin/codesign
+          security set-key-partition-list             -S apple-tool:,apple:,codesign:             -s             -k "$KEYCHAIN_PASSWORD"             "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          SIGNING_IDENTITY="$(
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" |
+              awk -F'"' '/Developer ID Application/ { print $2; exit }'
+          )"
+
+          if [[ -z "$SIGNING_IDENTITY" ]]; then
+            echo "::error::Developer ID Application identity not found in imported certificate"
+            exit 1
+          fi
+
+          echo "APPLE_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "Imported signing identity: $SIGNING_IDENTITY"
+
+      - name: Build signed and notarized macOS bundle
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm desktop:bundle
+
+      - name: Verify signature and notarization
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$(
+            find apps/desktop/src-tauri/target/release/bundle/macos               -maxdepth 1 -name '*.app' -print -quit
+          )"
+          DMG_PATH="$(
+            find apps/desktop/src-tauri/target/release/bundle/dmg               -maxdepth 1 -name '*.dmg' -print -quit
+          )"
+
+          test -n "$APP_PATH"
+          test -n "$DMG_PATH"
+          test -x "$APP_PATH/Contents/MacOS/mcp-gate"
+          test -x "$APP_PATH/Contents/MacOS/mcp-gate-node"
+          test -f "$APP_PATH/Contents/Resources/core-runtime/dist/main.js"
+          test -d "$APP_PATH/Contents/Resources/core-runtime/node_modules"
+
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign --verify --strict --verbose=2             "$APP_PATH/Contents/MacOS/mcp-gate-node"
+          xcrun stapler validate "$APP_PATH"
+          spctl --assess --type execute --verbose=4 "$APP_PATH"
+
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
+
+      - name: Prepare architecture-specific assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          ASSET_ARCH="${{ matrix.asset_arch }}"
+          RELEASE_DIR="$RUNNER_TEMP/release-assets"
+          mkdir -p "$RELEASE_DIR"
+
+          DMG_ASSET="$RELEASE_DIR/MCP-Gate-${VERSION}-macOS-${ASSET_ARCH}.dmg"
+          APP_ZIP="$RELEASE_DIR/MCP-Gate-${VERSION}-macOS-${ASSET_ARCH}.app.zip"
+
+          cp "$DMG_PATH" "$DMG_ASSET"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$APP_ZIP"
+
+          echo "RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
+          ls -lah "$RELEASE_DIR"
+
+      - name: Upload architecture artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: mcp-gate-${{ github.ref_name }}-macos-${{ matrix.asset_arch }}
+          path: ${{ env.RELEASE_DIR }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove temporary signing keychain
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${KEYCHAIN_PATH:-}" ]]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+  publish-release:
+    name: publish-draft-release
+    needs: build-macos
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Download signed macOS artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: mcp-gate-${{ github.ref_name }}-macos-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate combined checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-arm64.dmg"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-arm64.app.zip"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-x86_64.dmg"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-x86_64.app.zip"
+
+          sha256sum *.dmg *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create or update draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/*               --draft               --verify-tag               --title "MCP Gate $GITHUB_REF_NAME"               --generate-notes
+          fi

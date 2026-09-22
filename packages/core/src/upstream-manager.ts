@@ -1,7 +1,10 @@
 import type { CallToolResult } from "@modelcontextprotocol/client";
+import type { AuditLogger, AuditSource } from "./audit-logger.ts";
 import type { CoreLogger } from "./logger.ts";
 import type { McpServerConfig, ServerRegistry } from "./server-registry.ts";
 import type { McpToolDefinition, ToolRegistry } from "./tool-registry.ts";
+
+const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
 
 export type UpstreamStatus =
   | "configured"
@@ -11,7 +14,13 @@ export type UpstreamStatus =
   | "stopped"
   | "error";
 
+export interface UpstreamLifecycleHandlers {
+  onClose?: () => void;
+  onError?: (error: Error) => void;
+}
+
 export interface UpstreamClient {
+  setLifecycleHandlers?(handlers: UpstreamLifecycleHandlers): void;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   listTools(): Promise<McpToolDefinition[]>;
@@ -30,6 +39,25 @@ export interface UpstreamSnapshot {
   status: UpstreamStatus;
   toolCount: number;
   lastError: string | null;
+  reconnectAttempt: number;
+  nextRetryAt: string | null;
+}
+
+export interface UpstreamManagerOptions {
+  reconnectDelaysMs?: readonly number[];
+  audit?: AuditLogger;
+}
+
+export interface ProfileApplyFailure {
+  serverId: string;
+  error: string;
+}
+
+export interface ProfileApplyResult {
+  connected: string[];
+  disconnected: string[];
+  alreadyRunning: string[];
+  failed: ProfileApplyFailure[];
 }
 
 interface Runtime {
@@ -38,6 +66,11 @@ interface Runtime {
   client: UpstreamClient | null;
   toolCount: number;
   lastError: string | null;
+  desiredConnected: boolean;
+  reconnectAttempt: number;
+  nextRetryAt: string | null;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  generation: number;
 }
 
 export class UpstreamManager {
@@ -45,6 +78,8 @@ export class UpstreamManager {
   #tools: ToolRegistry;
   #factory: UpstreamFactory;
   #logger: CoreLogger;
+  #audit: AuditLogger | null;
+  #reconnectDelaysMs: readonly number[];
   #runtimes = new Map<string, Runtime>();
   #busy = new Set<string>();
 
@@ -53,11 +88,17 @@ export class UpstreamManager {
     tools: ToolRegistry,
     factory: UpstreamFactory,
     logger: CoreLogger,
+    options: UpstreamManagerOptions = {},
   ) {
     this.#registry = registry;
     this.#tools = tools;
     this.#factory = factory;
     this.#logger = logger;
+    this.#audit = options.audit ?? null;
+    this.#reconnectDelaysMs =
+      options.reconnectDelaysMs && options.reconnectDelaysMs.length > 0
+        ? options.reconnectDelaysMs
+        : DEFAULT_RECONNECT_DELAYS_MS;
   }
 
   syncConfigs(): void {
@@ -68,6 +109,10 @@ export class UpstreamManager {
       const runtime = this.#runtimes.get(config.id);
       if (runtime) {
         runtime.config = config;
+        if (!config.enabled) {
+          runtime.desiredConnected = false;
+          this.#cancelReconnect(runtime, true);
+        }
       } else {
         this.#runtimes.set(config.id, {
           config,
@@ -75,12 +120,20 @@ export class UpstreamManager {
           client: null,
           toolCount: 0,
           lastError: null,
+          desiredConnected: false,
+          reconnectAttempt: 0,
+          nextRetryAt: null,
+          reconnectTimer: null,
+          generation: 0,
         });
       }
     }
 
     for (const [id, runtime] of this.#runtimes) {
       if (!activeIds.has(id)) {
+        runtime.desiredConnected = false;
+        runtime.generation += 1;
+        this.#cancelReconnect(runtime, true);
         if (runtime.client) {
           void runtime.client.disconnect().catch(() => undefined);
         }
@@ -93,61 +146,16 @@ export class UpstreamManager {
   list(): UpstreamSnapshot[] {
     this.syncConfigs();
     return [...this.#runtimes.values()]
-      .map((runtime) => ({
-        id: runtime.config.id,
-        name: runtime.config.name,
-        alias: runtime.config.alias,
-        transport: runtime.config.transport,
-        status: runtime.status,
-        toolCount: runtime.toolCount,
-        lastError: runtime.lastError,
-      }))
+      .map((runtime) => this.#snapshot(runtime))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async connect(id: string): Promise<UpstreamSnapshot> {
     this.syncConfigs();
     const runtime = this.#requireRuntime(id);
-    if (runtime.status === "running") return this.#snapshot(runtime);
-    if (this.#busy.has(id)) throw new Error("upstream action already in progress");
-    if (!runtime.config.enabled) throw new Error("upstream is disabled");
-
-    this.#busy.add(id);
-    runtime.status = "connecting";
-    runtime.lastError = null;
-
-    try {
-      const client = await this.#factory(runtime.config);
-      runtime.client = client;
-      await client.connect();
-      const tools = await client.listTools();
-      const routes = this.#tools.replaceServerTools(
-        runtime.config.id,
-        runtime.config.alias,
-        tools,
-      );
-      runtime.toolCount = routes.length;
-      runtime.status = "running";
-      this.#logger.info(
-        "upstream",
-        `connected ${runtime.config.name} with ${routes.length} tool(s)`,
-      );
-      return this.#snapshot(runtime);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      runtime.lastError = message;
-      runtime.status = "error";
-      runtime.toolCount = 0;
-      this.#tools.removeServer(id);
-      if (runtime.client) {
-        await runtime.client.disconnect().catch(() => undefined);
-        runtime.client = null;
-      }
-      this.#logger.error("upstream", `${runtime.config.name}: ${message}`);
-      throw error;
-    } finally {
-      this.#busy.delete(id);
-    }
+    runtime.desiredConnected = true;
+    this.#cancelReconnect(runtime, true);
+    return this.#connectRuntime(runtime, false);
   }
 
   async disconnect(id: string): Promise<UpstreamSnapshot> {
@@ -155,19 +163,35 @@ export class UpstreamManager {
     const runtime = this.#requireRuntime(id);
     if (this.#busy.has(id)) throw new Error("upstream action already in progress");
 
+    runtime.desiredConnected = false;
+    runtime.generation += 1;
+    this.#cancelReconnect(runtime, true);
+
     this.#busy.add(id);
     runtime.status = "stopping";
+
+    const client = runtime.client;
+    runtime.client = null;
+    runtime.toolCount = 0;
+    this.#tools.removeServer(id);
+
     try {
-      if (runtime.client) {
-        await runtime.client.disconnect();
+      if (client) {
+        await client.disconnect();
       }
-      runtime.client = null;
       runtime.status = "stopped";
-      runtime.toolCount = 0;
       runtime.lastError = null;
-      this.#tools.removeServer(id);
       this.#logger.info("upstream", `disconnected ${runtime.config.name}`);
       return this.#snapshot(runtime);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      runtime.status = "error";
+      runtime.lastError = message;
+      this.#logger.warn(
+        "upstream",
+        `disconnect failed for ${runtime.config.name}: ${message}`,
+      );
+      throw error;
     } finally {
       this.#busy.delete(id);
     }
@@ -189,17 +213,184 @@ export class UpstreamManager {
     return this.#snapshot(runtime);
   }
 
-  async callTool(publicName: string, args: unknown): Promise<CallToolResult> {
+  async callTool(
+    publicName: string,
+    args: unknown,
+    context?: { source?: AuditSource },
+  ): Promise<CallToolResult> {
     const route = this.#tools.resolve(publicName);
     if (!route) throw new Error("tool not found");
-    if (!route.enabled) throw new Error("tool is disabled");
+
+    const startedAt = Date.now();
+    const source = context?.source ?? "gateway";
+
+    const auditFailure = (error: unknown): void => {
+      this.#audit?.record({
+        source,
+        publicName: route.publicName,
+        serverId: route.serverId,
+        serverAlias: route.serverAlias,
+        originalName: route.originalName,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    };
+
+    if (!route.enabled) {
+      const error = new Error("tool is disabled");
+      auditFailure(error);
+      throw error;
+    }
 
     const runtime = this.#requireRuntime(route.serverId);
     if (runtime.status !== "running" || !runtime.client) {
-      throw new Error("upstream is not running");
+      const error = new Error("upstream is not running");
+      auditFailure(error);
+      throw error;
     }
 
-    return runtime.client.callTool(route.originalName, args);
+    try {
+      const result = await runtime.client.callTool(route.originalName, args);
+      this.#audit?.record({
+        source,
+        publicName: route.publicName,
+        serverId: route.serverId,
+        serverAlias: route.serverAlias,
+        originalName: route.originalName,
+        success: true,
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    } catch (error) {
+      auditFailure(error);
+      throw error;
+    }
+  }
+
+  async applyExactSet(serverIds: string[]): Promise<ProfileApplyResult> {
+    this.syncConfigs();
+
+    const desired = new Set(serverIds);
+    const knownIds = new Set(this.#registry.list().map((config) => config.id));
+    const result: ProfileApplyResult = {
+      connected: [],
+      disconnected: [],
+      alreadyRunning: [],
+      failed: [],
+    };
+
+    for (const serverId of desired) {
+      if (!knownIds.has(serverId)) {
+        result.failed.push({
+          serverId,
+          error: "server configuration not found",
+        });
+      }
+    }
+
+    for (const [id, runtime] of this.#runtimes) {
+      if (desired.has(id)) continue;
+      if (
+        runtime.status === "configured" &&
+        !runtime.client &&
+        !runtime.desiredConnected &&
+        !runtime.reconnectTimer
+      ) {
+        continue;
+      }
+      if (
+        runtime.status === "stopped" &&
+        !runtime.client &&
+        !runtime.desiredConnected &&
+        !runtime.reconnectTimer
+      ) {
+        continue;
+      }
+
+      try {
+        await this.disconnect(id);
+        result.disconnected.push(id);
+      } catch (error) {
+        result.failed.push({
+          serverId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    for (const serverId of desired) {
+      const runtime = this.#runtimes.get(serverId);
+      if (!runtime) continue;
+
+      if (!runtime.config.enabled) {
+        result.failed.push({
+          serverId,
+          error: "server is disabled",
+        });
+        continue;
+      }
+
+      if (runtime.status === "running") {
+        result.alreadyRunning.push(serverId);
+        continue;
+      }
+
+      try {
+        await this.connect(serverId);
+        result.connected.push(serverId);
+      } catch (error) {
+        result.failed.push({
+          serverId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return result;
+  }
+
+  async disconnectSet(serverIds: string[]): Promise<ProfileApplyResult> {
+    this.syncConfigs();
+    const target = new Set(serverIds);
+    const result: ProfileApplyResult = {
+      connected: [],
+      disconnected: [],
+      alreadyRunning: [],
+      failed: [],
+    };
+
+    for (const serverId of target) {
+      const runtime = this.#runtimes.get(serverId);
+      if (!runtime) {
+        result.failed.push({
+          serverId,
+          error: "server configuration not found",
+        });
+        continue;
+      }
+
+      if (
+        runtime.status === "configured" ||
+        runtime.status === "stopped"
+      ) {
+        runtime.desiredConnected = false;
+        this.#cancelReconnect(runtime, true);
+        continue;
+      }
+
+      try {
+        await this.disconnect(serverId);
+        result.disconnected.push(serverId);
+      } catch (error) {
+        result.failed.push({
+          serverId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return result;
   }
 
   async connectAutoStart(): Promise<void> {
@@ -234,6 +425,169 @@ export class UpstreamManager {
     }
   }
 
+  async #connectRuntime(
+    runtime: Runtime,
+    reconnecting: boolean,
+  ): Promise<UpstreamSnapshot> {
+    const id = runtime.config.id;
+
+    if (runtime.status === "running") return this.#snapshot(runtime);
+    if (this.#busy.has(id)) throw new Error("upstream action already in progress");
+    if (!runtime.config.enabled) throw new Error("upstream is disabled");
+
+    this.#busy.add(id);
+    runtime.status = "connecting";
+    runtime.nextRetryAt = null;
+    if (!reconnecting) runtime.lastError = null;
+
+    const generation = runtime.generation + 1;
+    runtime.generation = generation;
+    let retryAfterFailure = false;
+
+    try {
+      const client = await this.#factory(runtime.config);
+      runtime.client = client;
+
+      client.setLifecycleHandlers?.({
+        onError: (error) => {
+          this.#handleClientError(id, generation, error);
+        },
+        onClose: () => {
+          this.#handleClientClose(id, generation);
+        },
+      });
+
+      await client.connect();
+      const tools = await client.listTools();
+      const routes = this.#tools.replaceServerTools(
+        runtime.config.id,
+        runtime.config.alias,
+        tools,
+      );
+
+      runtime.toolCount = routes.length;
+      runtime.status = "running";
+      runtime.lastError = null;
+      runtime.reconnectAttempt = 0;
+      runtime.nextRetryAt = null;
+
+      this.#logger.info(
+        "upstream",
+        `${reconnecting ? "reconnected" : "connected"} ${runtime.config.name} with ${routes.length} tool(s)`,
+      );
+      return this.#snapshot(runtime);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      runtime.lastError = message;
+      runtime.status = "error";
+      runtime.toolCount = 0;
+      this.#tools.removeServer(id);
+
+      const client = runtime.client;
+      runtime.client = null;
+      if (client) {
+        await client.disconnect().catch(() => undefined);
+      }
+
+      retryAfterFailure =
+        reconnecting &&
+        runtime.desiredConnected &&
+        runtime.config.enabled &&
+        runtime.generation === generation;
+
+      this.#logger.error(
+        "upstream",
+        `${reconnecting ? "reconnect failed" : "connect failed"} for ${runtime.config.name}: ${message}`,
+      );
+      throw error;
+    } finally {
+      this.#busy.delete(id);
+      if (retryAfterFailure) {
+        this.#scheduleReconnect(runtime);
+      }
+    }
+  }
+
+  #handleClientError(id: string, generation: number, error: Error): void {
+    const runtime = this.#runtimes.get(id);
+    if (!runtime || runtime.generation !== generation) return;
+    if (runtime.status !== "running" || !runtime.desiredConnected) return;
+
+    runtime.lastError = error.message;
+    this.#logger.warn(
+      "upstream",
+      `transport error from ${runtime.config.name}: ${error.message}`,
+    );
+  }
+
+  #handleClientClose(id: string, generation: number): void {
+    const runtime = this.#runtimes.get(id);
+    if (!runtime || runtime.generation !== generation) return;
+    if (this.#busy.has(id)) return;
+    if (runtime.status !== "running" || !runtime.desiredConnected) return;
+
+    runtime.client = null;
+    runtime.status = "error";
+    runtime.toolCount = 0;
+    runtime.lastError ??= "connection closed unexpectedly";
+    this.#tools.removeServer(id);
+
+    this.#logger.warn(
+      "upstream",
+      `connection lost: ${runtime.config.name}; automatic reconnect scheduled`,
+    );
+    this.#scheduleReconnect(runtime);
+  }
+
+  #scheduleReconnect(runtime: Runtime): void {
+    if (
+      runtime.reconnectTimer ||
+      !runtime.desiredConnected ||
+      !runtime.config.enabled
+    ) {
+      return;
+    }
+
+    runtime.reconnectAttempt += 1;
+    const delay =
+      this.#reconnectDelaysMs[
+        Math.min(
+          runtime.reconnectAttempt - 1,
+          this.#reconnectDelaysMs.length - 1,
+        )
+      ] ?? this.#reconnectDelaysMs[this.#reconnectDelaysMs.length - 1] ?? 30_000;
+
+    runtime.nextRetryAt = new Date(Date.now() + delay).toISOString();
+
+    this.#logger.info(
+      "upstream",
+      `retry #${runtime.reconnectAttempt} for ${runtime.config.name} in ${delay}ms`,
+    );
+
+    runtime.reconnectTimer = setTimeout(() => {
+      runtime.reconnectTimer = null;
+      runtime.nextRetryAt = null;
+
+      if (!runtime.desiredConnected || !runtime.config.enabled) return;
+
+      void this.#connectRuntime(runtime, true).catch(() => undefined);
+    }, delay);
+
+    const timer = runtime.reconnectTimer as ReturnType<typeof setTimeout> & {
+      unref?: () => void;
+    };
+    timer.unref?.();
+  }
+
+  #cancelReconnect(runtime: Runtime, resetAttempt: boolean): void {
+    if (runtime.reconnectTimer) {
+      clearTimeout(runtime.reconnectTimer);
+      runtime.reconnectTimer = null;
+    }
+    runtime.nextRetryAt = null;
+    if (resetAttempt) runtime.reconnectAttempt = 0;
+  }
+
   #requireRuntime(id: string): Runtime {
     const runtime = this.#runtimes.get(id);
     if (!runtime) throw new Error("upstream not found");
@@ -249,6 +603,8 @@ export class UpstreamManager {
       status: runtime.status,
       toolCount: runtime.toolCount,
       lastError: runtime.lastError,
+      reconnectAttempt: runtime.reconnectAttempt,
+      nextRetryAt: runtime.nextRetryAt,
     };
   }
 }

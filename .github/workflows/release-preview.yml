@@ -1,0 +1,69 @@
+name: macOS Release Preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-preview:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.17.1 --activate
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build release preview
+        run: pnpm desktop:bundle
+
+      - name: Verify bundled runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$(find apps/desktop/src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          DMG_PATH="$(find apps/desktop/src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+
+          test -n "$APP_PATH"
+          test -n "$DMG_PATH"
+          test -x "$APP_PATH/Contents/MacOS/mcp-gate"
+          test -x "$APP_PATH/Contents/MacOS/mcp-gate-node"
+          test -f "$APP_PATH/Contents/Resources/core-runtime/dist/main.js"
+          test -d "$APP_PATH/Contents/Resources/core-runtime/node_modules"
+
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
+
+          echo "Verified app: $APP_PATH"
+          echo "Verified dmg: $DMG_PATH"
+
+      - name: Upload macOS app
+        uses: actions/upload-artifact@v7
+        with:
+          name: mcp-gate-macos-app
+          path: ${{ env.APP_PATH }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: mcp-gate-macos-dmg
+          path: ${{ env.DMG_PATH }}
+          if-no-files-found: error
+          retention-days: 7

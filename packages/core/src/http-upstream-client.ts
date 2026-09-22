@@ -1,11 +1,15 @@
 import {
   Client,
   StreamableHTTPClientTransport,
+  type CallToolResult,
 } from "@modelcontextprotocol/client";
 import type { HttpServerConfig } from "./server-registry.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { McpToolDefinition } from "./tool-registry.ts";
-import type { UpstreamClient } from "./upstream-manager.ts";
+import type {
+  UpstreamClient,
+  UpstreamLifecycleHandlers,
+} from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
 
 export class HttpUpstreamClient implements UpstreamClient {
@@ -13,10 +17,16 @@ export class HttpUpstreamClient implements UpstreamClient {
   #client: Client | null = null;
   #transport: StreamableHTTPClientTransport | null = null;
   #secrets: SecretStore;
+  #lifecycleHandlers: UpstreamLifecycleHandlers = {};
 
   constructor(config: HttpServerConfig, secrets: SecretStore) {
     this.#config = config;
     this.#secrets = secrets;
+  }
+
+  setLifecycleHandlers(handlers: UpstreamLifecycleHandlers): void {
+    this.#lifecycleHandlers = handlers;
+    if (this.#client) this.#bindLifecycle(this.#client);
   }
 
   async connect(): Promise<void> {
@@ -33,6 +43,8 @@ export class HttpUpstreamClient implements UpstreamClient {
         },
       },
     );
+    this.#bindLifecycle(client);
+
     const authorization = this.#config.authSecretId
       ? await this.#secrets.get(this.#config.authSecretId)
       : null;
@@ -54,9 +66,18 @@ export class HttpUpstreamClient implements UpstreamClient {
         : undefined,
     );
 
-    await client.connect(transport);
     this.#client = client;
     this.#transport = transport;
+
+    try {
+      await client.connect(transport);
+    } catch (error) {
+      this.#client = null;
+      this.#transport = null;
+      await transport.terminateSession().catch(() => undefined);
+      await client.close().catch(() => transport.close().catch(() => undefined));
+      throw error;
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -82,7 +103,7 @@ export class HttpUpstreamClient implements UpstreamClient {
     }));
   }
 
-  async callTool(name: string, args: unknown) {
+  async callTool(name: string, args: unknown): Promise<CallToolResult> {
     if (
       args !== undefined &&
       args !== null &&
@@ -95,6 +116,15 @@ export class HttpUpstreamClient implements UpstreamClient {
       name,
       arguments: (args ?? {}) as Record<string, unknown>,
     });
+  }
+
+  #bindLifecycle(client: Client): void {
+    client.onclose = () => {
+      this.#lifecycleHandlers.onClose?.();
+    };
+    client.onerror = (error) => {
+      this.#lifecycleHandlers.onError?.(error);
+    };
   }
 
   #requireClient(): Client {

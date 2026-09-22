@@ -9,6 +9,11 @@ export interface GatewayInfo {
   status: GatewayStatus;
   endpoint: string;
   healthEndpoint: string;
+  authRequired?: boolean;
+  authReady?: boolean;
+  authError?: string | null;
+  lanEnabled?: boolean;
+  lanEndpoints?: string[];
 }
 
 export interface ManagedServerInfo {
@@ -54,6 +59,8 @@ export interface StdioServerConfig extends ServerConfigBase {
   command: string;
   args: string[];
   cwd?: string;
+  env?: Record<string, string>;
+  secretEnvKeys: string[];
 }
 
 export interface HttpServerConfig extends ServerConfigBase {
@@ -80,6 +87,8 @@ export interface UpstreamInfo {
   status: UpstreamStatus;
   toolCount: number;
   lastError: string | null;
+  reconnectAttempt: number;
+  nextRetryAt: string | null;
 }
 
 export interface ToolRouteInfo {
@@ -94,4 +103,24 @@ export interface ToolPolicyInfo {
   serverId: string;
   originalName: string;
   enabled: boolean;
+}
+
+export interface McpProfileInfo {
+  id: string;
+  name: string;
+  serverIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProfileApplyFailure {
+  serverId: string;
+  error: string;
+}
+
+export interface ProfileApplyResult {
+  connected: string[];
+  disconnected: string[];
+  alreadyRunning: string[];
+  failed: ProfileApplyFailure[];
 }

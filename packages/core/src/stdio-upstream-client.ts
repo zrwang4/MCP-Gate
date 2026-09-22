@@ -1,17 +1,29 @@
 import { Client, type CallToolResult } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import type { StdioServerConfig } from "./server-registry.ts";
+import type { SecretStore } from "./secret-store.ts";
 import type { McpToolDefinition } from "./tool-registry.ts";
-import type { UpstreamClient } from "./upstream-manager.ts";
+import type {
+  UpstreamClient,
+  UpstreamLifecycleHandlers,
+} from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
 
 export class StdioUpstreamClient implements UpstreamClient {
   #config: StdioServerConfig;
+  #secrets: SecretStore;
   #client: Client | null = null;
   #transport: StdioClientTransport | null = null;
+  #lifecycleHandlers: UpstreamLifecycleHandlers = {};
 
-  constructor(config: StdioServerConfig) {
+  constructor(config: StdioServerConfig, secrets: SecretStore) {
     this.#config = config;
+    this.#secrets = secrets;
+  }
+
+  setLifecycleHandlers(handlers: UpstreamLifecycleHandlers): void {
+    this.#lifecycleHandlers = handlers;
+    if (this.#client) this.#bindLifecycle(this.#client);
   }
 
   async connect(): Promise<void> {
@@ -22,15 +34,27 @@ export class StdioUpstreamClient implements UpstreamClient {
       version: CORE_VERSION,
     });
 
+    this.#bindLifecycle(client);
+
+    const env = await resolveStdioEnvironment(this.#config, this.#secrets);
     const transport = new StdioClientTransport({
       command: this.#config.command,
       args: this.#config.args,
       cwd: this.#config.cwd,
+      ...(env ? { env } : {}),
     });
 
-    await client.connect(transport);
     this.#client = client;
     this.#transport = transport;
+
+    try {
+      await client.connect(transport);
+    } catch (error) {
+      this.#client = null;
+      this.#transport = null;
+      await client.close().catch(() => transport.close().catch(() => undefined));
+      throw error;
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -70,8 +94,38 @@ export class StdioUpstreamClient implements UpstreamClient {
     });
   }
 
+  #bindLifecycle(client: Client): void {
+    client.onclose = () => {
+      this.#lifecycleHandlers.onClose?.();
+    };
+    client.onerror = (error) => {
+      this.#lifecycleHandlers.onError?.(error);
+    };
+  }
+
   #requireClient(): Client {
     if (!this.#client) throw new Error("stdio upstream is not connected");
     return this.#client;
   }
+}
+
+export async function resolveStdioEnvironment(
+  config: StdioServerConfig,
+  secrets: SecretStore,
+): Promise<Record<string, string> | undefined> {
+  const result: Record<string, string> = {
+    ...(config.env ?? {}),
+  };
+
+  for (const [key, secretId] of Object.entries(config.envSecretIds ?? {})) {
+    const value = await secrets.get(secretId);
+    if (value === null) {
+      throw new Error(
+        `environment secret ${key} is missing from secure storage`,
+      );
+    }
+    result[key] = value;
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
 }
