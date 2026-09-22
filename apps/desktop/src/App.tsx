@@ -1,16 +1,20 @@
 import {
   Activity,
   Check,
+  Chrome,
   Copy,
   FileText,
+  Folder,
+  Github,
+  Globe,
   Layers3,
   Pencil,
   Play,
   Plus,
   RefreshCw,
+  Server,
   Settings2,
   Square,
-  Terminal,
   Trash2,
   X,
 } from "lucide-react";
@@ -348,6 +352,24 @@ function formatTime(value: string | null): string {
     minute: "2-digit",
     second: "2-digit",
   }).format(new Date(value));
+}
+
+function serverIconFor(server: ServerConfigInfo) {
+  const haystack = [
+    server.name,
+    server.alias,
+    server.command ?? "",
+    server.url ?? "",
+    (server.args ?? []).join(" "),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (/(chrome|chromium|browser|devtools|puppeteer|playwright)/.test(haystack)) return Chrome;
+  if (/(github|gitlab)/.test(haystack)) return Github;
+  if (/(filesystem|file|folder|disk)/.test(haystack)) return Folder;
+  if (/(http|https):\/\//.test(haystack)) return Globe;
+  return Server;
 }
 
 export function App() {
@@ -1549,7 +1571,10 @@ export function App() {
                   key={server.id}
                 >
                   <div className="serverIcon">
-                    <Terminal size={19} />
+                    {(() => {
+                      const ServerIcon = serverIconFor(server);
+                      return <ServerIcon size={19} />;
+                    })()}
                   </div>
                   <div className="serverInfo">
                     <div className="serverNameRow">
