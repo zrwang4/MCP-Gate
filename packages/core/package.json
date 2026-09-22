@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server-filesystem": "2026.8.31",
-    "mcp-proxy": "6.7.18",
+    "mcp-proxy": "6.7.19",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
