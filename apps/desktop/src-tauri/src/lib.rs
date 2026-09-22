@@ -8,6 +8,51 @@ use tauri::{
     AppHandle, Manager, RunEvent, State, WindowEvent,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_updater::UpdaterExt;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateMetadata {
+    version: String,
+    current_version: String,
+    notes: Option<String>,
+    pub_date: Option<String>,
+}
+
+#[tauri::command]
+async fn check_for_update(app: AppHandle) -> Result<Option<UpdateMetadata>, String> {
+    let update = app
+        .updater()
+        .map_err(|error| format!("failed to initialize updater: {error}"))?
+        .check()
+        .await
+        .map_err(|error| format!("failed to check for updates: {error}"))?;
+
+    Ok(update.map(|update| UpdateMetadata {
+        version: update.version,
+        current_version: update.current_version.to_string(),
+        notes: update.body,
+        pub_date: update.date.map(|date| date.to_string()),
+    }))
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|error| format!("failed to initialize updater: {error}"))?
+        .check()
+        .await
+        .map_err(|error| format!("failed to check for updates: {error}"))?
+        .ok_or_else(|| "no update is currently available".to_string())?;
+
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|error| format!("failed to install update: {error}"))?;
+
+    app.restart();
+}
 
 #[tauri::command]
 fn app_version() -> &'static str {
@@ -70,6 +115,7 @@ pub fn run() {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
@@ -142,7 +188,9 @@ pub fn run() {
             core_runtime_status,
             restart_core,
             autostart_enabled,
-            set_autostart
+            set_autostart,
+            check_for_update,
+            install_update
         ])
         .build(tauri::generate_context!())
         .expect("error while building MCP Gate");

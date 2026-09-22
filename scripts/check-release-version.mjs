@@ -22,6 +22,9 @@ const rootPackage = await readJson("package.json");
 const desktopPackage = await readJson("apps/desktop/package.json");
 const corePackage = await readJson("packages/core/package.json");
 const tauriConfig = await readJson("apps/desktop/src-tauri/tauri.conf.json");
+const tauriProductionConfig = await readJson(
+  "apps/desktop/src-tauri/tauri.production.conf.json",
+);
 const cargoVersion = await readCargoVersion("apps/desktop/src-tauri/Cargo.toml");
 
 const versions = {
@@ -44,6 +47,26 @@ for (const [name, version] of entries) {
       `Version mismatch: ${firstName}=${firstVersion}, ${name}=${version}`,
     );
   }
+}
+
+const updaterConfig = tauriProductionConfig.plugins?.updater;
+if (tauriProductionConfig.bundle?.createUpdaterArtifacts !== true) {
+  throw new Error("Production bundle must enable createUpdaterArtifacts");
+}
+if (
+  typeof updaterConfig?.pubkey !== "string" ||
+  !updaterConfig.pubkey.trim() ||
+  updaterConfig.pubkey.includes("__")
+) {
+  throw new Error("Production updater must contain a real public key");
+}
+if (
+  !Array.isArray(updaterConfig.endpoints) ||
+  !updaterConfig.endpoints.includes(
+    "https://github.com/zrwang4/MCP-Gate/releases/latest/download/latest.json",
+  )
+) {
+  throw new Error("Production updater must use the MCP Gate GitHub Release endpoint");
 }
 
 const explicitTag = process.env.RELEASE_TAG?.trim() ?? "";

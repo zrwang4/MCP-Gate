@@ -1,11 +1,20 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
+    "createUpdaterArtifacts": true,
     "externalBin": [
       "binaries/mcp-gate-node"
     ],
     "resources": {
       "resources/core-runtime/": "core-runtime/"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZCOTFFOUNBM0RGQTExRUQKUldUdEVmbzl5dW1SKzdxSGk1N0w4NFFZK2IzODNqUVFXT0l6aTBXZStuRjdway9XMm5VVkl0QUsK",
+      "endpoints": [
+        "https://github.com/zrwang4/MCP-Gate/releases/latest/download/latest.json"
+      ]
     }
   }
 }

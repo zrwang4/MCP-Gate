@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 新增 Tauri 2 Updater：桌面设置可检查 GitHub Release、显示可用版本，并在用户确认后下载、验签、安装和重启。
+- 生产配置使用 `releases/latest/download/latest.json` 作为稳定更新源，并内置独立 Updater 公钥。
+- Release 构建生成双架构 `.app.tar.gz` 与 `.sig`，发布 job 合成 `latest.json` 并与安装包、校验和一起上传。
+- 正式发布新增 `TAURI_SIGNING_PRIVATE_KEY` Secret；Updater 私钥与 Apple Developer ID 代码签名密钥相互独立。
+- 预发布 tag 自动标记为 GitHub prerelease，不会进入稳定版 `/releases/latest` 更新通道。
+
 - 正式 macOS Release 改为双架构矩阵：`macos-latest` 原生构建 arm64，`macos-15-intel` 原生构建 x86_64。
 - 两个架构各自 staging 匹配架构的 Node sidecar、完成 Developer ID 签名/notarization/stapling，并上传独立 artifact。
 - 新增单独 `publish-release` job，在两个架构都成功后统一下载产物、生成跨架构 `SHA256SUMS.txt` 并创建 draft GitHub Release，避免并发发布竞争。

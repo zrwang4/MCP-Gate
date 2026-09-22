@@ -79,11 +79,12 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         shell: bash
         run: |
           set -euo pipefail
           missing=0
-          for name in             APPLE_CERTIFICATE             APPLE_CERTIFICATE_PASSWORD             APPLE_ID             APPLE_PASSWORD             APPLE_TEAM_ID             KEYCHAIN_PASSWORD
+          for name in             APPLE_CERTIFICATE             APPLE_CERTIFICATE_PASSWORD             APPLE_ID             APPLE_PASSWORD             APPLE_TEAM_ID             KEYCHAIN_PASSWORD             TAURI_SIGNING_PRIVATE_KEY
           do
             if [[ -z "${!name:-}" ]]; then
               echo "::error::Missing GitHub Actions secret: $name"
@@ -134,6 +135,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm desktop:bundle
 
       - name: Verify signature and notarization
@@ -147,9 +150,14 @@ jobs:
           DMG_PATH="$(
             find apps/desktop/src-tauri/target/release/bundle/dmg               -maxdepth 1 -name '*.dmg' -print -quit
           )"
+          UPDATER_PATH="$(
+            find apps/desktop/src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app.tar.gz' -print -quit
+          )"
 
           test -n "$APP_PATH"
           test -n "$DMG_PATH"
+          test -n "$UPDATER_PATH"
+          test -f "$UPDATER_PATH.sig"
           test -x "$APP_PATH/Contents/MacOS/mcp-gate"
           test -x "$APP_PATH/Contents/MacOS/mcp-gate-node"
           test -f "$APP_PATH/Contents/Resources/core-runtime/dist/main.js"
@@ -162,6 +170,7 @@ jobs:
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
           echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
+          echo "UPDATER_PATH=$UPDATER_PATH" >> "$GITHUB_ENV"
 
       - name: Prepare architecture-specific assets
         shell: bash
@@ -175,9 +184,12 @@ jobs:
 
           DMG_ASSET="$RELEASE_DIR/MCP-Gate-${VERSION}-macOS-${ASSET_ARCH}.dmg"
           APP_ZIP="$RELEASE_DIR/MCP-Gate-${VERSION}-macOS-${ASSET_ARCH}.app.zip"
+          UPDATER_ASSET="$RELEASE_DIR/MCP-Gate-${VERSION}-macOS-${ASSET_ARCH}.app.tar.gz"
 
           cp "$DMG_PATH" "$DMG_ASSET"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$APP_ZIP"
+          cp "$UPDATER_PATH" "$UPDATER_ASSET"
+          cp "$UPDATER_PATH.sig" "$UPDATER_ASSET.sig"
 
           echo "RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
           ls -lah "$RELEASE_DIR"
@@ -205,6 +217,9 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Download signed macOS artifacts
         uses: actions/download-artifact@v7
         with:
@@ -212,7 +227,7 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Generate combined checksums
+      - name: Validate release assets
         shell: bash
         run: |
           set -euo pipefail
@@ -222,8 +237,21 @@ jobs:
           test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-arm64.app.zip"
           test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-x86_64.dmg"
           test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-x86_64.app.zip"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-arm64.app.tar.gz"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-arm64.app.tar.gz.sig"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-x86_64.app.tar.gz"
+          test -f "MCP-Gate-${GITHUB_REF_NAME#v}-macOS-x86_64.app.tar.gz.sig"
 
-          sha256sum *.dmg *.zip > SHA256SUMS.txt
+      - name: Generate Tauri updater manifest
+        run: node scripts/generate-updater-manifest.mjs release-assets "$GITHUB_REF_NAME"
+
+      - name: Generate combined checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+
+          sha256sum *.dmg *.zip *.tar.gz *.sig latest.json > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Create or update draft GitHub Release
@@ -236,5 +264,14 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" release-assets/*               --draft               --verify-tag               --title "MCP Gate $GITHUB_REF_NAME"               --generate-notes
+            release_flags=(
+              --draft
+              --verify-tag
+              --title "MCP Gate $GITHUB_REF_NAME"
+              --generate-notes
+            )
+            if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+              release_flags+=(--prerelease)
+            fi
+            gh release create "$GITHUB_REF_NAME" release-assets/* "${release_flags[@]}"
           fi

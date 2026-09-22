@@ -1626,6 +1626,15 @@ footer {
   flex: 0 0 auto;
 }
 
+.updateNotes {
+  display: -webkit-box;
+  max-width: 520px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  white-space: pre-line;
+}
+
 .gatewayKeyReveal {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

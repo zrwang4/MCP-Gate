@@ -37,9 +37,13 @@ APPLE_ID
 APPLE_PASSWORD
 APPLE_TEAM_ID
 KEYCHAIN_PASSWORD
+TAURI_SIGNING_PRIVATE_KEY
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
 `APPLE_CERTIFICATE` is the base64-encoded Developer ID Application `.p12` certificate. `APPLE_PASSWORD` should be an Apple app-specific password.
+
+`TAURI_SIGNING_PRIVATE_KEY` contains the complete Tauri Updater private key. It is independent from the Apple certificate and must be backed up permanently. `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is optional and may be omitted for an unencrypted key.
 
 ## Architectures
 
@@ -64,16 +68,17 @@ version consistency + tests + typecheck + build
 │ Developer ID signing     │ Developer ID signing     │
 │ notarization + stapling  │ notarization + stapling  │
 │ DMG + app.zip            │ DMG + app.zip            │
+│ updater tar.gz + .sig    │ updater tar.gz + .sig    │
 └──────────────────────────┴──────────────────────────┘
                   ↓
        download both artifacts
                   ↓
-       combined SHA256SUMS.txt
+       latest.json + SHA256SUMS.txt
                   ↓
           draft GitHub Release
 ```
 
-The GitHub Release is intentionally created as a draft so the assets can be tested before publishing publicly.
+The GitHub Release is intentionally created as a draft so the assets can be tested before publishing publicly. The updater cannot see a draft: `releases/latest` changes only after the stable release is published. Prerelease tags remain outside the stable update channel.
 
 ## Example
 

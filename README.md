@@ -12,6 +12,7 @@
 - MCP 自动连接
 - HTTP Authorization → macOS Keychain
 - Tauri 桌面端自动管理 Core 生命周期（开发态）
+- Tauri Updater 通过 GitHub Release 检查、验签并安装稳定版更新
 
 ## 开发环境
 
@@ -83,3 +84,8 @@ packages/core/src/main.ts
 ```
 
 HTTP MCP Authorization 不写入 JSON，而是存入 macOS Keychain。
+
+## 发布与自动更新
+
+- macOS 签名、公证与双架构发布：[docs/33-macos-signed-release.md](docs/33-macos-signed-release.md)
+- Tauri Updater 与 GitHub Release 更新源：[docs/35-tauri-updater.md](docs/35-tauri-updater.md)

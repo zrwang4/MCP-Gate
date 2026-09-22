@@ -183,6 +183,13 @@ interface CoreRuntimeStatus {
     | "managed-executable";
 }
 
+interface UpdateMetadata {
+  version: string;
+  currentVersion: string;
+  notes: string | null;
+  pubDate: string | null;
+}
+
 interface ConnectionTestResult {
   transport: "stdio" | "http";
   toolCount: number;
@@ -365,6 +372,9 @@ export function App() {
   const [coreRestarting, setCoreRestarting] = useState(false);
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null);
   const [autostartBusy, setAutostartBusy] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateMetadata | null>(null);
+  const [updateBusy, setUpdateBusy] = useState<"checking" | "installing" | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [showAddServer, setShowAddServer] = useState(false);
   const [showImportConfig, setShowImportConfig] = useState(false);
   const [importSources, setImportSources] = useState<McpImportSourceInfo[]>([]);
@@ -522,6 +532,42 @@ export function App() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setAutostartBusy(false);
+    }
+  }
+
+  async function checkForUpdate() {
+    if (!IS_TAURI || updateBusy) return;
+
+    setUpdateBusy("checking");
+    setUpdateMessage(null);
+    setError(null);
+    try {
+      const update = await invoke<UpdateMetadata | null>("check_for_update");
+      setAvailableUpdate(update);
+      setUpdateMessage(
+        update
+          ? `发现新版本 ${update.version}，当前版本 ${update.currentVersion}。`
+          : "当前已是最新版本。",
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setUpdateBusy(null);
+    }
+  }
+
+  async function installAvailableUpdate() {
+    if (!IS_TAURI || !availableUpdate || updateBusy) return;
+
+    setUpdateBusy("installing");
+    setUpdateMessage(`正在下载并安装 ${availableUpdate.version}…`);
+    setError(null);
+    try {
+      await invoke("install_update");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setUpdateMessage(null);
+      setUpdateBusy(null);
     }
   }
 
@@ -1885,6 +1931,36 @@ export function App() {
               <span>重新打开 MCP Gate 时恢复上次的窗口大小和位置。</span>
             </div>
             <span className="settingsStatus">{IS_TAURI ? "已启用" : "仅桌面版"}</span>
+          </div>
+
+          <div className="settingsRow updateSettingsRow">
+            <div>
+              <strong>软件更新</strong>
+              <span>
+                {updateMessage ?? "从 GitHub Release 检查经过签名验证的新版本。"}
+              </span>
+              {availableUpdate?.notes && (
+                <span className="updateNotes">{availableUpdate.notes}</span>
+              )}
+            </div>
+            <div className="settingsActions">
+              {availableUpdate && (
+                <button
+                  className="secondaryButton"
+                  disabled={updateBusy !== null}
+                  onClick={() => void installAvailableUpdate()}
+                >
+                  {updateBusy === "installing" ? "安装中…" : "下载并安装"}
+                </button>
+              )}
+              <button
+                className="secondaryButton"
+                disabled={!IS_TAURI || updateBusy !== null}
+                onClick={() => void checkForUpdate()}
+              >
+                {updateBusy === "checking" ? "检查中…" : "检查更新"}
+              </button>
+            </div>
           </div>
 
           <div className="settingsRow">
