@@ -1635,6 +1635,17 @@ footer {
   white-space: pre-line;
 }
 
+.settingsRow .updateError {
+  color: #b42318;
+  font-weight: 650;
+}
+
+@media (prefers-color-scheme: dark) {
+  .settingsRow .updateError {
+    color: #ff9690;
+  }
+}
+
 .gatewayKeyReveal {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

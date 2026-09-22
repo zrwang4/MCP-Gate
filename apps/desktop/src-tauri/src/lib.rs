@@ -2,6 +2,7 @@ mod core_supervisor;
 
 use core_supervisor::{CoreRuntimeStatus, CoreSupervisor};
 use tauri::{
+    ipc::Channel,
     menu::{Menu, MenuItem},
     path::BaseDirectory,
     tray::TrayIconBuilder,
@@ -17,6 +18,16 @@ struct UpdateMetadata {
     current_version: String,
     notes: Option<String>,
     pub_date: Option<String>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(tag = "event", content = "data")]
+enum UpdateDownloadEvent {
+    #[serde(rename_all = "camelCase")]
+    Started { content_length: Option<u64> },
+    #[serde(rename_all = "camelCase")]
+    Progress { chunk_length: usize },
+    Finished,
 }
 
 #[tauri::command]
@@ -37,7 +48,11 @@ async fn check_for_update(app: AppHandle) -> Result<Option<UpdateMetadata>, Stri
 }
 
 #[tauri::command]
-async fn install_update(app: AppHandle) -> Result<(), String> {
+async fn install_update(
+    app: AppHandle,
+    expected_version: String,
+    on_event: Channel<UpdateDownloadEvent>,
+) -> Result<(), String> {
     let update = app
         .updater()
         .map_err(|error| format!("failed to initialize updater: {error}"))?
@@ -46,8 +61,28 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
         .map_err(|error| format!("failed to check for updates: {error}"))?
         .ok_or_else(|| "no update is currently available".to_string())?;
 
+    if update.version != expected_version {
+        return Err(format!(
+            "available update changed from {expected_version} to {}; check again before installing",
+            update.version
+        ));
+    }
+
+    let mut started = false;
+
     update
-        .download_and_install(|_, _| {}, || {})
+        .download_and_install(
+            |chunk_length, content_length| {
+                if !started {
+                    let _ = on_event.send(UpdateDownloadEvent::Started { content_length });
+                    started = true;
+                }
+                let _ = on_event.send(UpdateDownloadEvent::Progress { chunk_length });
+            },
+            || {
+                let _ = on_event.send(UpdateDownloadEvent::Finished);
+            },
+        )
         .await
         .map_err(|error| format!("failed to install update: {error}"))?;
 

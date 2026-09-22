@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:24888/mcp";
@@ -189,6 +189,11 @@ interface UpdateMetadata {
   notes: string | null;
   pubDate: string | null;
 }
+
+type UpdateDownloadEvent =
+  | { event: "Started"; data: { contentLength: number | null } }
+  | { event: "Progress"; data: { chunkLength: number } }
+  | { event: "Finished" };
 
 interface ConnectionTestResult {
   transport: "stdio" | "http";
@@ -375,6 +380,7 @@ export function App() {
   const [availableUpdate, setAvailableUpdate] = useState<UpdateMetadata | null>(null);
   const [updateBusy, setUpdateBusy] = useState<"checking" | "installing" | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const [showAddServer, setShowAddServer] = useState(false);
   const [showImportConfig, setShowImportConfig] = useState(false);
   const [importSources, setImportSources] = useState<McpImportSourceInfo[]>([]);
@@ -396,6 +402,7 @@ export function App() {
   const [newServerArgs, setNewServerArgs] = useState("");
   const [newServerCwd, setNewServerCwd] = useState("");
   const [deletingServerId, setDeletingServerId] = useState<string | null>(null);
+  const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
   const [newServerEnv, setNewServerEnv] = useState("");
   const [newServerSecretEnv, setNewServerSecretEnv] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
@@ -410,6 +417,8 @@ export function App() {
   const [testToolResult, setTestToolResult] = useState("");
   const [testToolBusy, setTestToolBusy] = useState(false);
   const logPanelRef = useRef<HTMLDivElement | null>(null);
+  const liveRefreshInFlight = useRef(false);
+  const catalogRefreshInFlight = useRef(false);
 
   const refreshDesktopPreferences = useCallback(async () => {
     if (!IS_TAURI) return;
@@ -463,11 +472,79 @@ export function App() {
     }
   }, [refreshCoreRuntime, refreshDesktopPreferences]);
 
+  const refreshLiveState = useCallback(async () => {
+    if (liveRefreshInFlight.current) return;
+    liveRefreshInFlight.current = true;
+
+    try {
+      const [statusResult, upstreamsResult, logsResult, auditResult] = await Promise.all([
+        api<StatusResponse>("/api/status"),
+        api<{ upstreams: UpstreamInfo[] }>("/api/upstreams"),
+        api<{ entries: LogEntry[] }>("/api/logs?limit=500"),
+        api<{ entries: AuditEntry[] }>("/api/audit?limit=120"),
+      ]);
+      setStatus(statusResult);
+      setUpstreams(upstreamsResult.upstreams);
+      setLogs(logsResult.entries);
+      setAuditEntries(auditResult.entries);
+      setManagementConnected(true);
+    } catch (cause) {
+      setManagementConnected(false);
+      setError((current) => current ?? (cause instanceof Error ? cause.message : String(cause)));
+    } finally {
+      liveRefreshInFlight.current = false;
+      void refreshCoreRuntime();
+    }
+  }, [refreshCoreRuntime]);
+
+  const refreshCatalog = useCallback(async () => {
+    if (catalogRefreshInFlight.current) return;
+    catalogRefreshInFlight.current = true;
+
+    try {
+      const [configsResult, profilesResult, toolsResult] = await Promise.all([
+        api<{ servers: ServerConfigInfo[] }>("/api/server-configs"),
+        api<{ profiles: ProfileInfo[]; activeProfileId: string | null }>("/api/profiles"),
+        api<{ tools: ToolInfo[] }>("/api/tools"),
+      ]);
+      setServerConfigs(configsResult.servers);
+      setProfiles(profilesResult.profiles);
+      setActiveProfileId(profilesResult.activeProfileId);
+      setTools(toolsResult.tools);
+    } catch (cause) {
+      setError((current) => current ?? (cause instanceof Error ? cause.message : String(cause)));
+    } finally {
+      catalogRefreshInFlight.current = false;
+      void refreshDesktopPreferences();
+    }
+  }, [refreshDesktopPreferences]);
+
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 2000);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshLiveState();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshLiveState();
+      void refreshCatalog();
+    };
+    const liveTimer = window.setInterval(refreshWhenVisible, 2000);
+    const catalogTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshCatalog();
+      }
+    }, 10_000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(liveTimer);
+      window.clearInterval(catalogTimer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refresh, refreshCatalog, refreshLiveState]);
 
   useEffect(() => {
     const el = logPanelRef.current;
@@ -540,7 +617,7 @@ export function App() {
 
     setUpdateBusy("checking");
     setUpdateMessage(null);
-    setError(null);
+    setUpdateError(null);
     try {
       const update = await invoke<UpdateMetadata | null>("check_for_update");
       setAvailableUpdate(update);
@@ -550,7 +627,7 @@ export function App() {
           : "当前已是最新版本。",
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setUpdateError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setUpdateBusy(null);
     }
@@ -561,11 +638,37 @@ export function App() {
 
     setUpdateBusy("installing");
     setUpdateMessage(`正在下载并安装 ${availableUpdate.version}…`);
-    setError(null);
+    setUpdateError(null);
     try {
-      await invoke("install_update");
+      let downloaded = 0;
+      let contentLength: number | null = null;
+      const onEvent = new Channel<UpdateDownloadEvent>();
+      onEvent.onmessage = (event) => {
+        if (event.event === "Started") {
+          contentLength = event.data.contentLength;
+          setUpdateMessage(
+            contentLength
+              ? `正在下载 ${availableUpdate.version}：0%`
+              : `正在下载 ${availableUpdate.version}…`,
+          );
+        } else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          setUpdateMessage(
+            contentLength
+              ? `正在下载 ${availableUpdate.version}：${Math.min(100, Math.round((downloaded / contentLength) * 100))}%`
+              : `正在下载 ${availableUpdate.version}：${(downloaded / 1024 / 1024).toFixed(1)} MB`,
+          );
+        } else {
+          setUpdateMessage("下载完成，正在验证并安装…");
+        }
+      };
+
+      await invoke("install_update", {
+        expectedVersion: availableUpdate.version,
+        onEvent,
+      });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setUpdateError(cause instanceof Error ? cause.message : String(cause));
       setUpdateMessage(null);
       setUpdateBusy(null);
     }
@@ -938,6 +1041,7 @@ export function App() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setProfileBusy(false);
+      setDeletingProfileId(null);
     }
   }
 
@@ -1644,7 +1748,7 @@ export function App() {
                       <button
                         className="actionButton danger"
                         disabled={profileBusy || changing}
-                        onClick={() => void removeProfile(profile.id)}
+                        onClick={() => setDeletingProfileId(profile.id)}
                       >
                         <Trash2 size={14} /> 删除
                       </button>
@@ -1676,6 +1780,35 @@ export function App() {
           </div>
         )}
       </section>
+
+      {deletingProfileId && (
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => setDeletingProfileId(null)}>
+          <section className="modalCard confirmCard" role="dialog" aria-modal="true" aria-label="删除 Profile 确认" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <h2>删除 Profile</h2>
+                <p>此操作会移除场景配置；如果它正在使用，会同时停用该场景。</p>
+              </div>
+              <button className="iconButton" onClick={() => setDeletingProfileId(null)} aria-label="关闭">
+                <X size={17} />
+              </button>
+            </div>
+            <p className="confirmText">
+              确定要删除“{profiles.find((profile) => profile.id === deletingProfileId)?.name ?? "当前 Profile"}”吗？
+            </p>
+            <div className="modalActions">
+              <button className="secondaryButton" onClick={() => setDeletingProfileId(null)}>取消</button>
+              <button
+                className="actionButton danger"
+                disabled={profileBusy}
+                onClick={() => void removeProfile(deletingProfileId)}
+              >
+                {profileBusy ? "删除中…" : "删除"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <section className="section">
         <div className="sectionTitle">
@@ -1941,6 +2074,9 @@ export function App() {
               </span>
               {availableUpdate?.notes && (
                 <span className="updateNotes">{availableUpdate.notes}</span>
+              )}
+              {updateError && (
+                <span className="updateError">{updateError}</span>
               )}
             </div>
             <div className="settingsActions">
