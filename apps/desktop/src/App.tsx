@@ -220,8 +220,8 @@ async function api<T>(path: string, init?: RequestInit, timeoutMs = 4000): Promi
   if (managementToken) {
     headers.set("X-MCP-Gate-Token", managementToken);
   }
+  headers.set("X-MCP-Gate-Client", "desktop");
   if (init?.method && init.method !== "GET") {
-    headers.set("X-MCP-Gate-Client", "desktop");
     headers.set("Content-Type", "application/json");
   }
 
