@@ -103,7 +103,7 @@ h2 { margin: 0; font-size: 16px; }
 
 .endpointRow {
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   margin-top: 22px;
   padding: 12px 12px 12px 16px;
   border-radius: 12px;
@@ -123,7 +123,7 @@ h2 { margin: 0; font-size: 16px; }
   background: rgba(255,255,255,.78);
   border-radius: 16px;
   padding: 16px;
-  gap: 14px;
+  gap: 12px;
   box-shadow: 0 8px 24px rgba(0,0,0,.03);
   transition: transform .08s ease, box-shadow .15s ease;
 }
@@ -163,13 +163,13 @@ h2 { margin: 0; font-size: 16px; }
   color: #b02a2a;
   background: rgba(220,80,80,.08);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 5px 8px;
 }
 
 .serverActions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 72px;
 }
 
@@ -237,7 +237,7 @@ footer {
 .metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
+  gap: 12px;
   margin-top: 18px;
 }
 
@@ -306,7 +306,7 @@ footer {
 .logHeader {
   display: grid;
   grid-template-columns: 88px 56px 96px 1fr;
-  gap: 8px;
+  gap: 6px;
   padding: 6px 12px;
   border-bottom: 1px solid rgba(0,0,0,.06);
   background: #f7f7f5;
@@ -323,7 +323,7 @@ footer {
 .logRow {
   display: grid;
   grid-template-columns: 88px 56px 96px 1fr;
-  gap: 8px;
+  gap: 6px;
   padding: 3px 12px;
   border-bottom: 1px solid rgba(0,0,0,.04);
   font-size: 11px;
@@ -364,7 +364,7 @@ footer {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   padding: 34px;
   color: #999;
   font-size: 13px;
@@ -552,7 +552,7 @@ footer {
 .field small {
   color: #888;
   font-size: 10px;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .field textarea {
@@ -569,7 +569,7 @@ footer {
 .modalActions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
   margin-top: 20px;
 }
 
@@ -634,14 +634,14 @@ footer {
 
 .toolList {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .toolRow {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 11px 12px;
+  gap: 12px;
+  padding: 10px 12px;
   border: 1px solid rgba(0,0,0,.07);
   border-radius: 12px;
   background: rgba(255,255,255,.68);
@@ -655,7 +655,7 @@ footer {
 .toolInfo > div {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -667,10 +667,10 @@ footer {
 }
 
 .toolInfo p {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
   color: #82827f;
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .toolSource {
@@ -685,7 +685,7 @@ footer {
 .toolToggle {
   flex: 0 0 auto;
   min-width: 58px;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-radius: 999px;
   border: 1px solid rgba(0,0,0,.10);
   background: rgba(0,0,0,.035);
@@ -791,7 +791,7 @@ footer {
 .checkField {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-top: 12px;
   color: #666;
   font-size: 11px;
@@ -809,7 +809,7 @@ footer {
 
 .settingsList {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .settingsRow {
@@ -1085,7 +1085,7 @@ footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   margin-top: 10px;
   padding: 9px 10px;
   border: 1px solid rgba(0,0,0,.07);
@@ -1150,7 +1150,7 @@ footer {
 .sectionActions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .importConfigCard {
@@ -1165,7 +1165,7 @@ footer {
 
 .importPreview {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   margin-top: 16px;
 }
 
@@ -1179,7 +1179,7 @@ footer {
 }
 
 .importCandidate {
-  padding: 11px 12px;
+  padding: 10px 12px;
   border: 1px solid rgba(0,0,0,.08);
   border-radius: 11px;
   background: rgba(255,255,255,.66);
@@ -1188,7 +1188,7 @@ footer {
 .importCandidateHeader {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .importCandidateHeader strong {
@@ -1249,7 +1249,7 @@ footer {
   display: grid;
   gap: 7px;
   margin-top: 14px;
-  padding: 11px 12px;
+  padding: 10px 12px;
   border: 1px solid rgba(34,160,107,.18);
   border-radius: 11px;
   background: rgba(34,160,107,.06);
@@ -1331,7 +1331,7 @@ footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   padding: 10px 11px;
   border: 1px solid rgba(0,0,0,.08);
   border-radius: 11px;
@@ -1392,7 +1392,7 @@ footer {
 .importDivider {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin: 12px 0 2px;
   color: #999;
   font-size: 9px;
@@ -1436,7 +1436,7 @@ footer {
   display: grid;
   gap: 7px;
   margin-top: 15px;
-  padding: 11px 12px;
+  padding: 10px 12px;
   border-radius: 11px;
   border: 1px solid rgba(0,0,0,.08);
   font-size: 11px;
@@ -1582,7 +1582,7 @@ footer {
 .auditRow {
   display: grid;
   grid-template-columns: 68px 42px minmax(160px, 1fr) 56px 60px;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   min-height: 34px;
   padding: 6px 9px;
