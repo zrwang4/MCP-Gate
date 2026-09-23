@@ -11,17 +11,18 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "core:dev": "pnpm --filter @mcp-gate/core dev",
-    "core:smoke": "pnpm --filter @mcp-gate/core smoke",
-    "desktop:dev": "pnpm --filter @mcp-gate/desktop tauri dev",
-    "desktop:web": "pnpm --filter @mcp-gate/desktop dev",
-    "typecheck": "pnpm -r typecheck",
-    "build": "pnpm -r build",
-    "core:management-smoke": "pnpm --filter @mcp-gate/core management:smoke",
-    "test": "pnpm --filter @mcp-gate/core test",
-    "core:gateway-smoke": "pnpm --filter @mcp-gate/core gateway:smoke",
+    "core:dev": "npm run dev -w @mcp-gate/core",
+    "core:smoke": "npm run smoke -w @mcp-gate/core",
+    "desktop:dev": "npm run tauri -w @mcp-gate/desktop -- dev",
+    "desktop:web": "npm run dev -w @mcp-gate/desktop",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "core:management-smoke": "npm run management:smoke -w @mcp-gate/core",
+    "test": "npm run test -w @mcp-gate/core",
+    "core:gateway-smoke": "npm run gateway:smoke -w @mcp-gate/core",
     "desktop:sidecar:prepare": "node scripts/prepare-core-sidecar.mjs",
-    "desktop:bundle": "pnpm desktop:sidecar:prepare && pnpm --filter @mcp-gate/desktop tauri build --config src-tauri/tauri.production.conf.json",
+    "desktop:bundle": "npm run desktop:sidecar:prepare && npm run tauri -w @mcp-gate/desktop -- build --config src-tauri/tauri.production.conf.json",
+    "desktop:bundle:local": "npm run desktop:sidecar:prepare && npm run tauri -w @mcp-gate/desktop -- build --config src-tauri/tauri.production.conf.json --no-sign",
     "release:check": "node scripts/check-release-version.mjs"
   },
   "pnpm": {
