@@ -1,5 +1,8 @@
 import { Client, type CallToolResult } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { delimiter, join } from "node:path";
 import type { StdioServerConfig } from "./server-registry.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { McpToolDefinition } from "./tool-registry.ts";
@@ -127,5 +130,49 @@ export async function resolveStdioEnvironment(
     result[key] = value;
   }
 
+  result.PATH = buildStdioPath(result.PATH);
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+export function buildStdioPath(
+  configuredPath = "",
+  home = homedir(),
+  platform = process.platform,
+  inheritedPath = process.env.PATH ?? "",
+): string {
+  const additions = [
+    join(home, ".local", "bin"),
+    join(home, ".volta", "bin"),
+    join(home, ".asdf", "shims"),
+    join(home, ".local", "share", "mise", "shims"),
+    join(home, ".bun", "bin"),
+  ];
+
+  if (platform === "darwin") {
+    additions.push("/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin");
+  }
+
+  const nvmNodeBins = listNvmNodeBins(home);
+  const entries = [
+    ...configuredPath.split(delimiter),
+    ...inheritedPath.split(delimiter),
+    ...additions,
+    ...nvmNodeBins,
+  ].filter(Boolean);
+
+  return [...new Set(entries)].join(delimiter);
+}
+
+function listNvmNodeBins(home: string): string[] {
+  const nodeVersionsDirectory = join(home, ".nvm", "versions", "node");
+  try {
+    return readdirSync(nodeVersionsDirectory)
+      .filter((version) => version.startsWith("v"))
+      .sort((left, right) =>
+        right.localeCompare(left, undefined, { numeric: true }),
+      )
+      .map((version) => join(nodeVersionsDirectory, version, "bin"));
+  } catch {
+    return [];
+  }
 }

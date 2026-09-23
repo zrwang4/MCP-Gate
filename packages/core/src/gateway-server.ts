@@ -1,21 +1,15 @@
-import { createServer, type Server as HttpServer } from "node:http";
+import { type IncomingMessage } from "node:http";
 import { hostname, networkInterfaces } from "node:os";
 import {
-  createMcpHandler,
   fromJsonSchema,
   McpServer,
   type CallToolResult,
+  type RegisteredTool,
 } from "@modelcontextprotocol/server";
-import {
-  hostHeaderValidation,
-  localhostHostValidation,
-  localhostOriginValidation,
-  originValidation,
-  toNodeHandler,
-} from "@modelcontextprotocol/node";
 import type { CoreConfig } from "./config.ts";
 import type { GatewayAccessController } from "./gateway-access.ts";
 import type { CoreLogger } from "./logger.ts";
+import { McpProxyGateway } from "./mcp-proxy-gateway.ts";
 import type { ToolRegistry, ToolRoute } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
@@ -23,6 +17,11 @@ import { CORE_VERSION } from "./version.ts";
 export interface GatewayToolCaller {
   callTool(publicName: string, args: unknown): Promise<CallToolResult>;
 }
+
+const gatewayToolRegistrations = new WeakMap<
+  McpServer,
+  Map<string, RegisteredTool>
+>();
 
 export function createGatewayProtocolServer(
   tools: ToolRegistry,
@@ -43,11 +42,26 @@ export function createGatewayProtocolServer(
     },
   );
 
-  for (const route of tools.list()) {
-    registerTool(server, route, caller);
-  }
+  gatewayToolRegistrations.set(server, new Map());
+  syncGatewayTools(server, tools, caller);
 
   return server;
+}
+
+function syncGatewayTools(
+  server: McpServer,
+  tools: ToolRegistry,
+  caller: GatewayToolCaller,
+): void {
+  const registrations = gatewayToolRegistrations.get(server) ?? new Map();
+  for (const registration of registrations.values()) registration.remove();
+  registrations.clear();
+
+  for (const route of tools.list()) {
+    registrations.set(route.publicName, registerTool(server, route, caller));
+  }
+
+  gatewayToolRegistrations.set(server, registrations);
 }
 
 export class GatewayServer {
@@ -56,8 +70,8 @@ export class GatewayServer {
   #upstreams: UpstreamManager;
   #access: GatewayAccessController;
   #logger: CoreLogger;
-  #server: HttpServer | null = null;
-  #handler: ReturnType<typeof createMcpHandler> | null = null;
+  #proxy = new McpProxyGateway();
+  #protocolServers = new Set<McpServer>();
   #unsubscribeToolChanges: (() => void) | null = null;
   #status: "starting" | "running" | "stopping" | "stopped" | "error" = "stopped";
   #lastError: string | null = null;
@@ -100,12 +114,10 @@ export class GatewayServer {
   }
 
   async start(): Promise<void> {
-    if (this.#server) return;
+    if (this.#status === "running") return;
     this.#status = "starting";
     this.#lastError = null;
 
-    const handler = createMcpHandler(() => this.#buildMcpServer());
-    const nodeHandler = toNodeHandler(handler);
     const access = this.#access.snapshot();
     const lanEnabled =
       access.lanEnabled && access.enabled && access.ready;
@@ -113,79 +125,39 @@ export class GatewayServer {
     const allowedHostnames = lanEnabled
       ? discoverAllowedGatewayHostnames()
       : [];
-    const validateHost = lanEnabled
-      ? hostHeaderValidation(allowedHostnames)
-      : localhostHostValidation();
-    const validateOrigin = lanEnabled
-      ? originValidation(allowedHostnames)
-      : localhostOriginValidation();
-
-    const server = createServer((req, res) => {
-      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-
-      if (url.pathname === "/ping") {
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.setHeader("Cache-Control", "no-store");
-        res.end(JSON.stringify({ ok: true, version: CORE_VERSION }));
-        return;
-      }
-
-      if (url.pathname !== "/mcp") {
-        res.statusCode = 404;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(JSON.stringify({ error: "not found" }));
-        return;
-      }
-
-      if (!validateHost(req, res) || !validateOrigin(req, res)) return;
-
-      const access = this.#access.authorize(req.headers.authorization);
-      if (!access.allowed) {
-        res.statusCode = access.status;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.setHeader("Cache-Control", "no-store");
-        if (access.status === 401) {
-          res.setHeader("WWW-Authenticate", 'Bearer realm="MCP Gate"');
-        }
-        res.end(JSON.stringify({ error: access.error }));
-        return;
-      }
-
-      Promise.resolve(nodeHandler(req, res)).catch((error) => {
-        this.#logger.error(
-          "gateway",
-          error instanceof Error ? error.message : String(error),
-        );
-        if (!res.headersSent) {
-          res.statusCode = 500;
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.end(JSON.stringify({ error: "gateway request failed" }));
-        } else if (!res.writableEnded) {
-          res.end();
-        }
-      });
-    });
-
     try {
-      await new Promise<void>((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(this.#config.port, bindHost, () => {
-          server.off("error", reject);
-          resolve();
-        });
+      await this.#proxy.start({
+        host: bindHost,
+        port: this.#config.port,
+        sessionIdleTimeoutMs: this.#config.sessionIdleTimeoutMs,
+        createServer: async () => {
+          const server = this.#buildMcpServer();
+          this.#protocolServers.add(server);
+          return server;
+        },
+        authenticate: async (req) =>
+          this.#authorizeRequest(req, lanEnabled, allowedHostnames),
+        onConnect: async (server) => {
+          this.#protocolServers.add(server);
+        },
+        onClose: async (server) => {
+          this.#protocolServers.delete(server);
+        },
+        onUnhandledRequest: async (req, res) => {
+          res.statusCode = 404;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ error: "not found" }));
+        },
+        isOriginAllowed: (origin) =>
+          isAllowedOrigin(origin, lanEnabled, allowedHostnames),
       });
 
-      this.#server = server;
-      this.#handler = handler;
       this.#boundHost = bindHost;
       this.#unsubscribeToolChanges = this.#tools.onChanged(() => {
-        Promise.resolve(handler.notify.toolsChanged()).catch((error) => {
-          this.#logger.warn(
-            "gateway",
-            `failed to publish tools/list_changed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        });
+        for (const server of this.#protocolServers) {
+          syncGatewayTools(server, this.#tools, this.#upstreams);
+        }
+        this.#proxy.notifyToolsChanged();
       });
       this.#status = "running";
       this.#logger.info(
@@ -195,7 +167,7 @@ export class GatewayServer {
     } catch (error) {
       this.#status = "error";
       this.#lastError = error instanceof Error ? error.message : String(error);
-      await handler.close().catch(() => undefined);
+      await this.#proxy.stop().catch(() => undefined);
       throw error;
     }
   }
@@ -207,24 +179,60 @@ export class GatewayServer {
     this.#unsubscribeToolChanges = null;
     unsubscribeToolChanges?.();
 
-    const server = this.#server;
-    this.#server = null;
     this.#boundHost = null;
-
-    if (server) {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      });
-    }
-
-    const handler = this.#handler;
-    this.#handler = null;
-    if (handler) {
-      await handler.close().catch(() => undefined);
-    }
+    this.#protocolServers.clear();
+    await this.#proxy.stop();
 
     this.#status = "stopped";
     this.#lastError = null;
+  }
+
+  #authorizeRequest(
+    req: IncomingMessage,
+    lanEnabled: boolean,
+    allowedHostnames: string[],
+  ): { authenticated: true } {
+    const host = hostFromHeader(req.headers.host);
+    const permittedHosts = lanEnabled
+      ? [...allowedHostnames, "localhost", "127.0.0.1", "[::1]"]
+      : ["localhost", "127.0.0.1", "[::1]"];
+
+    if (!host || !permittedHosts.includes(host)) {
+      throw new Response(JSON.stringify({ error: "host not allowed" }), {
+        status: 403,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    const origin = req.headers.origin;
+    if (origin && !isAllowedOrigin(origin, lanEnabled, allowedHostnames)) {
+      throw new Response(JSON.stringify({ error: "origin not allowed" }), {
+        status: 403,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    const access = this.#access.authorize(req.headers.authorization);
+    if (!access.allowed) {
+      throw new Response(JSON.stringify({ error: access.error }), {
+        status: access.status,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          ...(access.status === 401
+            ? { "WWW-Authenticate": 'Bearer realm="MCP Gate"' }
+            : {}),
+        },
+      });
+    }
+
+    return { authenticated: true };
   }
 
   #buildMcpServer(): McpServer {
@@ -240,8 +248,8 @@ function registerTool(
   server: McpServer,
   route: ToolRoute,
   caller: GatewayToolCaller,
-): void {
-  server.registerTool(
+): RegisteredTool {
+  return server.registerTool(
     route.publicName,
     {
       description: route.definition.description,
@@ -249,6 +257,38 @@ function registerTool(
     },
     async (args) => caller.callTool(route.publicName, args),
   );
+}
+
+function hostFromHeader(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(`http://${value}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedOrigin(
+  value: string,
+  lanEnabled: boolean,
+  allowedHostnames: string[],
+): boolean {
+  let origin: URL;
+  try {
+    origin = new URL(value);
+  } catch {
+    return false;
+  }
+
+  const host = origin.hostname.toLowerCase();
+  if (
+    (origin.protocol === "tauri:" && host === "localhost") ||
+    ["localhost", "127.0.0.1", "[::1]", "tauri.localhost"].includes(host)
+  ) {
+    return true;
+  }
+
+  return lanEnabled && allowedHostnames.includes(host);
 }
 
 function schemaFromRoute(route: ToolRoute) {

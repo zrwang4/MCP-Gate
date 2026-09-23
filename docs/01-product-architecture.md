@@ -36,6 +36,13 @@ MCP upstream servers
 
 Rust owns desktop concerns. Core owns MCP concerns. UI must not directly depend on `mcp-proxy`.
 
+The Core uses a version-pinned `McpProxyGateway` adapter around
+`mcp-proxy`'s programmatic `startHTTPServer()` API. That adapter owns the
+public MCP HTTP/protocol session lifecycle. MCP Gate retains product-specific
+multi-upstream aggregation, tool naming/policy, Keychain-backed configuration,
+and routing. Keep all direct `mcp-proxy` API usage inside the adapter so an
+upstream upgrade is isolated and can be gated by compatibility tests.
+
 ## Product principles
 
 - localhost-only by default

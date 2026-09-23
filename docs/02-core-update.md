@@ -35,4 +35,4 @@ check
 
 If candidate startup or health check fails, automatically restore the previous Core.
 
-`mcp-proxy` updates should first pass MCP Gate CI compatibility tests before being promoted to Stable.
+`mcp-proxy` is pinned independently from the App and Core. Upgrades should first pass MCP Gate's `McpProxyGateway` compatibility tests before being promoted to Stable; keep its API behind the adapter and do not float to a new version automatically.
