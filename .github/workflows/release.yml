@@ -37,6 +37,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: npm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -52,24 +53,24 @@ jobs:
             exit 1
           fi
 
-      - name: Enable pnpm
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Enable pnpm for the Core sidecar deploy
         run: |
           corepack enable
           corepack prepare pnpm@10.17.1 --activate
 
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-
       - name: Verify release version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: pnpm release:check
+        run: npm run release:check
 
       - name: Run release checks
         run: |
-          pnpm test
-          pnpm typecheck
-          pnpm build
+          npm test
+          npm run typecheck
+          npm run build
 
       - name: Validate Apple release secrets
         env:
@@ -137,7 +138,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm desktop:bundle
+        run: npm run desktop:bundle
 
       - name: Verify signature and notarization
         shell: bash

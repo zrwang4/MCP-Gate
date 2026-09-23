@@ -22,26 +22,22 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22"
-
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.17.1 --activate
+          cache: npm
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: npm ci
 
       - name: Core tests
-        run: pnpm test
+        run: npm test
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: npm run typecheck
 
       - name: Release metadata consistency
-        run: pnpm release:check
+        run: npm run release:check
 
       - name: Build TypeScript and web UI
-        run: pnpm build
+        run: npm run build
 
 
   desktop-rust:
@@ -56,17 +52,18 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: npm
 
-      - name: Enable pnpm
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Enable pnpm for the Core sidecar deploy
         run: |
           corepack enable
           corepack prepare pnpm@10.17.1 --activate
 
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-
       - name: Prepare production Core runtime
-        run: pnpm desktop:sidecar:prepare
+        run: npm run desktop:sidecar:prepare
 
       - name: Verify staged runtime
         run: |

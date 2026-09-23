@@ -19,17 +19,18 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22"
+          cache: npm
 
-      - name: Enable pnpm
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Enable pnpm for the Core sidecar deploy
         run: |
           corepack enable
           corepack prepare pnpm@10.17.1 --activate
 
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-
       - name: Build release preview
-        run: pnpm desktop:bundle
+        run: npm run desktop:bundle
 
       - name: Verify bundled runtime
         shell: bash
