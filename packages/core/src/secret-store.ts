@@ -6,6 +6,49 @@ export interface SecretStore {
 
 const KEYCHAIN_SERVICE = "MCP Gate HTTP Authorization";
 
+/**
+ * A Keychain read can block indefinitely: when the calling binary's code
+ * signature is not in the item's ACL, the Security framework waits for a
+ * confirmation that a background child process may never be able to surface.
+ * Because `GatewayAccessController.init()` awaits this during Core startup, an
+ * unbounded read would take the whole Core (gateway + management API + every
+ * MCP upstream) down. Bound it so the caller can degrade instead of hanging.
+ */
+const KEYCHAIN_TIMEOUT_MS = Number(
+  process.env.MCP_GATE_KEYCHAIN_TIMEOUT_MS ?? 5_000,
+);
+
+class KeychainTimeoutError extends Error {
+  constructor(operation: string, timeoutMs: number) {
+    super(
+      `Keychain ${operation} timed out after ${timeoutMs}ms; ` +
+        `the item's access list may not trust this build of MCP Gate`,
+    );
+    this.name = "KeychainTimeoutError";
+  }
+}
+
+export async function withKeychainTimeout<T>(
+  operation: string,
+  promise: Promise<T>,
+  timeoutMs: number = KEYCHAIN_TIMEOUT_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new KeychainTimeoutError(operation, timeoutMs)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 interface KeytarLike {
   getPassword(service: string, account: string): Promise<string | null>;
   setPassword(service: string, account: string, password: string): Promise<void>;
@@ -16,22 +59,28 @@ export class MacKeychainSecretStore implements SecretStore {
   #keytar: Promise<KeytarLike> | null = null;
 
   async get(secretId: string): Promise<string | null> {
-    return (await this.#loadKeytar()).getPassword(KEYCHAIN_SERVICE, secretId);
+    return withKeychainTimeout(
+      "read",
+      (await this.#loadKeytar()).getPassword(KEYCHAIN_SERVICE, secretId),
+    );
   }
 
   async set(secretId: string, value: string): Promise<void> {
     if (!value) throw new Error("secret value is required");
-    await (await this.#loadKeytar()).setPassword(
-      KEYCHAIN_SERVICE,
-      secretId,
-      value,
+    await withKeychainTimeout(
+      "write",
+      (await this.#loadKeytar()).setPassword(
+        KEYCHAIN_SERVICE,
+        secretId,
+        value,
+      ),
     );
   }
 
   async delete(secretId: string): Promise<boolean> {
-    return (await this.#loadKeytar()).deletePassword(
-      KEYCHAIN_SERVICE,
-      secretId,
+    return withKeychainTimeout(
+      "delete",
+      (await this.#loadKeytar()).deletePassword(KEYCHAIN_SERVICE, secretId),
     );
   }
 
@@ -67,6 +116,12 @@ export class MacKeychainSecretStore implements SecretStore {
 
         return candidate as unknown as KeytarLike;
       })();
+
+      // Do not cache a rejected load: the native module may simply not be built
+      // yet, and a poisoned promise would disable secrets for the whole process.
+      this.#keytar.catch(() => {
+        this.#keytar = null;
+      });
     }
 
     return this.#keytar;
