@@ -125,7 +125,7 @@ h2 { margin: 0; font-size: 16px; }
   font-size: 10px;
   font-weight: 400;
 }
-.endpointRow.secondary { background: rgba(245,245,243,.55); }
+.endpointRow.secondary { background: rgba(245,245,243,.72); }
 .hint { margin: 14px 2px 0; color: #767676; font-size: 12px; line-height: 1.6; }
 
 .section { margin-top: 32px; }
@@ -412,6 +412,7 @@ footer {
   }
 
   .endpointRow,
+  .endpointRow.secondary,
   .metrics > div,
   .logHeader {
     background: #242421;
