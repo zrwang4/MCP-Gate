@@ -37,6 +37,6 @@ Gateway 在新会话/请求中读取当前 ToolRegistry；活动会话在工具�
 - `mcp-proxy` 负责 Streamable HTTP、协议会话、现代协议通知和会话回收。
 - MCP Gate 的 `ToolRegistry`、`UpstreamManager` 负责多上游工具聚合、命名、过滤和调用路由。
 - `McpProxyGateway` 是 `mcp-proxy` 的唯一直接接入点；升级依赖时先运行 Core 的代理兼容性测试。
-- MCP Gate 只启用 `/mcp` Streamable HTTP，不启用旧 SSE endpoint。
+- MCP Gate 同时暴露 `/mcp`（Streamable HTTP，推荐）与 `/sse`（旧版 HTTP+SSE 传输，兼容仍用 SSE 的客户端）。两个 endpoint 提供同一套聚合工具。
 
 `/ping` 由 `mcp-proxy` 提供，响应正文为 `pong`；Gateway MCP endpoint 的 Host、Origin 和 API Key 策略仍由 MCP Gate 配置并验证。

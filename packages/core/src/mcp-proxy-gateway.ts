@@ -35,7 +35,7 @@ export class McpProxyGateway {
       host: options.host,
       port: options.port,
       streamEndpoint: "/mcp",
-      sseEndpoint: null,
+      sseEndpoint: "/sse",
       modern: true,
       sessionIdleTimeout: options.sessionIdleTimeoutMs,
       authenticate: options.authenticate,

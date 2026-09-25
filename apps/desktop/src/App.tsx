@@ -382,6 +382,7 @@ export function App() {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [copied, setCopied] = useState(false);
+  const [sseCopied, setSseCopied] = useState(false);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [gatewayKeyBusy, setGatewayKeyBusy] = useState(false);
@@ -577,6 +578,8 @@ export function App() {
   }, [logs, logLevel, logSource, logQuery]);
 
   const gatewayUrl = status?.gateway.endpoint ?? DEFAULT_GATEWAY_URL;
+  // 旧版 MCP HTTP+SSE 客户端（部分 IDE/客户端仍用 SSE 传输）连接同一聚合 Server 的入口。
+  const gatewaySseUrl = gatewayUrl.replace(/\/mcp$/, "/sse");
 
   const toolPageSize = 10;
   const [toolSearch, setToolSearch] = useState("");
@@ -702,6 +705,12 @@ export function App() {
     await navigator.clipboard.writeText(gatewayUrl);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  async function copyGatewaySseUrl() {
+    await navigator.clipboard.writeText(gatewaySseUrl);
+    setSseCopied(true);
+    window.setTimeout(() => setSseCopied(false), 1200);
   }
 
   async function rotateGatewayApiKey() {
@@ -1480,10 +1489,23 @@ export function App() {
         </div>
 
         <div className="endpointRow">
+          <span className="endpointLabel">Streamable HTTP</span>
           <code>{gatewayUrl}</code>
           <button className="copyButton" onClick={() => void copyGatewayUrl()}>
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? "已复制" : "复制"}
+          </button>
+        </div>
+
+        <div className="endpointRow secondary">
+          <span className="endpointLabel">
+            SSE 兼容
+            <small>旧版客户端用这个地址</small>
+          </span>
+          <code>{gatewaySseUrl}</code>
+          <button className="copyButton" onClick={() => void copyGatewaySseUrl()}>
+            {sseCopied ? <Check size={15} /> : <Copy size={15} />}
+            {sseCopied ? "已复制" : "复制"}
           </button>
         </div>
 

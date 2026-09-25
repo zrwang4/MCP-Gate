@@ -144,6 +144,15 @@ export class GatewayServer {
           this.#protocolServers.delete(server);
         },
         onUnhandledRequest: async (req, res) => {
+          // mcp-proxy routes the legacy SSE message endpoint (`/messages?sessionId=…`)
+          // through its own handler, but that path is not part of its
+          // `isMcpEndpoint` check, so this catch-all would answer first and
+          // swallow every SSE POST. Leave those requests unanswered so the
+          // proxy's own handler still sees them.
+          if (new URL(req.url ?? "/", "http://localhost").pathname === "/messages") {
+            return;
+          }
+
           res.statusCode = 404;
           res.setHeader("Content-Type", "application/json; charset=utf-8");
           res.end(JSON.stringify({ error: "not found" }));
