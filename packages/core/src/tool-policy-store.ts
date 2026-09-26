@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, readFile, rename } from "node:fs/promises";
+import { basename, dirname } from "node:path";
+import { writeJsonWithBackup } from "./atomic-write.ts";
 import type { CoreLogger } from "./logger.ts";
 
 interface ToolPolicyFile {
@@ -88,11 +89,10 @@ export class ToolPolicyStore {
       ),
     };
 
-    const tempPath = `${this.#filePath}.tmp-${process.pid}`;
-    await writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
+    await writeJsonWithBackup(payload, {
+      directory: dirname(this.#filePath),
+      fileName: basename(this.#filePath),
+      logger: this.#logger,
     });
-    await rename(tempPath, this.#filePath);
   }
 }
