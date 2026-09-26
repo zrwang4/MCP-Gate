@@ -82,7 +82,13 @@ pub fn run() {
             let bundled_node = std::env::current_exe()
                 .ok()
                 .and_then(|path| path.parent().map(|parent| parent.join("mcp-gate-node")))
-                .filter(|path| path.exists());
+                .filter(|path| path.exists())
+                .or_else(|| {
+                    app.path()
+                        .resolve("core-runtime/node", BaseDirectory::Resource)
+                        .ok()
+                        .filter(|path| path.exists())
+                });
 
             let bundled_core_entry = app
                 .path()

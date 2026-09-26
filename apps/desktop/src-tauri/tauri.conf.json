@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && node ../../scripts/prepare-desktop-runtime.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -32,6 +32,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "resources/core-runtime/": "core-runtime/"
+    },
     "macOS": {
       "minimumSystemVersion": "12.0"
     },
