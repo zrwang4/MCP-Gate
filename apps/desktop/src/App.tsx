@@ -440,6 +440,8 @@ export function App() {
   const [testToolResult, setTestToolResult] = useState("");
   const [testToolBusy, setTestToolBusy] = useState(false);
   const logPanelRef = useRef<HTMLDivElement | null>(null);
+  const logFollowRef = useRef(true);
+  const [logFollow, setLogFollow] = useState(true);
   const liveRefreshInFlight = useRef(false);
   const catalogRefreshInFlight = useRef(false);
 
@@ -573,9 +575,76 @@ export function App() {
 
   useEffect(() => {
     const el = logPanelRef.current;
-    if (!el) return;
+    // 只在用户本来就贴着底部时才自动跟随，避免轮询刷新打断回看历史
+    if (!el || !logFollowRef.current) return;
     el.scrollTop = el.scrollHeight;
   }, [logs, logLevel, logSource, logQuery]);
+
+  function handleLogScroll() {
+    const el = logPanelRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    logFollowRef.current = atBottom;
+    setLogFollow(atBottom);
+  }
+
+  function scrollLogsToBottom() {
+    const el = logPanelRef.current;
+    if (!el) return;
+    logFollowRef.current = true;
+    setLogFollow(true);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // Esc 关闭最上层弹窗；关闭逻辑与各弹窗的背景点击保持一致
+  const anyModalOpen =
+    Boolean(testTool) ||
+    showProfileEditor ||
+    showImportConfig ||
+    showAddServer ||
+    Boolean(deletingProfileId) ||
+    Boolean(deletingServerId);
+
+  useEffect(() => {
+    if (!anyModalOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      if (testTool) {
+        setTestTool(null);
+      } else if (showProfileEditor) {
+        setShowProfileEditor(false);
+        setEditingProfileId(null);
+      } else if (showImportConfig) {
+        if (importBusy) return;
+        setShowImportConfig(false);
+        setImportPreview(null);
+        setImportApplyResult(null);
+        setImportSourceId(null);
+        setImportSourceSnapshot(null);
+      } else if (showAddServer) {
+        setShowAddServer(false);
+        setEditingServerId(null);
+      } else if (deletingProfileId) {
+        setDeletingProfileId(null);
+      } else if (deletingServerId) {
+        setDeletingServerId(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    anyModalOpen,
+    testTool,
+    showProfileEditor,
+    showImportConfig,
+    importBusy,
+    showAddServer,
+    deletingProfileId,
+    deletingServerId,
+  ]);
 
   const gatewayUrl = status?.gateway.endpoint ?? DEFAULT_GATEWAY_URL;
   // 旧版 MCP HTTP+SSE 客户端（部分 IDE/客户端仍用 SSE 传输）连接同一聚合 Server 的入口。
@@ -1413,6 +1482,9 @@ export function App() {
   const profileSwitchBusy = busy?.startsWith("profile:") ?? false;
   const runningCount = upstreams.filter((upstream) => upstream.status === "running").length;
   const enabledToolCount = tools.filter((tool) => tool.enabled).length;
+  const deletingServer = deletingServerId
+    ? serverConfigs.find((item) => item.id === deletingServerId) ?? null
+    : null;
   const logSources = useMemo(
     () =>
       [...new Set(logs.map((entry) => entry.source))]
@@ -1725,7 +1797,16 @@ export function App() {
                 <X size={17} />
               </button>
             </div>
-            <p className="confirmText">确定要删除这个 MCP 吗？</p>
+            <p className="confirmText">
+              确定要删除「{deletingServer?.name ?? "未知 MCP"}」吗？
+              {deletingServer && (
+                <code className="confirmSubject">
+                  {deletingServer.transport === "http"
+                    ? deletingServer.url
+                    : `${deletingServer.command ?? ""} ${(deletingServer.args ?? []).join(" ")}`}
+                </code>
+              )}
+            </p>
             <div className="modalActions">
               <button className="secondaryButton" onClick={() => setDeletingServerId(null)}>取消</button>
               <button
@@ -2011,20 +2092,30 @@ export function App() {
           </div>
         </div>
 
-        <div className="logPanel" ref={logPanelRef}>
-          {visibleLogs.length === 0 ? (
-            <div className="emptyLogs">
-              <FileText size={18} /> 暂无日志
-            </div>
-          ) : (
-            visibleLogs.slice(-120).map((entry) => (
-              <div className="logRow" key={entry.seq}>
-                <time>{formatTime(entry.timestamp)}</time>
-                <span className={`logLevel ${entry.level}`}>{entry.level.toUpperCase()}</span>
-                <span className="logSource">{entry.source}</span>
-                <span className="logMessage">{entry.message}</span>
+        <div className="logPanelWrap">
+          <div className="logPanel" ref={logPanelRef} onScroll={handleLogScroll}>
+            {visibleLogs.length === 0 ? (
+              <div className="emptyLogs">
+                <FileText size={18} /> 暂无日志
               </div>
-            ))
+            ) : (
+              visibleLogs.map((entry) => (
+                <div className="logRow" key={entry.seq}>
+                  <time>{formatTime(entry.timestamp)}</time>
+                  <span className={`logLevel ${entry.level}`}>{entry.level.toUpperCase()}</span>
+                  <span className="logSource">{entry.source}</span>
+                  <span className="logMessage">{entry.message}</span>
+                </div>
+              ))
+            )}
+          </div>
+          {!logFollow && visibleLogs.length > 0 && (
+            <button
+              className="logJumpBottom"
+              onClick={scrollLogsToBottom}
+            >
+              回到底部 <RefreshCw size={12} />
+            </button>
           )}
         </div>
       </section>
