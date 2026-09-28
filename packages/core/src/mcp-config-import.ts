@@ -53,6 +53,8 @@ export interface PublicMcpImportCandidate {
   url?: string;
   plainEnvKeys: string[];
   secretEnvKeys: string[];
+  /** Names only — values may be credentials and belong in no preview. */
+  headerKeys: string[];
   hasAuthorization: boolean;
   warnings: string[];
 }
@@ -135,6 +137,7 @@ export function toPublicMcpImportPreview(
         url: candidate.url,
         plainEnvKeys: [],
         secretEnvKeys: [],
+        headerKeys: Object.keys(candidate.headers ?? {}).sort(),
         hasAuthorization: Boolean(candidate.authorization),
         warnings: [...candidate.warnings],
       };

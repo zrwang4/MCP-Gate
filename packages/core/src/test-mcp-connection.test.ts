@@ -290,6 +290,9 @@ test("connection test sends configured headers to the upstream", async () => {
           return [];
         },
         async disconnect() {},
+        async callTool() {
+          return { content: [] };
+        },
       };
     };
 
@@ -337,6 +340,9 @@ test("connection test uses supplied headers over the stored ones", async () => {
           return [];
         },
         async disconnect() {},
+        async callTool() {
+          return { content: [] };
+        },
       };
     };
 
@@ -370,6 +376,9 @@ test("connection test rejects a header that would inject request lines", async (
     const registry = new ServerRegistry(join(dir, "servers.json"), logger);
     await registry.init();
     const secrets = new MemorySecretStore();
+    // A const alias keeps the narrowing from the assignment above inside the
+    // closures below, where a `let` would widen back to `CoreLogger | null`.
+    const log = logger;
 
     await assert.rejects(
       () =>
@@ -381,7 +390,7 @@ test("connection test rejects a header that would inject request lines", async (
           },
           registry,
           secrets,
-          logger,
+          log,
         ),
       /contains a newline/,
     );
@@ -396,7 +405,7 @@ test("connection test rejects a header that would inject request lines", async (
           },
           registry,
           secrets,
-          logger,
+          log,
         ),
       /invalid HTTP header name/,
     );

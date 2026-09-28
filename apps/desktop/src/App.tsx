@@ -116,6 +116,7 @@ interface McpImportPreviewCandidate {
   url?: string;
   plainEnvKeys: string[];
   secretEnvKeys: string[];
+  headerKeys: string[];
   hasAuthorization: boolean;
   warnings: string[];
 }
@@ -2629,7 +2630,12 @@ export function App() {
                       {candidate.secretEnvKeys.length > 0 && (
                         <span>Keychain: {candidate.secretEnvKeys.join(", ")}</span>
                       )}
-                      {candidate.hasAuthorization && <span>Authorization → Keychain</span>}
+                      {candidate.headerKeys.length > 0 && (
+                        <span>Header: {candidate.headerKeys.join(", ")}</span>
+                      )}
+                      {candidate.hasAuthorization && (
+                        <span>Authorization → Keychain</span>
+                      )}
                     </div>
                     {candidate.warnings.map((warning) => (
                       <div className="importWarning" key={warning}>{warning}</div>

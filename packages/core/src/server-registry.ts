@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename } from "node:fs/promises";
 import { dirname, basename } from "node:path";
 import { writeJsonWithBackup } from "./atomic-write.ts";
+import { validateHeaders } from "./http-headers.ts";
 import type { CoreLogger } from "./logger.ts";
 
 interface ServerConfigBase {
@@ -319,36 +320,6 @@ function validateArgs(values: string[]): string[] {
 
 function validateEnvironment(values: Record<string, string>): Record<string, string> {
   return validateStringRecord(values, "environment value", 65_536);
-}
-
-/**
- * RFC 7230 token, so hyphens are allowed in header names (`X-Apifox-Api-Version`)
- * while control characters and separators that could split the request line are
- * not. The existing env-var validator is deliberately stricter and cannot be
- * reused here.
- */
-function validateHeaders(values: Record<string, string>): Record<string, string> {
-  if (!values || typeof values !== "object" || Array.isArray(values)) {
-    throw new Error("headers must be an object");
-  }
-
-  const entries = Object.entries(values);
-  if (entries.length > 64) throw new Error("too many headers");
-
-  const result: Record<string, string> = {};
-  for (const [key, value] of entries) {
-    if (key.length > 256 || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(key)) {
-      throw new Error(`invalid HTTP header name: ${key}`);
-    }
-    if (typeof value !== "string") {
-      throw new Error(`header ${key} must be a string`);
-    }
-    if (value.length > 16_384) throw new Error(`header ${key} is too long`);
-    // A CR or LF here lets a caller inject arbitrary request headers.
-    if (/[\r\n]/.test(value)) throw new Error(`header ${key} contains a newline`);
-    result[key] = value;
-  }
-  return result;
 }
 
 function validateSecretIds(values: Record<string, string>): Record<string, string> {

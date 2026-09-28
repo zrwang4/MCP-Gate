@@ -1,4 +1,5 @@
 import type { CoreLogger } from "./logger.ts";
+import { readOptionalHeaders } from "./http-headers.ts";
 import { HttpUpstreamClient } from "./http-upstream-client.ts";
 import type {
   HttpServerConfig,
@@ -38,12 +39,20 @@ export interface McpConnectionTestResult {
 export type ConnectionTestClientFactory = (
   config: McpServerConfig,
   secrets: SecretStore,
+  connectTimeoutMs: number | undefined,
 ) => Promise<UpstreamClient> | UpstreamClient;
 
 export interface McpConnectionTestOptions {
   factory?: ConnectionTestClientFactory;
   connectTimeoutMs?: number;
   listToolsTimeoutMs?: number;
+  /**
+   * Connect timeout handed to the default HTTP client factory. Kept separate
+   * from `connectTimeoutMs` because that one bounds the whole connect step
+   * (including the handshake), while this only widens the socket-level budget
+   * behind it.
+   */
+  upstreamConnectTimeoutMs?: number;
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 60_000;
@@ -95,6 +104,7 @@ export async function testMcpConnection(
   const client = await (options.factory ?? createTestClient)(
     config,
     temporarySecrets,
+    options.upstreamConnectTimeoutMs,
   );
   const connectTimeoutMs =
     options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
@@ -230,7 +240,7 @@ async function buildHttpTestConfig(
   // the same way the save form removes it.
   let headers = existing?.transport === "http" ? existing.headers : undefined;
   if (Object.prototype.hasOwnProperty.call(input, "headers")) {
-    headers = readHeaderConfig(input.headers);
+    headers = readOptionalHeaders(input.headers);
   }
 
   let authorization = suppliedAuthorization;
@@ -274,39 +284,11 @@ async function buildHttpTestConfig(
 function createTestClient(
   config: McpServerConfig,
   secrets: SecretStore,
+  connectTimeoutMs?: number,
 ): UpstreamClient {
   return config.transport === "http"
-    ? new HttpUpstreamClient(config, secrets)
+    ? new HttpUpstreamClient(config, secrets, connectTimeoutMs)
     : new StdioUpstreamClient(config, secrets);
-}
-
-/**
- * Mirrors the registry's header validation so a rejectable header fails the
- * test with a readable message instead of surfacing later as an opaque
- * transport error. The shape check is duplicated rather than shared because the
- * registry's validator is module-private, and exporting it only for this would
- * widen that module's surface for no other caller.
- */
-function readHeaderConfig(value: unknown): Record<string, string> | undefined {
-  if (value === undefined) return undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("headers must be an object");
-  }
-
-  const result: Record<string, string> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(key)) {
-      throw new Error(`invalid HTTP header name: ${key}`);
-    }
-    if (typeof item !== "string") {
-      throw new Error(`header ${key} must be a string`);
-    }
-    if (/[\r\n]/.test(item)) {
-      throw new Error(`header ${key} contains a newline`);
-    }
-    result[key] = item;
-  }
-  return result;
 }
 
 function validateRequiredString(
