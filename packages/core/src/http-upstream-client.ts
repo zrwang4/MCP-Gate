@@ -1,8 +1,9 @@
-import { Agent, setGlobalDispatcher } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 import {
   Client,
   StreamableHTTPClientTransport,
   type CallToolResult,
+  type FetchLike,
 } from "@modelcontextprotocol/client";
 import type { HttpServerConfig } from "./server-registry.ts";
 import type { SecretStore } from "./secret-store.ts";
@@ -20,8 +21,26 @@ function hasHeaderKey(headers: Record<string, string>, key: string): boolean {
 }
 
 /**
- * One Agent per timeout value. UpstreamManager builds a fresh client for every
- * connect and reconnect attempt, so installing a new Agent each time would
+ * The SDK's `FetchLike` is typed against the DOM `Response` and `RequestInit`,
+ * while undici ships its own copies that differ in ways TypeScript can see
+ * (`Symbol.dispose` on iterators, `Blob` lineage on `BodyInit`) but that are
+ * identical at runtime. undici's Response is used as-is rather than re-wrapped
+ * into a standard one because re-wrapping would mean buffering an SSE body the
+ * transport expects to stream.
+ */
+function scopedFetch(agent: Agent): FetchLike {
+  const impl = (input: RequestInfo | URL, init?: RequestInit) =>
+    undiciFetch(input as string | URL, {
+      ...init,
+      dispatcher: agent,
+    } as Parameters<typeof undiciFetch>[1]);
+
+  return impl as unknown as FetchLike;
+}
+
+/**
+ * One Agent per timeout value. `UpstreamManager` builds a fresh client for
+ * every connect and reconnect attempt, so creating a new Agent each time would
  * accumulate pool objects — and their idle sockets — for the lifetime of the
  * process. Agents hold no per-server state, so sharing one per timeout is safe.
  */
@@ -99,19 +118,22 @@ export class HttpUpstreamClient implements UpstreamClient {
     }
 
     // Node's built-in fetch hard-codes a 10s connect timeout that cannot be
-    // changed per request — `requestInit.dispatcher` is silently rejected by
-    // it. An Agent must be installed as the global dispatcher instead, so slow
-    // remote endpoints get the headroom connectionTimeoutMs promises. Request
-    // timeouts stay with the transport and are bounded separately.
+    // changed per request, and requestInit.dispatcher is silently rejected by
+    // it. Routing the transport through undici's own fetch with an explicit
+    // dispatcher keeps the timeout scoped to this one upstream, rather than
+    // mutating the process-global dispatcher that every other fetch — including
+    // the management API and connection tests — would inherit.
     const requestInit: RequestInit = {};
     if (Object.keys(headers).length > 0) {
       requestInit.headers = headers;
     }
-    setGlobalDispatcher(dispatcherFor(this.#connectTimeoutMs));
 
     const transport = new StreamableHTTPClientTransport(
       new URL(this.#config.url),
-      { requestInit },
+      {
+        requestInit,
+        fetch: scopedFetch(dispatcherFor(this.#connectTimeoutMs)),
+      },
     );
 
     this.#client = client;

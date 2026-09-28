@@ -125,6 +125,7 @@ export function toPublicMcpImportPreview(
           cwd: candidate.cwd,
           plainEnvKeys: Object.keys(candidate.env).sort(),
           secretEnvKeys: Object.keys(candidate.secretEnv).sort(),
+          headerKeys: [],
           hasAuthorization: false,
           warnings: [...candidate.warnings],
         };
