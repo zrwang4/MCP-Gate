@@ -29,6 +29,8 @@ export interface StdioImportCandidate extends ImportCandidateBase {
 export interface HttpImportCandidate extends ImportCandidateBase {
   transport: "http";
   url: string;
+  /** Static request headers carried over from the source configuration. */
+  headers?: Record<string, string>;
   authorization?: string;
 }
 
@@ -180,6 +182,7 @@ export async function applyMcpClientConfig(
           name: candidate.name,
           transport: "http",
           url: candidate.url,
+          headers: candidate.headers,
           authSecretId,
         });
         createdServerId = server.id;
@@ -335,20 +338,17 @@ function parseCandidate(
     64,
     16_384,
   );
-  const unsupportedHeaders = Object.keys(headers).filter(
-    (key) => key.toLowerCase() !== "authorization",
-  );
-  if (unsupportedHeaders.length > 0) {
-    throw new Error(
-      `unsupported HTTP header(s): ${unsupportedHeaders.join(", ")}`,
-    );
-  }
 
+  // Authorization is lifted into a Keychain-backed secret; everything else is a
+  // static request header and rides along with the config.
   let authorization: string | undefined;
+  const staticHeaders: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (key.toLowerCase() === "authorization") {
       assertNoInterpolation(value, "headers.Authorization");
       authorization = value;
+    } else {
+      staticHeaders[key] = value;
     }
   }
 
@@ -364,6 +364,7 @@ function parseCandidate(
     name,
     transport: "http",
     url,
+    headers: Object.keys(staticHeaders).length > 0 ? staticHeaders : undefined,
     authorization,
     warnings,
   };

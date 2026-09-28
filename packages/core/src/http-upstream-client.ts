@@ -12,6 +12,12 @@ import type {
 } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
 
+/** Header names are case-insensitive, so per-key lookups must be too. */
+function hasHeaderKey(headers: Record<string, string>, key: string): boolean {
+  const needle = key.toLowerCase();
+  return Object.keys(headers).some((name) => name.toLowerCase() === needle);
+}
+
 export class HttpUpstreamClient implements UpstreamClient {
   #config: HttpServerConfig;
   #client: Client | null = null;
@@ -53,16 +59,19 @@ export class HttpUpstreamClient implements UpstreamClient {
       throw new Error("HTTP authorization secret is missing from Keychain");
     }
 
+    // A configured Authorization header wins over the stored secret, so a caller
+    // can override it explicitly rather than having two values fight over one key.
+    const headers: Record<string, string> = {
+      ...(this.#config.headers ?? {}),
+    };
+    if (authorization && !hasHeaderKey(headers, "authorization")) {
+      headers.Authorization = authorization;
+    }
+
     const transport = new StreamableHTTPClientTransport(
       new URL(this.#config.url),
-      authorization
-        ? {
-            requestInit: {
-              headers: {
-                Authorization: authorization,
-              },
-            },
-          }
+      Object.keys(headers).length > 0
+        ? { requestInit: { headers } }
         : undefined,
     );
 

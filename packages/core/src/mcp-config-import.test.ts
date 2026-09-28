@@ -54,7 +54,7 @@ test("MCP config preview parses stdio and HTTP without exposing secrets", () => 
   assert.doesNotMatch(JSON.stringify(publicPreview), /gh-secret|remote-secret/);
 });
 
-test("MCP config preview rejects unsupported headers and interpolation", () => {
+test("MCP config preview carries non-Authorization headers and rejects interpolation", () => {
   const preview = previewMcpClientConfig({
     mcpServers: {
       remote: {
@@ -72,10 +72,20 @@ test("MCP config preview rejects unsupported headers and interpolation", () => {
     },
   });
 
-  assert.equal(preview.candidates.length, 0);
-  assert.equal(preview.issues.length, 2);
-  assert.match(preview.issues[0]?.message ?? "", /unsupported HTTP header/);
-  assert.match(preview.issues[1]?.message ?? "", /config interpolation/);
+  // Static headers are supported now, so the remote entry becomes a candidate
+  // rather than an issue; only the interpolated local entry is still rejected.
+  assert.equal(preview.candidates.length, 1);
+  assert.equal(preview.issues.length, 1);
+  assert.match(preview.issues[0]?.message ?? "", /config interpolation/);
+
+  const candidate = preview.candidates[0];
+  assert.equal(candidate?.name, "remote");
+  if (candidate?.transport !== "http") throw new Error("expected an http candidate");
+  assert.equal(candidate.url, "https://example.com/mcp");
+  // The hyphenated name must survive, not just the value.
+  assert.deepEqual(candidate.headers, { "X-API-Key": "secret" });
+  // Authorization still routes to the Keychain path instead of static headers.
+  assert.equal(candidate.authorization, undefined);
 });
 
 test("MCP config apply stores sensitive env in SecretStore and skips duplicates", async () => {

@@ -26,6 +26,8 @@ export interface StdioServerConfig extends ServerConfigBase {
 export interface HttpServerConfig extends ServerConfigBase {
   transport: "http";
   url: string;
+  /** Static request headers sent on every upstream connection. */
+  headers?: Record<string, string>;
   authSecretId?: string;
 }
 
@@ -38,6 +40,7 @@ export interface ServerConfigInput {
   args?: string[];
   cwd?: string;
   url?: string;
+  headers?: Record<string, string>;
   authSecretId?: string | null;
 }
 
@@ -139,6 +142,14 @@ export class ServerRegistry {
       },
     );
 
+    if (updated.transport === "http" && current.transport === "http") {
+      // An omitted `headers` key means "leave the configured headers alone";
+      // an explicit `{}` clears them.
+      if (!Object.prototype.hasOwnProperty.call(input, "headers")) {
+        updated.headers = current.headers ? { ...current.headers } : undefined;
+      }
+    }
+
     if (updated.transport === "stdio" && current.transport === "stdio") {
       updated.env = current.env ? { ...current.env } : undefined;
       updated.envSecretIds = current.envSecretIds
@@ -238,6 +249,9 @@ export class ServerRegistry {
         name,
         transport: "http",
         url: validateHttpUrl(input.url),
+        ...(input.headers && Object.keys(input.headers).length > 0
+          ? { headers: validateHeaders(input.headers) }
+          : {}),
         ...(typeof input.authSecretId === "string" && input.authSecretId
           ? { authSecretId: input.authSecretId }
           : {}),
@@ -305,6 +319,36 @@ function validateArgs(values: string[]): string[] {
 
 function validateEnvironment(values: Record<string, string>): Record<string, string> {
   return validateStringRecord(values, "environment value", 65_536);
+}
+
+/**
+ * RFC 7230 token, so hyphens are allowed in header names (`X-Apifox-Api-Version`)
+ * while control characters and separators that could split the request line are
+ * not. The existing env-var validator is deliberately stricter and cannot be
+ * reused here.
+ */
+function validateHeaders(values: Record<string, string>): Record<string, string> {
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    throw new Error("headers must be an object");
+  }
+
+  const entries = Object.entries(values);
+  if (entries.length > 64) throw new Error("too many headers");
+
+  const result: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (key.length > 256 || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(key)) {
+      throw new Error(`invalid HTTP header name: ${key}`);
+    }
+    if (typeof value !== "string") {
+      throw new Error(`header ${key} must be a string`);
+    }
+    if (value.length > 16_384) throw new Error(`header ${key} is too long`);
+    // A CR or LF here lets a caller inject arbitrary request headers.
+    if (/[\r\n]/.test(value)) throw new Error(`header ${key} contains a newline`);
+    result[key] = value;
+  }
+  return result;
 }
 
 function validateSecretIds(values: Record<string, string>): Record<string, string> {
@@ -390,6 +434,7 @@ function isServerConfig(value: unknown): value is McpServerConfig {
   if (server.transport === "http") {
     return (
       typeof server.url === "string" &&
+      (server.headers === undefined || isHeaderRecord(server.headers)) &&
       (server.authSecretId === undefined || typeof server.authSecretId === "string")
     );
   }
@@ -413,6 +458,23 @@ function isStringRecord(value: unknown): value is Record<string, string> {
     Object.entries(value).every(
       ([key, item]) =>
         /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof item === "string",
+    )
+  );
+}
+
+/**
+ * RFC 7230 token names, which admit the hyphens the env-var check above rejects
+ * (`X-Apifox-Api-Version`). Without this, any HTTP server configured with a
+ * hyphenated header would be dropped from the registry on the next startup.
+ */
+function isHeaderRecord(value: unknown): value is Record<string, string> {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.entries(value).every(
+      ([key, item]) =>
+        /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(key) && typeof item === "string",
     )
   );
 }

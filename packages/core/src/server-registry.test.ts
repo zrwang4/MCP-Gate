@@ -197,3 +197,139 @@ test("server registry persists stdio environment metadata without secret values"
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("http headers persist and survive a registry reload", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-registry-headers-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const file = join(dir, "servers.json");
+    const registry = new ServerRegistry(file, logger);
+    await registry.init();
+
+    await registry.create({
+      name: "Apifox",
+      transport: "http",
+      url: "https://api.apifox.com/mcp",
+      // A hyphenated name is a legal HTTP token but not a legal env var name.
+      headers: { "X-Apifox-Api-Version": "2025-09-01" },
+    });
+
+    const reloaded = new ServerRegistry(file, logger);
+    await reloaded.init();
+    const server = reloaded.list()[0];
+
+    assert.equal(server?.transport, "http");
+    if (server?.transport !== "http") throw new Error("expected an http server");
+    assert.equal(server.url, "https://api.apifox.com/mcp");
+    assert.deepEqual(server.headers, { "X-Apifox-Api-Version": "2025-09-01" });
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("an update that omits headers keeps them", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-registry-keep-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const file = join(dir, "servers.json");
+    const registry = new ServerRegistry(file, logger);
+    await registry.init();
+
+    const created = await registry.create({
+      name: "Apifox",
+      transport: "http",
+      url: "https://api.apifox.com/mcp",
+      headers: { "X-Apifox-Api-Version": "2025-09-01" },
+    });
+
+    // Changing only the URL must not silently drop the headers.
+    const updated = await registry.update(created.id, {
+      name: "Apifox",
+      transport: "http",
+      url: "https://api.apifox.com/mcp/v2",
+    });
+
+    assert.equal(updated?.transport, "http");
+    if (updated?.transport !== "http") throw new Error("expected an http server");
+    assert.equal(updated.url, "https://api.apifox.com/mcp/v2");
+    assert.deepEqual(updated.headers, { "X-Apifox-Api-Version": "2025-09-01" });
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("an update with empty headers clears them", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-registry-clear-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const file = join(dir, "servers.json");
+    const registry = new ServerRegistry(file, logger);
+    await registry.init();
+
+    const created = await registry.create({
+      name: "Apifox",
+      transport: "http",
+      url: "https://api.apifox.com/mcp",
+      headers: { "X-Apifox-Api-Version": "2025-09-01" },
+    });
+
+    const updated = await registry.update(created.id, {
+      name: "Apifox",
+      transport: "http",
+      url: "https://api.apifox.com/mcp",
+      headers: {},
+    });
+
+    if (updated?.transport !== "http") throw new Error("expected an http server");
+    assert.equal(updated.headers, undefined);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("header injection through CRLF is rejected", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-registry-crlf-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const registry = new ServerRegistry(join(dir, "servers.json"), logger);
+    await registry.init();
+
+    await assert.rejects(
+      () =>
+        registry.create({
+          name: "Evil",
+          transport: "http",
+          url: "https://example.com/mcp",
+          headers: { "X-Test": "ok\r\nX-Injected: yes" },
+        }),
+      /contains a newline/,
+    );
+
+    await assert.rejects(
+      () =>
+        registry.create({
+          name: "Evil",
+          transport: "http",
+          url: "https://example.com/mcp",
+          headers: { "Bad Header Name": "ok" },
+        }),
+      /invalid HTTP header name/,
+    );
+
+    assert.equal(registry.list().length, 0, "rejected writes must not persist");
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

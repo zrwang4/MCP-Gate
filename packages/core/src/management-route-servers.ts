@@ -175,6 +175,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         args?: unknown;
         cwd?: unknown;
         url?: unknown;
+        headers?: unknown;
         authorization?: unknown;
       };
 
@@ -193,6 +194,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         args: Array.isArray(body.args) ? body.args as string[] : [],
         cwd: typeof body.cwd === "string" ? body.cwd : undefined,
         url: typeof body.url === "string" ? body.url : undefined,
+        headers: readHeaderRecord(body.headers),
         authSecretId: createdSecretId ?? undefined,
       });
       ctx.upstreams.syncConfigs();
@@ -233,6 +235,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         args?: unknown;
         cwd?: unknown;
         url?: unknown;
+        headers?: unknown;
         authorization?: unknown;
         clearAuthorization?: unknown;
       };
@@ -273,6 +276,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         args: Array.isArray(body.args) ? body.args as string[] : [],
         cwd: typeof body.cwd === "string" ? body.cwd : undefined,
         url: typeof body.url === "string" ? body.url : undefined,
+        headers: readHeaderRecord(body.headers),
         authSecretId,
       });
 
@@ -386,6 +390,25 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
 
   return false;
 };
+
+/**
+ * Returns `undefined` when the caller omitted the field, which the registry
+ * treats as "keep whatever headers are already configured". An explicit `{}`
+ * clears them.
+ */
+function readHeaderRecord(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("headers must be an object");
+  }
+
+  const result: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item !== "string") throw new Error(`header ${key} must be a string`);
+    result[key] = item;
+  }
+  return result;
+}
 
 function normalizeOptionalAuthorization(value: unknown): string | undefined {
   if (value === undefined || value === null || value === "") return undefined;
