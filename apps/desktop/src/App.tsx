@@ -466,8 +466,6 @@ export function App() {
   const [newServerSecretEnv, setNewServerSecretEnv] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
   const [newServerHeaders, setNewServerHeaders] = useState("");
-  const [newServerAuthorization, setNewServerAuthorization] = useState("");
-  const [clearServerAuthorization, setClearServerAuthorization] = useState(false);
   const [configBusy, setConfigBusy] = useState(false);
   const [connectionTestBusy, setConnectionTestBusy] = useState(false);
   const [connectionTestState, setConnectionTestState] =
@@ -1195,8 +1193,6 @@ export function App() {
     setNewServerSecretEnv("");
     setNewServerUrl("");
     setNewServerHeaders("");
-    setNewServerAuthorization("");
-    setClearServerAuthorization(false);
     setConnectionTestState(null);
     setShowAddServer(true);
   }
@@ -1211,19 +1207,9 @@ export function App() {
     setNewServerEnv(environmentToText(server.env));
     setNewServerSecretEnv(secretEnvironmentToText(server.secretEnvKeys));
     setNewServerUrl(server.url ?? "");
-    // Authorization rides in the dedicated Keychain field, so it is hidden here
-    // rather than echoed back as plaintext.
-    setNewServerHeaders(
-      headersToText(
-        Object.fromEntries(
-          Object.entries(server.headers ?? {}).filter(
-            ([key]) => key.toLowerCase() !== "authorization",
-          ),
-        ),
-      ),
-    );
-    setNewServerAuthorization("");
-    setClearServerAuthorization(false);
+    // Every header is plaintext config, Authorization included, so all of them
+    // are editable here rather than hidden behind a separate secret field.
+    setNewServerHeaders(headersToText(server.headers));
     setConnectionTestState(null);
     setShowAddServer(true);
   }
@@ -1290,14 +1276,6 @@ export function App() {
               newServerTransport === "http"
                 ? parseHeadersText(newServerHeaders)
                 : undefined,
-            authorization:
-              newServerTransport === "http" &&
-              newServerAuthorization.trim()
-                ? newServerAuthorization.trim()
-                : undefined,
-            clearAuthorization:
-              newServerTransport === "http" &&
-              clearServerAuthorization,
           }),
         },
         90_000,
@@ -1358,12 +1336,6 @@ export function App() {
               newServerTransport === "http"
                 ? parseHeadersText(newServerHeaders)
                 : undefined,
-            authorization:
-              newServerTransport === "http" && newServerAuthorization.trim()
-                ? newServerAuthorization.trim()
-                : undefined,
-            clearAuthorization:
-              newServerTransport === "http" && clearServerAuthorization,
           }),
         },
       );
@@ -1397,8 +1369,6 @@ export function App() {
       setNewServerSecretEnv("");
       setNewServerUrl("");
       setNewServerHeaders("");
-      setNewServerAuthorization("");
-      setClearServerAuthorization(false);
       setConnectionTestState(null);
       await refresh();
     } catch (cause) {
@@ -1752,9 +1722,12 @@ export function App() {
                       <span>{server.transport.toUpperCase()}</span>
                       <span>{server.alias}</span>
                       <span>{upstream?.toolCount ?? 0} 个工具</span>
-                      {server.transport === "http" && server.hasAuthorization && (
-                        <span>Keychain 鉴权</span>
-                      )}
+                {/* Every header is plaintext config, so surface the count rather
+                    than singling out Authorization for a Keychain badge. */}
+                {server.transport === "http" &&
+                  Object.keys(server.headers ?? {}).length > 0 && (
+                    <span>{Object.keys(server.headers ?? {}).length} 个自定义 Header</span>
+                  )}
                       <span>{server.cwd || "默认工作目录"}</span>
                       {server.transport === "stdio" && (
                         <span>
@@ -2741,7 +2714,7 @@ export function App() {
             <div className="modalHeader">
               <div>
                 <h2>{editingServerId ? "编辑 MCP" : "添加 MCP"}</h2>
-                <p>{editingServerId ? "保存时会先断开当前连接，alias 保持不变。" : "支持 stdio 与 HTTP MCP；HTTP 凭据写入 macOS Keychain。"}</p>
+                <p>{editingServerId ? "保存时会先断开当前连接，alias 保持不变。" : "支持 stdio 与 HTTP MCP；HTTP 请求头在自定义 Header 中逐条配置。"}</p>
               </div>
               <button
                 className="iconButton"
@@ -2827,37 +2800,10 @@ export function App() {
                     spellCheck={false}
                   />
                   <small>
-                    随每次请求发送，保存在 servers.json。Authorization 请用下面的 Keychain 字段，
-                    不要写在这里，否则会以明文保存。
+                    随每次请求发送，以明文保存在 servers.json。Authorization 也直接写在这里
+                    （例如 Authorization=Bearer ...）；文件权限为 0600，仅当前用户可读。
                   </small>
                 </label>
-                <label className="field">
-                  <span>Authorization（可选）</span>
-                  <input
-                    type="password"
-                    value={newServerAuthorization}
-                    onChange={(event) => setNewServerAuthorization(event.target.value)}
-                    placeholder={
-                      editingServerId &&
-                      serverConfigs.find((item) => item.id === editingServerId)?.hasAuthorization
-                        ? "已保存在 Keychain，留空保持不变"
-                        : "Bearer ..."
-                    }
-                    autoComplete="off"
-                  />
-                  <small>只写入 macOS Keychain，不会保存到 servers.json 或回传到 UI。</small>
-                </label>
-                {editingServerId &&
-                  serverConfigs.find((item) => item.id === editingServerId)?.hasAuthorization && (
-                    <label className="checkField">
-                      <input
-                        type="checkbox"
-                        checked={clearServerAuthorization}
-                        onChange={(event) => setClearServerAuthorization(event.target.checked)}
-                      />
-                      <span>清除已保存的 Authorization</span>
-                    </label>
-                  )}
               </>
             )}
             {connectionTestState && (
