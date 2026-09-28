@@ -5,6 +5,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
@@ -37,30 +38,56 @@ function assertSupportedNode() {
 /**
  * pnpm is the canonical package manager for this repo (`packageManager` in
  * package.json). It is needed because `pnpm deploy` has no npm equivalent, so it
- * cannot simply be swapped for `npm -w`. Resolve it explicitly instead of
- * assuming it is on PATH — `corepack pnpm` works without `corepack enable`.
+ * cannot simply be swapped for `npm -w`.
+ *
+ * `pnpm deploy --legacy` is the flag the script relies on, and it was dropped by
+ * pnpm after 10.x. A bare `pnpm` on PATH may therefore be far older than the
+ * pinned version and reject the flag outright, so candidates are tried in order
+ * of trust — the pinned version via corepack first, then whatever PATH offers —
+ * and each one must actually support `deploy --legacy` before it is accepted.
+ * Relying on `--version` alone is not enough: an ancient pnpm still prints a
+ * version happily and then fails later, after half the staging has run.
  */
 function resolvePackageManager() {
+  const pinned = readPinnedPackageManager();
   const candidates = [
+    // `corepack pnpm@<version>` resolves the pinned release without requiring
+    // `corepack enable` or a shim on PATH.
+    ...(pinned ? [{ command: "corepack", prefix: [`pnpm@${pinned}`] }] : []),
     { command: "pnpm", prefix: [] },
-    { command: "corepack", prefix: ["pnpm"] },
+    ...(pinned ? [] : [{ command: "corepack", prefix: ["pnpm"] }]),
   ];
 
   for (const candidate of candidates) {
-    try {
-      execFileSync(candidate.command, [...candidate.prefix, "--version"], {
-        stdio: "ignore",
-      });
-      return candidate;
-    } catch {
-      // Try the next candidate.
-    }
+    if (supportsLegacyDeploy(candidate)) return candidate;
   }
 
   throw new Error(
-    "pnpm was not found. This repo declares pnpm@10.17.1 in package.json; run " +
-      "`corepack enable` (or install pnpm) and try again.",
+    `no usable pnpm was found. This repo pins ${pinned ?? "a pnpm version"} in ` +
+      "package.json; install it, or run `corepack enable`, and try again.",
   );
+}
+
+function readPinnedPackageManager() {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    const match = /^pnpm@(.+)$/.exec(pkg.packageManager ?? "");
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function supportsLegacyDeploy({ command, prefix }) {
+  try {
+    const help = execFileSync(command, [...prefix, "deploy", "--help"], {
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    });
+    return typeof help === "string" && help.includes("--legacy");
+  } catch {
+    return false;
+  }
 }
 
 function run(command, args, extraEnv) {
