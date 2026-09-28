@@ -23,6 +23,7 @@ export interface McpConnectionTestInput {
   secretEnvKeys?: unknown;
   secretEnv?: unknown;
   url?: unknown;
+  headers?: unknown;
   authorization?: unknown;
   clearAuthorization?: unknown;
 }
@@ -224,6 +225,14 @@ async function buildHttpTestConfig(
     input.authorization,
   );
 
+  // An omitted `headers` key keeps whatever the saved config has; an explicit —
+  // possibly empty — object replaces it, so a header can be removed by the test
+  // the same way the save form removes it.
+  let headers = existing?.transport === "http" ? existing.headers : undefined;
+  if (Object.prototype.hasOwnProperty.call(input, "headers")) {
+    headers = readHeaderConfig(input.headers);
+  }
+
   let authorization = suppliedAuthorization;
   if (
     !authorization &&
@@ -253,6 +262,7 @@ async function buildHttpTestConfig(
     alias: "connection-test",
     transport: "http",
     url,
+    headers,
     authSecretId,
     enabled: true,
     autoStart: false,
@@ -268,6 +278,35 @@ function createTestClient(
   return config.transport === "http"
     ? new HttpUpstreamClient(config, secrets)
     : new StdioUpstreamClient(config, secrets);
+}
+
+/**
+ * Mirrors the registry's header validation so a rejectable header fails the
+ * test with a readable message instead of surfacing later as an opaque
+ * transport error. The shape check is duplicated rather than shared because the
+ * registry's validator is module-private, and exporting it only for this would
+ * widen that module's surface for no other caller.
+ */
+function readHeaderConfig(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("headers must be an object");
+  }
+
+  const result: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(key)) {
+      throw new Error(`invalid HTTP header name: ${key}`);
+    }
+    if (typeof item !== "string") {
+      throw new Error(`header ${key} must be a string`);
+    }
+    if (/[\r\n]/.test(item)) {
+      throw new Error(`header ${key} contains a newline`);
+    }
+    result[key] = item;
+  }
+  return result;
 }
 
 function validateRequiredString(

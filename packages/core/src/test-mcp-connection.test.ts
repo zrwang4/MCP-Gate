@@ -262,3 +262,146 @@ test("connection test timeout disconnects the temporary client", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("connection test sends configured headers to the upstream", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-test-conn-headers-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const registry = new ServerRegistry(join(dir, "servers.json"), logger);
+    await registry.init();
+    const server = await registry.create({
+      name: "Apifox",
+      transport: "http",
+      url: "https://api.apifox.com/mcp",
+      headers: { "X-Apifox-Api-Version": "2025-09-01" },
+    });
+
+    const secrets = new MemorySecretStore();
+    let seenHeaders: Record<string, string> | undefined;
+
+    const factory: ConnectionTestClientFactory = async (config) => {
+      seenHeaders = config.transport === "http" ? config.headers : undefined;
+      return {
+        async connect() {},
+        async listTools() {
+          return [];
+        },
+        async disconnect() {},
+      };
+    };
+
+    await testMcpConnection(
+      { serverId: server.id, transport: "http", url: "https://api.apifox.com/mcp" },
+      registry,
+      secrets,
+      logger,
+      { factory },
+    );
+
+    // Apifox rejects a request without this header, so dropping it made the
+    // test report a false failure while the saved config worked fine.
+    assert.deepEqual(seenHeaders, { "X-Apifox-Api-Version": "2025-09-01" });
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("connection test uses supplied headers over the stored ones", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-test-conn-override-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const registry = new ServerRegistry(join(dir, "servers.json"), logger);
+    await registry.init();
+    const server = await registry.create({
+      name: "Apifox",
+      transport: "http",
+      url: "https://api.apifox.com/mcp",
+      headers: { "X-Apifox-Api-Version": "2025-09-01" },
+    });
+
+    const secrets = new MemorySecretStore();
+    let seenHeaders: Record<string, string> | undefined;
+
+    const factory: ConnectionTestClientFactory = async (config) => {
+      seenHeaders = config.transport === "http" ? config.headers : undefined;
+      return {
+        async connect() {},
+        async listTools() {
+          return [];
+        },
+        async disconnect() {},
+      };
+    };
+
+    await testMcpConnection(
+      {
+        serverId: server.id,
+        transport: "http",
+        url: "https://api.apifox.com/mcp",
+        headers: { "X-Apifox-Api-Version": "2026-01-01" },
+      },
+      registry,
+      secrets,
+      logger,
+      { factory },
+    );
+
+    assert.deepEqual(seenHeaders, { "X-Apifox-Api-Version": "2026-01-01" });
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("connection test rejects a header that would inject request lines", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-test-conn-inject-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const registry = new ServerRegistry(join(dir, "servers.json"), logger);
+    await registry.init();
+    const secrets = new MemorySecretStore();
+
+    await assert.rejects(
+      () =>
+        testMcpConnection(
+          {
+            transport: "http",
+            url: "https://example.com/mcp",
+            headers: { "X-Bad": "ok\r\nX-Injected: yes" },
+          },
+          registry,
+          secrets,
+          logger,
+        ),
+      /contains a newline/,
+    );
+
+    await assert.rejects(
+      () =>
+        testMcpConnection(
+          {
+            transport: "http",
+            url: "https://example.com/mcp",
+            headers: { "Bad Header Name": "ok" },
+          },
+          registry,
+          secrets,
+          logger,
+        ),
+      /invalid HTTP header name/,
+    );
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

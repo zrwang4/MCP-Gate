@@ -19,6 +19,23 @@ function hasHeaderKey(headers: Record<string, string>, key: string): boolean {
   return Object.keys(headers).some((name) => name.toLowerCase() === needle);
 }
 
+/**
+ * One Agent per timeout value. UpstreamManager builds a fresh client for every
+ * connect and reconnect attempt, so installing a new Agent each time would
+ * accumulate pool objects — and their idle sockets — for the lifetime of the
+ * process. Agents hold no per-server state, so sharing one per timeout is safe.
+ */
+const agentsByTimeout = new Map<number, Agent>();
+
+function dispatcherFor(connectTimeoutMs: number): Agent {
+  const existing = agentsByTimeout.get(connectTimeoutMs);
+  if (existing) return existing;
+
+  const agent = new Agent({ connect: { timeout: connectTimeoutMs } });
+  agentsByTimeout.set(connectTimeoutMs, agent);
+  return agent;
+}
+
 export class HttpUpstreamClient implements UpstreamClient {
   #config: HttpServerConfig;
   #client: Client | null = null;
@@ -90,9 +107,7 @@ export class HttpUpstreamClient implements UpstreamClient {
     if (Object.keys(headers).length > 0) {
       requestInit.headers = headers;
     }
-    setGlobalDispatcher(
-      new Agent({ connect: { timeout: this.#connectTimeoutMs } }),
-    );
+    setGlobalDispatcher(dispatcherFor(this.#connectTimeoutMs));
 
     const transport = new StreamableHTTPClientTransport(
       new URL(this.#config.url),
