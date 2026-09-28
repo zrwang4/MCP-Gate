@@ -66,6 +66,7 @@ interface ServerConfigInfo {
   env?: Record<string, string>;
   secretEnvKeys?: string[];
   url?: string;
+  headers?: Record<string, string>;
   hasAuthorization?: boolean;
   enabled: boolean;
   autoStart: boolean;
@@ -345,6 +346,41 @@ function parseEnvironmentText(text: string): Record<string, string> {
   return result;
 }
 
+function headersToText(values: Record<string, string> | undefined): string {
+  return environmentToText(values);
+}
+
+/**
+ * HTTP header names are RFC 7230 tokens, which allow the hyphens that env-var
+ * names forbid (`X-Apifox-Api-Version`). A CR or LF is refused because it would
+ * let a saved value inject extra request headers.
+ */
+function parseHeadersText(text: string): Record<string, string> {
+  const result: Record<string, string> = {};
+
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const separator = line.indexOf("=");
+    if (separator <= 0) {
+      throw new Error(`Header 格式错误：${line}`);
+    }
+
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1);
+    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(key)) {
+      throw new Error(`Header 名称无效：${key}`);
+    }
+    if (/[\r\n]/.test(value)) {
+      throw new Error(`Header ${key} 的值包含换行符`);
+    }
+    result[key] = value;
+  }
+
+  return result;
+}
+
 function formatTime(value: string | null): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -429,6 +465,7 @@ export function App() {
   const [newServerEnv, setNewServerEnv] = useState("");
   const [newServerSecretEnv, setNewServerSecretEnv] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
+  const [newServerHeaders, setNewServerHeaders] = useState("");
   const [newServerAuthorization, setNewServerAuthorization] = useState("");
   const [clearServerAuthorization, setClearServerAuthorization] = useState(false);
   const [configBusy, setConfigBusy] = useState(false);
@@ -1157,6 +1194,7 @@ export function App() {
     setNewServerEnv("");
     setNewServerSecretEnv("");
     setNewServerUrl("");
+    setNewServerHeaders("");
     setNewServerAuthorization("");
     setClearServerAuthorization(false);
     setConnectionTestState(null);
@@ -1173,6 +1211,17 @@ export function App() {
     setNewServerEnv(environmentToText(server.env));
     setNewServerSecretEnv(secretEnvironmentToText(server.secretEnvKeys));
     setNewServerUrl(server.url ?? "");
+    // Authorization rides in the dedicated Keychain field, so it is hidden here
+    // rather than echoed back as plaintext.
+    setNewServerHeaders(
+      headersToText(
+        Object.fromEntries(
+          Object.entries(server.headers ?? {}).filter(
+            ([key]) => key.toLowerCase() !== "authorization",
+          ),
+        ),
+      ),
+    );
     setNewServerAuthorization("");
     setClearServerAuthorization(false);
     setConnectionTestState(null);
@@ -1236,6 +1285,10 @@ export function App() {
             url:
               newServerTransport === "http"
                 ? newServerUrl.trim()
+                : undefined,
+            headers:
+              newServerTransport === "http"
+                ? parseHeadersText(newServerHeaders)
                 : undefined,
             authorization:
               newServerTransport === "http" &&
@@ -1301,6 +1354,10 @@ export function App() {
               : undefined,
             cwd: newServerTransport === "stdio" ? (newServerCwd.trim() || undefined) : undefined,
             url: newServerTransport === "http" ? newServerUrl.trim() : undefined,
+            headers:
+              newServerTransport === "http"
+                ? parseHeadersText(newServerHeaders)
+                : undefined,
             authorization:
               newServerTransport === "http" && newServerAuthorization.trim()
                 ? newServerAuthorization.trim()
@@ -1339,6 +1396,7 @@ export function App() {
       setNewServerEnv("");
       setNewServerSecretEnv("");
       setNewServerUrl("");
+      setNewServerHeaders("");
       setNewServerAuthorization("");
       setClearServerAuthorization(false);
       setConnectionTestState(null);
@@ -2758,6 +2816,20 @@ export function App() {
                     onChange={(event) => setNewServerUrl(event.target.value)}
                     placeholder="https://example.com/mcp"
                   />
+                </label>
+                <label className="field">
+                  <span>自定义 Header（每行 KEY=VALUE）</span>
+                  <textarea
+                    value={newServerHeaders}
+                    onChange={(event) => setNewServerHeaders(event.target.value)}
+                    rows={3}
+                    placeholder={"X-Apifox-Api-Version=2025-09-01\nX-Custom-Header=value"}
+                    spellCheck={false}
+                  />
+                  <small>
+                    随每次请求发送，保存在 servers.json。Authorization 请用下面的 Keychain 字段，
+                    不要写在这里，否则会以明文保存。
+                  </small>
                 </label>
                 <label className="field">
                   <span>Authorization（可选）</span>

@@ -43,7 +43,7 @@ async function main(): Promise<void> {
     toolRegistry,
     (serverConfig) =>
       serverConfig.transport === "http"
-        ? new HttpUpstreamClient(serverConfig, secrets)
+        ? new HttpUpstreamClient(serverConfig, secrets, config.connectionTimeoutMs)
         : new StdioUpstreamClient(serverConfig, secrets),
     logger,
     { audit },

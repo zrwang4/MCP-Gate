@@ -1,3 +1,4 @@
+import { Agent } from "undici";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -23,11 +24,18 @@ export class HttpUpstreamClient implements UpstreamClient {
   #client: Client | null = null;
   #transport: StreamableHTTPClientTransport | null = null;
   #secrets: SecretStore;
+  /** Connect timeout, in milliseconds. Node's built-in fetch hard-codes 10s. */
+  #connectTimeoutMs: number;
   #lifecycleHandlers: UpstreamLifecycleHandlers = {};
 
-  constructor(config: HttpServerConfig, secrets: SecretStore) {
+  constructor(
+    config: HttpServerConfig,
+    secrets: SecretStore,
+    connectTimeoutMs = 60_000,
+  ) {
     this.#config = config;
     this.#secrets = secrets;
+    this.#connectTimeoutMs = connectTimeoutMs;
   }
 
   setLifecycleHandlers(handlers: UpstreamLifecycleHandlers): void {
@@ -44,8 +52,13 @@ export class HttpUpstreamClient implements UpstreamClient {
         version: CORE_VERSION,
       },
       {
+        // 'legacy' is the SDK default and the plain initialize handshake every
+        // MCP server supports. The 'auto' mode first probes with
+        // `server/discover`, and a server that does not answer that (Apifox,
+        // among others) makes the probe hang until the full request timeout,
+        // so connecting would take a minute instead of milliseconds.
         versionNegotiation: {
-          mode: "auto",
+          mode: "legacy",
         },
       },
     );
@@ -68,11 +81,21 @@ export class HttpUpstreamClient implements UpstreamClient {
       headers.Authorization = authorization;
     }
 
+    // Node's built-in fetch hard-codes a 10s connect timeout with no way to
+    // change it, which is too tight for slow remote MCP endpoints. undici's
+    // Agent lets us honour connectionTimeoutMs instead. request-level timeouts
+    // stay with the transport so a slow response is still bounded separately.
+    const requestInit: RequestInit & { dispatcher?: unknown } = {};
+    if (Object.keys(headers).length > 0) {
+      requestInit.headers = headers;
+    }
+    requestInit.dispatcher = new Agent({
+      connect: { timeout: this.#connectTimeoutMs },
+    });
+
     const transport = new StreamableHTTPClientTransport(
       new URL(this.#config.url),
-      Object.keys(headers).length > 0
-        ? { requestInit: { headers } }
-        : undefined,
+      { requestInit },
     );
 
     this.#client = client;
