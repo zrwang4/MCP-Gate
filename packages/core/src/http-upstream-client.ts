@@ -1,4 +1,4 @@
-import { Agent } from "undici";
+import { Agent, setGlobalDispatcher } from "undici";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -81,17 +81,18 @@ export class HttpUpstreamClient implements UpstreamClient {
       headers.Authorization = authorization;
     }
 
-    // Node's built-in fetch hard-codes a 10s connect timeout with no way to
-    // change it, which is too tight for slow remote MCP endpoints. undici's
-    // Agent lets us honour connectionTimeoutMs instead. request-level timeouts
-    // stay with the transport so a slow response is still bounded separately.
-    const requestInit: RequestInit & { dispatcher?: unknown } = {};
+    // Node's built-in fetch hard-codes a 10s connect timeout that cannot be
+    // changed per request — `requestInit.dispatcher` is silently rejected by
+    // it. An Agent must be installed as the global dispatcher instead, so slow
+    // remote endpoints get the headroom connectionTimeoutMs promises. Request
+    // timeouts stay with the transport and are bounded separately.
+    const requestInit: RequestInit = {};
     if (Object.keys(headers).length > 0) {
       requestInit.headers = headers;
     }
-    requestInit.dispatcher = new Agent({
-      connect: { timeout: this.#connectTimeoutMs },
-    });
+    setGlobalDispatcher(
+      new Agent({ connect: { timeout: this.#connectTimeoutMs } }),
+    );
 
     const transport = new StreamableHTTPClientTransport(
       new URL(this.#config.url),
