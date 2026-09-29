@@ -1,4 +1,10 @@
 import type { McpServerConfig } from "./server-registry.ts";
+import {
+  json,
+  readJsonBody,
+  requireDesktopClient,
+  type RouteHandler,
+} from "./management-context.ts";
 
 let profileMutationTail: Promise<void> = Promise.resolve();
 
@@ -18,13 +24,6 @@ async function serializeProfileMutation<T>(
     release();
   }
 }
-import {
-  json,
-  readJsonBody,
-  requireDesktopClient,
-  type RouteHandler,
-} from "./management-context.ts";
-
 export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
   const profileMatch = url.pathname.match(
     /^\/api\/profiles\/([0-9a-f-]+)$/i,
@@ -110,14 +109,17 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     const [, profileId, action] = profileActionMatch;
-    const profile = ctx.profiles.get(profileId);
-    if (!profile) {
-      json(res, 404, { error: "profile not found" });
-      return true;
-    }
 
     try {
       await serializeProfileMutation(async () => {
+        // Re-read after waiting for the mutation lock. Another request may
+        // have updated or deleted this profile while we were queued.
+        const profile = ctx.profiles.get(profileId);
+        if (!profile) {
+          json(res, 404, { error: "profile not found" });
+          return;
+        }
+
         const result =
           action === "activate"
             ? await ctx.upstreams.applyExactSet(profile.serverIds)
@@ -147,14 +149,17 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     const profileId = profileMatch[1];
-    const profile = ctx.profiles.get(profileId);
-    if (!profile) {
-      json(res, 404, { error: "profile not found" });
-      return true;
-    }
 
     try {
       await serializeProfileMutation(async () => {
+        // Re-read after waiting for the mutation lock to avoid acting on a
+        // profile snapshot that another request has already changed.
+        const profile = ctx.profiles.get(profileId);
+        if (!profile) {
+          json(res, 404, { error: "profile not found" });
+          return;
+        }
+
         const wasActive = ctx.profiles.activeProfileId === profileId;
         const result = wasActive
           ? await ctx.upstreams.disconnectSet(profile.serverIds)
