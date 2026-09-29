@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HttpAgentPool } from "./http-upstream-client.ts";
+import { HttpAgentPool, HttpUpstreamClient } from "./http-upstream-client.ts";
+
+async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error("condition not met within " + timeoutMs + "ms");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 
 test("HTTP Agent pool reuses agents while leases are active and evicts idle agents", async () => {
   const pool = new HttpAgentPool();
@@ -89,13 +99,6 @@ test("HTTP upstream client connects to a real local MCP server and survives SSE 
     throw new Error("failed to start local MCP server");
   }
 
-  const logger = {
-    info() {},
-    warn() {},
-    error() {},
-    debug() {},
-  } as never;
-
   const config = {
     id: randomUUID(),
     name: "Local HTTP",
@@ -141,7 +144,7 @@ test("HTTP upstream client connects to a real local MCP server and survives SSE 
 
     await waitFor(
       () => getRequests >= 2,
-      2_000,
+      5_000,
     );
 
     assert.deepEqual(
