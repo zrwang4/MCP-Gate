@@ -10,6 +10,7 @@ import { ProfileStore } from "./profile-store.ts";
 import { ServerRegistry } from "./server-registry.ts";
 import { ServerService } from "./server-service.ts";
 import { ProfileService } from "./profile-service.ts";
+import { MutationQueue } from "./mutation-queue.ts";
 import { createPlatformSecretStore } from "./secret-store.ts";
 import { ToolPolicyStore } from "./tool-policy-store.ts";
 import { ToolRegistry } from "./tool-registry.ts";
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
     config.gatewayAccessFile,
     secrets,
     logger,
+    mutations,
   );
   await gatewayAccess.init();
   const upstreams = new UpstreamManager(
@@ -59,10 +61,12 @@ async function main(): Promise<void> {
     secrets,
     logger,
   );
+  const mutations = new MutationQueue();
   const profileService = new ProfileService(
     profiles,
     registry,
     upstreams,
+    mutations,
   );
   const gateway = new GatewayServer(
     config,
