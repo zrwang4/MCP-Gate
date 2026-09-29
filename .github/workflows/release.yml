@@ -233,6 +233,7 @@ jobs:
           set -euo pipefail
           cd release-assets
 
+          sha256sum *.dmg *.zip > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Create or update draft GitHub Release
