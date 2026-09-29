@@ -21,6 +21,7 @@ import { handleLogs } from "./management-route-logs.ts";
 import type { GatewayAccessController } from "./gateway-access.ts";
 import type { GatewayServer } from "./gateway-server.ts";
 import type { ServerRegistry } from "./server-registry.ts";
+import type { ServerService } from "./server-service.ts";
 import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
@@ -66,6 +67,7 @@ export class ManagementServer {
   #gateway: GatewayServer;
   #gatewayAccess: GatewayAccessController;
   #registry: ServerRegistry;
+  #servers: ServerService;
   #profiles: ProfileStore;
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
@@ -81,6 +83,7 @@ export class ManagementServer {
     gateway: GatewayServer,
     gatewayAccess: GatewayAccessController,
     registry: ServerRegistry,
+    servers: ServerService,
     profiles: ProfileStore,
     upstreams: UpstreamManager,
     tools: ToolRegistry,
@@ -93,6 +96,7 @@ export class ManagementServer {
     this.#gateway = gateway;
     this.#gatewayAccess = gatewayAccess;
     this.#registry = registry;
+    this.#servers = servers;
     this.#profiles = profiles;
     this.#upstreams = upstreams;
     this.#tools = tools;
@@ -189,6 +193,7 @@ export class ManagementServer {
       gateway: this.#gateway,
       gatewayAccess: this.#gatewayAccess,
       registry: this.#registry,
+      servers: this.#servers,
       profiles: this.#profiles,
       upstreams: this.#upstreams,
       tools: this.#tools,
