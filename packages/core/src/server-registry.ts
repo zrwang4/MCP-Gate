@@ -228,6 +228,10 @@ export class ServerRegistry {
     const server = this.#servers.find((item) => item.id === id);
     if (!server) return undefined;
 
+    const previousEnabled = server.enabled;
+    const previousAutoStart = server.autoStart;
+    const previousUpdatedAt = server.updatedAt;
+
     if (input.enabled !== undefined) {
       if (typeof input.enabled !== "boolean") {
         throw new Error("enabled must be a boolean");
@@ -242,9 +246,6 @@ export class ServerRegistry {
       server.autoStart = input.autoStart;
     }
 
-    const previousEnabled = server.enabled;
-    const previousAutoStart = server.autoStart;
-    const previousUpdatedAt = server.updatedAt;
     server.updatedAt = new Date().toISOString();
     try {
       await this.#persist();
