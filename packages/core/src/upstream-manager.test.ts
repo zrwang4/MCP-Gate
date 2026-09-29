@@ -363,6 +363,11 @@ test("upstream manager retains a failed disconnect for retry", async () => {
     assert.equal(failed?.lastError, "close failed");
     assert.equal(failed?.toolCount, 1);
 
+    await assert.rejects(
+      upstreams.connect(config.id),
+      /must be disconnected successfully before reconnecting/,
+    );
+
     await upstreams.disconnect(config.id);
 
     const stopped = upstreams.list().find((item) => item.id === config.id);
