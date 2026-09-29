@@ -193,6 +193,7 @@ export class ManagementServer {
           version: CORE_VERSION,
           startedAt: this.#startedAt,
           logFile: this.#logger.filePath,
+          sessionIdleTimeoutMs: this.#config.sessionIdleTimeoutMs,
         },
         gateway: this.#gateway.snapshot(),
         management: {
