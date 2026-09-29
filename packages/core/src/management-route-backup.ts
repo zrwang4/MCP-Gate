@@ -26,7 +26,7 @@ async function readJsonOrDefault(path: string, fallback: unknown): Promise<unkno
   }
 }
 
-function validateBundle(value: unknown): BackupBundle {
+export function validateBackupBundle(value: unknown): BackupBundle {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("backup must be a JSON object");
   }
@@ -139,7 +139,7 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
 
     try {
       const body = await readJsonBody(req, 1024 * 1024);
-      const backup = validateBundle((body as { backup?: unknown }).backup ?? body);
+      const backup = validateBackupBundle((body as { backup?: unknown }).backup ?? body);
 
       await writeJsonWithBackup(
         backup.servers,
