@@ -196,8 +196,20 @@ export class ProfileService {
         };
       }
 
-      const removed = await this.#store.remove(id);
-      if (!removed) throw new Error("profile not found");
+      try {
+        const removed = await this.#store.remove(id);
+        if (!removed) throw new Error("profile not found");
+      } catch (error) {
+        if (wasActive) {
+          const rollback = await this.#reconciler.applyExactSet(profile.serverIds);
+          if (rollback.failed.length > 0) {
+            throw new Error(
+              `profile deletion failed: ${error instanceof Error ? error.message : String(error)}; runtime rollback failures=${rollback.failed.length}`,
+            );
+          }
+        }
+        throw error;
+      }
 
       return {
         ok: true,
