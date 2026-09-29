@@ -39,6 +39,13 @@ export function buildDiagnosticSnapshot(input: DiagnosticSnapshotInput) {
       coreVersion: input.coreVersion,
       coreStartedAt: input.coreStartedAt,
       nodeVersion: process.version,
+      memory: {
+        rssBytes: process.memoryUsage().rss,
+        heapUsedBytes: process.memoryUsage().heapUsed,
+        heapTotalBytes: process.memoryUsage().heapTotal,
+        externalBytes: process.memoryUsage().external,
+        arrayBuffersBytes: process.memoryUsage().arrayBuffers ?? 0,
+      },
       platform: platform(),
       arch: arch(),
       osRelease: release(),
