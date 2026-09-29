@@ -111,3 +111,43 @@ test("loads persisted audit history across restarts and preserves filters", asyn
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("rotates the active audit file after it crosses the size limit", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-audit-rotate-"));
+  try {
+    const file = join(dir, "audit.jsonl");
+    const audit = new AuditLogger(file, 2);
+    await audit.init();
+
+    audit.record({
+      source: "tester",
+      publicName: "remote__large",
+      serverId: "server-1",
+      serverAlias: "remote",
+      originalName: "large",
+      success: false,
+      durationMs: 1,
+      error: "x".repeat(5 * 1024 * 1024),
+    });
+    await audit.flush();
+
+    audit.record({
+      source: "tester",
+      publicName: "remote__after",
+      serverId: "server-1",
+      serverAlias: "remote",
+      originalName: "after",
+      success: true,
+      durationMs: 1,
+    });
+    await audit.flush();
+
+    const rotated = await readFile(file + ".1", "utf8");
+    const current = await readFile(file, "utf8");
+    assert.match(rotated, /"publicName":"remote__large"/);
+    assert.match(current, /remote__after/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
