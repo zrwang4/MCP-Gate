@@ -9,6 +9,7 @@ import type {
   McpServerConfig,
   ServerRegistry,
 } from "./server-registry.ts";
+import type { ServerService } from "./server-service.ts";
 import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
