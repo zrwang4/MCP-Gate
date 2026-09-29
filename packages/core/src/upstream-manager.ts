@@ -161,11 +161,18 @@ export class UpstreamManager {
   async disconnect(id: string): Promise<UpstreamSnapshot> {
     this.syncConfigs();
     const runtime = this.#requireRuntime(id);
-    if (this.#busy.has(id)) throw new Error("upstream action already in progress");
 
+    // Invalidate an in-flight connect before checking the action lock. This is
+    // important for config edits: the caller may intentionally ignore the
+    // "action already in progress" result after requesting a stop, but the
+    // in-flight connect must still become stale and clean itself up.
     runtime.desiredConnected = false;
     runtime.generation += 1;
     this.#cancelReconnect(runtime, true);
+
+    if (this.#busy.has(id)) {
+      throw new Error("upstream action already in progress");
+    }
 
     this.#busy.add(id);
     runtime.status = "stopping";
@@ -442,10 +449,17 @@ export class UpstreamManager {
 
     const generation = runtime.generation + 1;
     runtime.generation = generation;
+    const config = runtime.config;
     let retryAfterFailure = false;
 
     try {
-      const client = await this.#factory(runtime.config);
+      const client = await this.#factory(config);
+
+      if (!this.#isConnectCurrent(runtime, generation, config)) {
+        await client.disconnect().catch(() => undefined);
+        throw new Error("upstream connect superseded");
+      }
+
       runtime.client = client;
 
       client.setLifecycleHandlers?.({
@@ -458,12 +472,33 @@ export class UpstreamManager {
       });
 
       await client.connect();
+
+      if (!this.#isConnectCurrent(runtime, generation, config)) {
+        runtime.client = null;
+        await client.disconnect().catch(() => undefined);
+        throw new Error("upstream connect superseded");
+      }
+
       const tools = await client.listTools();
+
+      if (!this.#isConnectCurrent(runtime, generation, config)) {
+        runtime.client = null;
+        await client.disconnect().catch(() => undefined);
+        throw new Error("upstream connect superseded");
+      }
+
       const routes = this.#tools.replaceServerTools(
-        runtime.config.id,
-        runtime.config.alias,
+        config.id,
+        config.alias,
         tools,
       );
+
+      if (!this.#isConnectCurrent(runtime, generation, config)) {
+        runtime.client = null;
+        this.#tools.removeServer(id);
+        await client.disconnect().catch(() => undefined);
+        throw new Error("upstream connect superseded");
+      }
 
       runtime.toolCount = routes.length;
       runtime.status = "running";
@@ -478,6 +513,19 @@ export class UpstreamManager {
       return this.#snapshot(runtime);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+
+      // A newer generation owns this runtime now. Do not let an older connect
+      // failure erase its status/tools or schedule a retry for it.
+      if (runtime.generation !== generation) {
+        if (!runtime.desiredConnected && !runtime.client) {
+          runtime.status = "stopped";
+          runtime.toolCount = 0;
+          runtime.nextRetryAt = null;
+          this.#tools.removeServer(id);
+        }
+        throw error;
+      }
+
       runtime.lastError = message;
       runtime.status = "error";
       runtime.toolCount = 0;
@@ -556,6 +604,19 @@ export class UpstreamManager {
       `connection lost: ${runtime.config.name}; automatic reconnect scheduled`,
     );
     this.#scheduleReconnect(runtime);
+  }
+
+  #isConnectCurrent(
+    runtime: Runtime,
+    generation: number,
+    config: McpServerConfig,
+  ): boolean {
+    return (
+      runtime.generation === generation &&
+      runtime.desiredConnected &&
+      runtime.config === config &&
+      config.enabled
+    );
   }
 
   #scheduleReconnect(runtime: Runtime): void {
