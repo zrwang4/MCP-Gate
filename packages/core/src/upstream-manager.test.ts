@@ -318,6 +318,65 @@ test("upstream status polling does not cancel an in-flight connect", async () =>
 
 
 
+
+
+test("upstream manager discards a stale tool refresh after disconnect", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Refresh", command: "fake" });
+
+    const tools = new ToolRegistry();
+    let releaseListTools: (() => void) | undefined;
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {},
+        async disconnect() {},
+        async listTools() {
+          if (!releaseListTools) {
+            await new Promise<void>((resolve) => {
+              releaseListTools = resolve;
+            });
+          }
+          return [{ name: "stale_tool" }];
+        },
+        async callTool() {
+          return {
+            content: [{ type: "text" as const, text: "ok" }],
+          };
+        },
+      }),
+      logger,
+    );
+
+    await upstreams.connect(config.id);
+
+    const refreshing = upstreams.refreshTools(config.id);
+    await waitFor(() => releaseListTools !== undefined);
+
+    await upstreams.disconnect(config.id);
+    releaseListTools?.();
+
+    await assert.rejects(refreshing, /upstream refresh superseded/);
+
+    const snapshot = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(snapshot?.status, "stopped");
+    assert.equal(snapshot?.toolCount, 0);
+    assert.equal(tools.list().length, 0);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("upstream manager retains a failed disconnect for retry", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
   let logger: CoreLogger | null = null;
