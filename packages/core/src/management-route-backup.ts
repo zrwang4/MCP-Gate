@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, unlink } from "node:fs/promises";
 import { dirname, basename } from "node:path";
 import { writeJsonWithBackup } from "./atomic-write.ts";
 import { json, readJsonBody, requireDesktopClient, type RouteHandler } from "./management-context.ts";
@@ -99,6 +99,93 @@ export function validateBackupBundle(value: unknown): BackupBundle {
   };
 }
 
+
+interface BackupRestoreTarget {
+  path: string;
+  value: unknown;
+}
+
+interface ExistingState {
+  path: string;
+  existed: boolean;
+  value?: unknown;
+}
+
+type JsonWriter = typeof writeJsonWithBackup;
+
+async function captureExistingState(path: string): Promise<ExistingState> {
+  try {
+    return {
+      path,
+      existed: true,
+      value: JSON.parse(await readFile(path, "utf8")),
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { path, existed: false };
+    }
+    throw error;
+  }
+}
+
+export async function restoreConfigurationFiles(
+  targets: BackupRestoreTarget[],
+  logger: Parameters<JsonWriter>[1]["logger"],
+  writer: JsonWriter = writeJsonWithBackup,
+): Promise<void> {
+  const previous = await Promise.all(
+    targets.map((target) => captureExistingState(target.path)),
+  );
+  const attempted: ExistingState[] = [];
+
+  try {
+    for (const target of targets) {
+      const state = previous[attempted.length];
+      if (!state) throw new Error("backup restore target/state mismatch");
+      attempted.push(state);
+
+      await writer(target.value, {
+        directory: dirname(target.path),
+        fileName: basename(target.path),
+        logger,
+      });
+    }
+  } catch (error) {
+    const rollbackErrors: string[] = [];
+
+    for (let index = attempted.length - 1; index >= 0; index -= 1) {
+      const state = attempted[index];
+      try {
+        if (state.existed) {
+          await writer(state.value, {
+            directory: dirname(state.path),
+            fileName: basename(state.path),
+            logger,
+          });
+        } else {
+          await unlink(state.path).catch((rollbackError) => {
+            if ((rollbackError as NodeJS.ErrnoException).code !== "ENOENT") {
+              throw rollbackError;
+            }
+          });
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(
+          `${state.path}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+        );
+      }
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    if (rollbackErrors.length > 0) {
+      throw new Error(
+        `configuration restore failed: ${message}; rollback failed for ${rollbackErrors.length} file(s)`,
+      );
+    }
+    throw error;
+  }
+}
+
 export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
   if (req.method === "GET" && url.pathname === "/api/backup/export") {
     await ctx.mutations.run(async () => {
@@ -143,31 +230,16 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
       const backup = validateBackupBundle((body as { backup?: unknown }).backup ?? body);
 
       await ctx.mutations.run(async () => {
-        await writeJsonWithBackup(backup.servers, {
-          directory: dirname(ctx.config.serverConfigFile),
-          fileName: basename(ctx.config.serverConfigFile),
-          logger: ctx.logger,
-        });
-        await writeJsonWithBackup(backup.profiles, {
-          directory: dirname(ctx.config.profileFile),
-          fileName: basename(ctx.config.profileFile),
-          logger: ctx.logger,
-        });
-        await writeJsonWithBackup(backup.toolPolicy, {
-          directory: dirname(ctx.config.toolPolicyFile),
-          fileName: basename(ctx.config.toolPolicyFile),
-          logger: ctx.logger,
-        });
-        await writeJsonWithBackup(backup.gatewayAccess, {
-          directory: dirname(ctx.config.gatewayAccessFile),
-          fileName: basename(ctx.config.gatewayAccessFile),
-          logger: ctx.logger,
-        });
-        await writeJsonWithBackup(backup.sessionSettings, {
-          directory: dirname(ctx.config.sessionSettingsFile),
-          fileName: basename(ctx.config.sessionSettingsFile),
-          logger: ctx.logger,
-        });
+        await restoreConfigurationFiles(
+          [
+            { path: ctx.config.serverConfigFile, value: backup.servers },
+            { path: ctx.config.profileFile, value: backup.profiles },
+            { path: ctx.config.toolPolicyFile, value: backup.toolPolicy },
+            { path: ctx.config.gatewayAccessFile, value: backup.gatewayAccess },
+            { path: ctx.config.sessionSettingsFile, value: backup.sessionSettings },
+          ],
+          ctx.logger,
+        );
 
         ctx.logger.info("backup", "configuration backup restored; Core restart required");
       });
