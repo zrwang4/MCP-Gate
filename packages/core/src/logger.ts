@@ -16,10 +16,10 @@ export class CoreLogger {
   #nextSeq = 1;
   #maxEntries: number;
   #logFile: string;
-  #writeQueue: Promise<void> = Promise.resolve();
   #pendingLines: string[] = [];
   #pendingBytes = 0;
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
+  #flushPromise: Promise<void> | null = null;
 
   constructor(logFile: string, maxEntries = 1000) {
     this.#logFile = logFile;
@@ -94,7 +94,6 @@ export class CoreLogger {
       this.#flushTimer = null;
     }
     await this.#flushPending();
-    await this.#writeQueue;
   }
 
   #scheduleFlush(): void {
@@ -111,12 +110,27 @@ export class CoreLogger {
     const batch = this.#pendingLines.join("");
     this.#pendingLines = [];
     this.#pendingBytes = 0;
-    this.#writeQueue = this.#writeQueue
-      .then(() => appendFile(this.#logFile, batch, "utf8"))
-      .catch((error) => {
-        console.error(`[logger] failed to write log file: ${String(error)}`);
-      });
-    await this.#writeQueue;
+    if (this.#flushPromise) return this.#flushPromise;
+
+    this.#flushPromise = (async () => {
+      while (this.#pendingLines.length > 0) {
+        const nextBatch = this.#pendingLines.join("");
+        this.#pendingLines = [];
+        this.#pendingBytes = 0;
+        try {
+          await appendFile(this.#logFile, nextBatch, "utf8");
+        } catch (error) {
+          console.error(`[logger] failed to write log file: ${String(error)}`);
+        }
+      }
+    })().finally(() => {
+      this.#flushPromise = null;
+      if (this.#pendingLines.length > 0) {
+        void this.#flushPending();
+      }
+    });
+
+    return this.#flushPromise;
   }
   async #loadExisting(): Promise<void> {
     try {
