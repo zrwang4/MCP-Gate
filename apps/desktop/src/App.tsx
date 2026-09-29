@@ -494,6 +494,7 @@ export function App() {
   const [logFollow, setLogFollow] = useState(true);
   const liveRefreshInFlight = useRef(false);
   const catalogRefreshInFlight = useRef(false);
+  const managementConnectedRef = useRef(false);
   const lastLogSeqRef = useRef(0);
   const lastAuditSeqRef = useRef(0);
   const coreStartedAtRef = useRef<string | null>(null);
@@ -542,9 +543,12 @@ export function App() {
       lastLogSeqRef.current = logsResult.entries.at(-1)?.seq ?? 0;
       lastAuditSeqRef.current = auditResult.entries.at(-1)?.seq ?? 0;
       coreStartedAtRef.current = statusResult.core.startedAt;
+      managementConnectedRef.current = true;
+      managementConnectedRef.current = true;
       setManagementConnected(true);
       setError(null);
     } catch (cause) {
+      managementConnectedRef.current = false;
       setManagementConnected(false);
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -556,6 +560,16 @@ export function App() {
   const refreshLiveState = useCallback(async () => {
     if (liveRefreshInFlight.current) return;
     liveRefreshInFlight.current = true;
+
+    if (!managementConnectedRef.current) {
+      try {
+        await refresh();
+      } finally {
+        liveRefreshInFlight.current = false;
+        void refreshCoreRuntime();
+      }
+      return;
+    }
 
     try {
       const [statusResult, upstreamsResult] = await Promise.all([
@@ -608,13 +622,14 @@ export function App() {
       setManagementConnected(true);
       setError(null);
     } catch (cause) {
+      managementConnectedRef.current = false;
       setManagementConnected(false);
       setError((current) => current ?? (cause instanceof Error ? cause.message : String(cause)));
     } finally {
       liveRefreshInFlight.current = false;
       void refreshCoreRuntime();
     }
-  }, [refreshCatalog, refreshCoreRuntime, managementConnected]);
+  }, [refresh, refreshCoreRuntime]);
   const refreshCatalog = useCallback(async () => {
     if (catalogRefreshInFlight.current) return;
     catalogRefreshInFlight.current = true;
