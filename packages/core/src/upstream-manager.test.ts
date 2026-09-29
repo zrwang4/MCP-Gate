@@ -377,6 +377,68 @@ test("upstream manager discards a stale tool refresh after disconnect", async ()
   }
 });
 
+test("upstream manager retains a client when failed connect cleanup also fails", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Connect Cleanup", command: "fake" });
+
+    const tools = new ToolRegistry();
+    let connectCalls = 0;
+    let disconnectCalls = 0;
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {
+          connectCalls += 1;
+          throw new Error("connect failed");
+        },
+        async disconnect() {
+          disconnectCalls += 1;
+          if (disconnectCalls === 1) throw new Error("cleanup failed");
+        },
+        async listTools() {
+          return [];
+        },
+        async callTool() {
+          return {
+            content: [{ type: "text" as const, text: "ok" }],
+          };
+        },
+      }),
+      logger,
+    );
+
+    await assert.rejects(upstreams.connect(config.id), /connect failed/);
+
+    const failed = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(failed?.status, "error");
+    assert.equal(failed?.lastError, "connect failed");
+
+    await assert.rejects(
+      upstreams.connect(config.id),
+      /must be disconnected successfully before reconnecting/,
+    );
+
+    await upstreams.disconnect(config.id);
+    const stopped = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(stopped?.status, "stopped");
+    assert.equal(disconnectCalls, 2);
+    assert.equal(connectCalls, 1);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+
 test("upstream manager retains a failed disconnect for retry", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
   let logger: CoreLogger | null = null;
