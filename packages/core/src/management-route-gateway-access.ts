@@ -19,9 +19,9 @@ export const handleGatewayAccess: RouteHandler = async (req, res, url, ctx) => {
   ) {
     if (!requireDesktopClient(req, res)) return true;
 
-    const previous = ctx.gatewayAccess.snapshot().lanEnabled;
     await ctx.mutations.run(async () => {
-    try {
+      const previous = ctx.gatewayAccess.snapshot().lanEnabled;
+      try {
         const body = await readJsonBody(req) as { enabled?: unknown };
         if (typeof body.enabled !== "boolean") {
           throw new Error("enabled must be a boolean");
@@ -35,14 +35,10 @@ export const handleGatewayAccess: RouteHandler = async (req, res, url, ctx) => {
           access: ctx.gatewayAccess.snapshot(),
           gateway: ctx.gateway.snapshot(),
         });
-
-    } catch (error) {
-
+      } catch (error) {
         const current = ctx.gatewayAccess.snapshot().lanEnabled;
         if (current !== previous) {
-          await ctx.gatewayAccess
-            .setLanEnabled(previous)
-            .catch(() => undefined);
+          await ctx.gatewayAccess.setLanEnabled(previous).catch(() => undefined);
           await ctx.gateway.stop().catch(() => undefined);
           await ctx.gateway.start().catch(() => undefined);
         }
@@ -52,12 +48,10 @@ export const handleGatewayAccess: RouteHandler = async (req, res, url, ctx) => {
           gateway: ctx.gateway.snapshot(),
         });
       }
-      return true;
-    }
-
-
-    }
     });
+    return true;
+  }
+
   if (
     req.method === "POST" &&
     url.pathname === "/api/gateway-access/rotate"
@@ -65,25 +59,21 @@ export const handleGatewayAccess: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     await ctx.mutations.run(async () => {
-    try {
+      try {
         const rotated = await ctx.gatewayAccess.rotate();
         json(res, 200, {
           access: rotated.snapshot,
           apiKey: rotated.apiKey,
         });
-
-    } catch (error) {
-
+      } catch (error) {
         json(res, 500, {
           error: error instanceof Error ? error.message : String(error),
         });
       }
-      return true;
-    }
-
-
-    }
     });
+    return true;
+  }
+
   if (
     req.method === "POST" &&
     url.pathname === "/api/gateway-access/disable"
@@ -91,7 +81,7 @@ export const handleGatewayAccess: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     await ctx.mutations.run(async () => {
-    try {
+      try {
         const wasLanEnabled = ctx.gatewayAccess.snapshot().lanEnabled;
         const access = await ctx.gatewayAccess.disable();
 
@@ -104,18 +94,14 @@ export const handleGatewayAccess: RouteHandler = async (req, res, url, ctx) => {
           access,
           gateway: ctx.gateway.snapshot(),
         });
-
-    } catch (error) {
-
+      } catch (error) {
         json(res, 500, {
           error: error instanceof Error ? error.message : String(error),
         });
       }
-      return true;
-    }
-
-
-    }
     });
+    return true;
+  }
+
   return false;
 };
