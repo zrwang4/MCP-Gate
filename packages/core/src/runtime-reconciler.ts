@@ -1,6 +1,5 @@
 import type { ServerRegistry } from "./server-registry.ts";
 import type {
-  ProfileApplyFailure,
   ProfileApplyResult,
   UpstreamManager,
 } from "./upstream-manager.ts";
@@ -39,7 +38,8 @@ export class RuntimeReconciler {
       }
     }
 
-    for (const runtime of this.#upstreams.list()) {
+    const runtimes = this.#upstreams.list();
+    for (const runtime of runtimes) {
       if (desired.has(runtime.id)) continue;
       if (
         runtime.status === "configured" ||
@@ -60,7 +60,9 @@ export class RuntimeReconciler {
     }
 
     for (const serverId of desired) {
-      const runtime = this.#upstreams.list().find((item) => item.id === serverId);
+      const runtime = this.#upstreams
+        .list()
+        .find((item) => item.id === serverId);
       if (!runtime) continue;
 
       if (runtime.status === "running") {
@@ -110,7 +112,9 @@ export class RuntimeReconciler {
     };
 
     for (const serverId of new Set(serverIds)) {
-      const runtime = this.#upstreams.list().find((item) => item.id === serverId);
+      const runtime = this.#upstreams
+        .list()
+        .find((item) => item.id === serverId);
       if (!runtime) {
         result.failed.push({
           serverId,
