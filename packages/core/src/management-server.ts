@@ -23,6 +23,7 @@ import type { GatewayServer } from "./gateway-server.ts";
 import type { ServerRegistry } from "./server-registry.ts";
 import type { ServerService } from "./server-service.ts";
 import type { ProfileService } from "./profile-service.ts";
+import type { MutationQueue } from "./mutation-queue.ts";
 import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
@@ -70,6 +71,7 @@ export class ManagementServer {
   #registry: ServerRegistry;
   #servers: ServerService;
   #profileService: ProfileService;
+  #mutations: MutationQueue;
   #profiles: ProfileStore;
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
@@ -88,6 +90,7 @@ export class ManagementServer {
     servers: ServerService,
     profiles: ProfileStore,
     profileService: ProfileService,
+    mutations: MutationQueue,
     upstreams: UpstreamManager,
     tools: ToolRegistry,
     toolPolicy: ToolPolicyStore,
@@ -102,6 +105,7 @@ export class ManagementServer {
     this.#servers = servers;
     this.#profiles = profiles;
     this.#profileService = profileService;
+    this.#mutations = mutations;
     this.#upstreams = upstreams;
     this.#tools = tools;
     this.#toolPolicy = toolPolicy;
@@ -200,6 +204,7 @@ export class ManagementServer {
       servers: this.#servers,
       profiles: this.#profiles,
       profileService: this.#profileService,
+      mutations: this.#mutations,
       upstreams: this.#upstreams,
       tools: this.#tools,
       toolPolicy: this.#toolPolicy,
