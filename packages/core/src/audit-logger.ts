@@ -130,11 +130,8 @@ export class AuditLogger {
   }
 
   async #flushPending(): Promise<void> {
-    if (this.#pendingLines.length === 0) return;
-    const batch = this.#pendingLines.join("");
-    this.#pendingLines = [];
-    this.#pendingBytes = 0;
     if (this.#flushPromise) return this.#flushPromise;
+    if (this.#pendingLines.length === 0) return;
 
     this.#flushPromise = (async () => {
       while (this.#pendingLines.length > 0) {
