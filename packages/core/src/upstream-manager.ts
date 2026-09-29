@@ -133,6 +133,7 @@ export class UpstreamManager {
         });
       }
     }
+  }
 
   async reconcile(): Promise<void> {
     this.#syncConfiguredRuntimes();
