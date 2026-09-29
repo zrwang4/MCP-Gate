@@ -106,12 +106,23 @@ export class CoreLogger {
 }
 
 export function redactSecrets(value: string): string {
+  const secretKey =
+    "(?:authorization|api[_-]?key|token|access[_-]?token|refresh[_-]?token|id[_-]?token|password|secret|client[_-]?secret|cookie)";
   return value
     .replace(
-      /("(?:authorization|api[_-]?key|token|password|secret|cookie)"\s*:\s*")([^"]*)(")/gi,
+      new RegExp(`("(?:${secretKey})"\\s*:\\s*")([^"]*)("`), "gi"),
       "$1[REDACTED]$3",
     )
-    .replace(/(authorization\s*[:=]\s*)(bearer\s+)?[^\s,;]+/gi, "$1$2[REDACTED]")
-    .replace(/((?:api[_-]?key|token|password|secret|cookie)\s*[:=]\s*)[^\s,;&]+/gi, "$1[REDACTED]")
-    .replace(/([?&](?:api[_-]?key|token|password|secret)=)[^&\s]+/gi, "$1[REDACTED]");
+    .replace(
+      new RegExp(`(authorization\\s*[:=]\\s*)(bearer\\s+)?[^\\s,;]+`, "gi"),
+      "$1$2[REDACTED]",
+    )
+    .replace(
+      new RegExp(`(${secretKey}\\s*[:=]\\s*)[^\\s,;&]+`, "gi"),
+      "$1[REDACTED]",
+    )
+    .replace(
+      new RegExp(`([?&](?:${secretKey}))=[^&\\s]+`, "gi"),
+      "$1=[REDACTED]",
+    );
 }
