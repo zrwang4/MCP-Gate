@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
 import test from "node:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { CoreLogger, redactSecrets } from "./logger.ts";
 
 test("redacts common key=value secrets", () => {
@@ -35,13 +38,13 @@ test("loads persisted log history across restarts and preserves sequence numbers
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-logger-"));
   try {
     const file = join(dir, "core.jsonl");
-    const first = new (await import("./logger.ts")).CoreLogger(file);
+    const first = new CoreLogger(file);
     await first.init();
     first.info("upstream", "connected github");
     first.warn("gateway", "request retry");
     await first.flush();
 
-    const second = new (await import("./logger.ts")).CoreLogger(file);
+    const second = new CoreLogger(file);
     await second.init();
 
     assert.equal(second.list().length, 2);
