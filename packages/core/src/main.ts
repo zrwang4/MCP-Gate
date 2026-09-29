@@ -53,6 +53,7 @@ async function main(): Promise<void> {
     { audit },
   );
   await upstreams.reconcile();
+  const mutations = new MutationQueue();
   const serverService = new ServerService(
     registry,
     profiles,
@@ -60,8 +61,8 @@ async function main(): Promise<void> {
     toolPolicy,
     secrets,
     logger,
+    mutations,
   );
-  const mutations = new MutationQueue();
   const profileService = new ProfileService(
     profiles,
     registry,
@@ -83,6 +84,7 @@ async function main(): Promise<void> {
     serverService,
     profiles,
     profileService,
+    mutations,
     upstreams,
     toolRegistry,
     toolPolicy,
