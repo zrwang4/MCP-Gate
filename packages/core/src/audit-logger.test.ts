@@ -59,3 +59,55 @@ test("audit logger redacts secrets from errors", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("loads persisted audit history across restarts and preserves filters", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-audit-"));
+  try {
+    const file = join(dir, "audit.jsonl");
+    const first = new AuditLogger(file);
+    await first.init();
+
+    first.record({
+      source: "gateway",
+      publicName: "github__search",
+      serverId: "server-1",
+      serverAlias: "github",
+      originalName: "search",
+      success: true,
+      durationMs: 10,
+    });
+    first.record({
+      source: "tester",
+      publicName: "github__search",
+      serverId: "server-1",
+      serverAlias: "github",
+      originalName: "search",
+      success: false,
+      durationMs: 20,
+      error: "failed",
+    });
+    await first.flush();
+
+    const second = new AuditLogger(file);
+    await second.init();
+
+    assert.equal(second.list().length, 2);
+    assert.equal(second.list({ source: "tester" }).length, 1);
+    assert.equal(second.list({ success: false }).length, 1);
+    assert.equal(second.list({ serverId: "server-1", publicName: "github__search" }).length, 2);
+
+    const next = second.record({
+      source: "gateway",
+      publicName: "github__create",
+      serverId: "server-2",
+      serverAlias: "github",
+      originalName: "create",
+      success: true,
+      durationMs: 4,
+    });
+    assert.equal(next.seq, 3);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
