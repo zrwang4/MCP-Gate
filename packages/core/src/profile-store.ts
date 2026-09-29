@@ -171,6 +171,7 @@ export class ProfileStore {
   }
 
   async removeServer(serverId: string): Promise<void> {
+    const previous = this.#profiles.map(cloneProfile);
     let changed = false;
     for (const profile of this.#profiles) {
       const next = profile.serverIds.filter((id) => id !== serverId);
@@ -182,7 +183,6 @@ export class ProfileStore {
     }
 
     if (changed) {
-      const previous = this.#profiles.map(cloneProfile);
       try {
         await this.#persist();
       } catch (error) {
