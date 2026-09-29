@@ -1,4 +1,4 @@
-import { appendFile, mkdir, rename, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -20,7 +20,7 @@ export class CoreLogger {
 
   constructor(logFile: string, maxEntries = 1000) {
     this.#logFile = logFile;
-    this.#maxEntries = maxEntries;
+    this.#maxEntries = Math.max(1, maxEntries);
   }
 
   async init(): Promise<void> {
@@ -33,6 +33,8 @@ export class CoreLogger {
     } catch {
       // The file does not exist yet.
     }
+
+    await this.#loadExisting();
   }
 
   debug(source: string, message: string): void {
@@ -51,16 +53,28 @@ export class CoreLogger {
     this.#log("error", source, message);
   }
 
-  list(options?: { after?: number; limit?: number; level?: LogLevel }): LogEntry[] {
+  list(options?: {
+    after?: number;
+    limit?: number;
+    level?: LogLevel;
+    source?: string;
+    contains?: string;
+  }): LogEntry[] {
     const after = options?.after ?? 0;
     const limit = Math.min(Math.max(options?.limit ?? 200, 1), 1000);
     const level = options?.level;
+    const source = options?.source?.trim();
+    const contains = options?.contains?.trim().toLowerCase();
 
     const filtered = this.#entries.filter(
-      (entry) => entry.seq > after && (!level || entry.level === level),
+      (entry) =>
+        entry.seq > after &&
+        (!level || entry.level === level) &&
+        (!source || entry.source === source) &&
+        (!contains || entry.message.toLowerCase().includes(contains)),
     );
 
-    return filtered.slice(-limit);
+    return filtered.slice(-limit).map((entry) => ({ ...entry }));
   }
 
   clear(): void {
@@ -73,6 +87,50 @@ export class CoreLogger {
 
   async flush(): Promise<void> {
     await this.#writeQueue;
+  }
+
+  async #loadExisting(): Promise<void> {
+    try {
+      const raw = await readFile(this.#logFile, "utf8");
+      const entries: LogEntry[] = [];
+
+      for (const line of raw.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line) as Partial<LogEntry>;
+          if (
+            Number.isInteger(parsed.seq) &&
+            typeof parsed.timestamp === "string" &&
+            (parsed.level === "debug" ||
+              parsed.level === "info" ||
+              parsed.level === "warn" ||
+              parsed.level === "error") &&
+            typeof parsed.source === "string" &&
+            typeof parsed.message === "string"
+          ) {
+            entries.push({
+              seq: parsed.seq,
+              timestamp: parsed.timestamp,
+              level: parsed.level,
+              source: parsed.source,
+              message: parsed.message,
+            });
+          }
+        } catch {
+          // Ignore an incomplete/corrupt JSONL line and keep readable history.
+        }
+      }
+
+      this.#entries = entries.slice(-this.#maxEntries);
+      const maxSeq = this.#entries.reduce(
+        (max, entry) => Math.max(max, entry.seq),
+        0,
+      );
+      this.#nextSeq = maxSeq + 1;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw error;
+    }
   }
 
   #log(level: LogLevel, source: string, message: string): void {
