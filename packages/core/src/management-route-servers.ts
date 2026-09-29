@@ -39,114 +39,38 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
       json(res, 404, { error: "server configuration not found" });
       return true;
     }
-    if (existing.transport !== "stdio") {
-      json(res, 400, { error: "environment is only available for stdio servers" });
-      return true;
-    }
 
-    const createdSecretIds: string[] = [];
-    const wasRunning = ctx.upstreams
-      .list()
-      .some((upstream) => upstream.id === serverId && upstream.status === "running");
     try {
       const body = await readJsonBody(req) as {
         env?: unknown;
         secretEnvKeys?: unknown;
         secretEnv?: unknown;
       };
-
       const env = normalizeEnvironmentRecord(body.env);
       const secretEnvKeys = normalizeEnvironmentKeys(body.secretEnvKeys);
       const secretEnv = normalizeEnvironmentRecord(body.secretEnv);
 
-      for (const key of Object.keys(env)) {
-        if (secretEnvKeys.includes(key)) {
-          throw new Error(`environment variable ${key} cannot be both plain and secret`);
-        }
-      }
-      for (const key of Object.keys(secretEnv)) {
-        if (!secretEnvKeys.includes(key)) {
-          throw new Error(`secret value supplied for unlisted key: ${key}`);
-        }
-      }
-
-      await ctx.upstreams.disconnect(serverId);
-
-      const oldSecretIds = existing.envSecretIds ?? {};
-      const nextSecretIds: Record<string, string> = {};
-
-      for (const key of secretEnvKeys) {
-        const suppliedValue = secretEnv[key];
-        if (suppliedValue !== undefined && suppliedValue !== "") {
-          const secretId = `stdio-env:${randomUUID()}`;
-          await ctx.secrets.set(secretId, suppliedValue);
-          createdSecretIds.push(secretId);
-          nextSecretIds[key] = secretId;
-          continue;
-        }
-
-        const existingSecretId = oldSecretIds[key];
-        if (!existingSecretId) {
-          throw new Error(`secret environment value is required for ${key}`);
-        }
-        nextSecretIds[key] = existingSecretId;
-      }
-
-      const updated = await ctx.registry.updateEnvironment(serverId, {
+      const result = await ctx.servers.updateEnvironment(serverId, {
         env,
-        envSecretIds: nextSecretIds,
+        secretEnvKeys,
+        secretEnv,
       });
-      if (!updated) {
-        throw new Error("server configuration not found");
-      }
 
-      const retainedIds = new Set(Object.values(nextSecretIds));
-      for (const oldSecretId of Object.values(oldSecretIds)) {
-        if (!retainedIds.has(oldSecretId)) {
-          await ctx.secrets.delete(oldSecretId).catch(() => false);
-        }
-      }
-
-      await ctx.upstreams.reconcile();
-      let reconnectError: string | null = null;
-      if (wasRunning && updated.enabled) {
-        try {
-          await ctx.upstreams.connect(serverId);
-        } catch (error) {
-          reconnectError = error instanceof Error ? error.message : String(error);
-        }
-      }
-
-      json(res, reconnectError ? 409 : 200, {
-        server: toPublicServerConfig(updated),
-        ...(reconnectError ? { reconnectError } : {}),
+      json(res, result.reconnectError ? 409 : 200, {
+        server: toPublicServerConfig(result.server),
+        ...(result.reconnectError
+          ? { reconnectError: result.reconnectError }
+          : {}),
       });
     } catch (error) {
-      for (const secretId of createdSecretIds) {
-        await ctx.secrets.delete(secretId).catch(() => false);
-      }
-
-      let restoreError: string | null = null;
-      if (wasRunning && existing.enabled) {
-        try {
-          await ctx.upstreams.connect(serverId);
-        } catch (restoreFailure) {
-          restoreError =
-            restoreFailure instanceof Error
-              ? restoreFailure.message
-              : String(restoreFailure);
-        }
-      }
-
       json(res, 400, {
         error: error instanceof Error ? error.message : String(error),
-        ...(restoreError ? { restoreError } : {}),
       });
     }
     return true;
   }
 
-  const upstreamActionMatch = url.pathname.match(
+  const upstreamActionMatch = url.pathname.match(  const upstreamActionMatch = url.pathname.match(
     /^\/api\/upstreams\/([0-9a-f-]+)\/(connect|disconnect|refresh-tools)$/i,
   );
   if (req.method === "POST" && upstreamActionMatch) {
@@ -197,7 +121,6 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
   if (req.method === "POST" && url.pathname === "/api/server-configs") {
     if (!requireDesktopClient(req, res)) return true;
 
-    let createdSecretId: string | null = null;
     try {
       const body = await readJsonBody(req) as {
         name?: unknown;
@@ -212,13 +135,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
 
       const transport = body.transport === "http" ? "http" : "stdio";
       const authorization = normalizeOptionalAuthorization(body.authorization);
-
-      if (transport === "http" && authorization) {
-        createdSecretId = `http-auth:${randomUUID()}`;
-        await ctx.secrets.set(createdSecretId, authorization);
-      }
-
-      const server = await ctx.registry.create({
+      const server = await ctx.servers.create({
         name: body.name as string,
         transport,
         command: typeof body.command === "string" ? body.command : undefined,
@@ -226,14 +143,11 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         cwd: typeof body.cwd === "string" ? body.cwd : undefined,
         url: typeof body.url === "string" ? body.url : undefined,
         headers: readOptionalHeaders(body.headers),
-        authSecretId: createdSecretId ?? undefined,
+        authorization,
       });
-      await ctx.upstreams.reconcile();
+
       json(res, 201, { server: toPublicServerConfig(server) });
     } catch (error) {
-      if (createdSecretId) {
-        await ctx.secrets.delete(createdSecretId).catch(() => false);
-      }
       json(res, 400, {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -241,25 +155,17 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     return true;
   }
 
-  const configEditMatch = url.pathname.match(
+  const configEditMatch = url.pathname.match(  const configEditMatch = url.pathname.match(
     /^\/api\/server-configs\/([0-9a-f-]+)$/i,
   );
   if (req.method === "POST" && configEditMatch) {
     if (!requireDesktopClient(req, res)) return true;
 
     const serverId = configEditMatch[1];
-    const existing = ctx.registry.get(serverId);
-    if (!existing) {
+    if (!ctx.registry.get(serverId)) {
       json(res, 404, { error: "server configuration not found" });
       return true;
     }
-
-    let createdSecretId: string | null = null;
-    let secretToDeleteAfterSuccess: string | null =
-      existing.transport === "http" ? existing.authSecretId ?? null : null;
-    const wasRunning = ctx.upstreams
-      .list()
-      .some((upstream) => upstream.id === serverId && upstream.status === "running");
 
     try {
       const body = await readJsonBody(req) as {
@@ -274,111 +180,51 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         clearAuthorization?: unknown;
       };
 
-      await ctx.upstreams.disconnect(serverId);
-
       const transport =
         body.transport === "http"
           ? "http"
           : body.transport === "stdio"
             ? "stdio"
-            : existing.transport;
+            : undefined;
 
-      const authorization = normalizeOptionalAuthorization(body.authorization);
-      const clearAuthorization = body.clearAuthorization === true;
-
-      let authSecretId: string | null | undefined;
-
-      if (transport === "http") {
-        if (authorization) {
-          createdSecretId = `http-auth:${randomUUID()}`;
-          await ctx.secrets.set(createdSecretId, authorization);
-          authSecretId = createdSecretId;
-        } else if (clearAuthorization) {
-          authSecretId = null;
-        } else if (existing.transport === "http") {
-          authSecretId = existing.authSecretId;
-          secretToDeleteAfterSuccess = null;
-        }
-      } else {
-        authSecretId = null;
-      }
-
-      const updated = await ctx.registry.update(serverId, {
+      const result = await ctx.servers.update(serverId, {
         name: body.name as string,
         transport,
         command: typeof body.command === "string" ? body.command : undefined,
-        args: Array.isArray(body.args) ? body.args as string[] : [],
+        args: Array.isArray(body.args) ? body.args as string[] : undefined,
         cwd: typeof body.cwd === "string" ? body.cwd : undefined,
         url: typeof body.url === "string" ? body.url : undefined,
-        ...(Object.prototype.hasOwnProperty.call(body, "headers")
-          ? { headers: readOptionalHeaders(body.headers) }
-          : {}),
-        authSecretId,
+        headers: readOptionalHeaders(body.headers),
+        headersProvided: Object.prototype.hasOwnProperty.call(body, "headers"),
+        authorization: normalizeOptionalAuthorization(body.authorization),
+        clearAuthorization: body.clearAuthorization === true,
       });
 
-      if (!updated) {
-        throw new Error("server configuration not found");
-      }
-
-      if (
-        secretToDeleteAfterSuccess &&
-        secretToDeleteAfterSuccess !== createdSecretId
-      ) {
-        await ctx.secrets
-          .delete(secretToDeleteAfterSuccess)
-          .catch(() => false);
-      }
-
-      if (existing.transport === "stdio" && updated.transport !== "stdio") {
-        for (const secretId of Object.values(existing.envSecretIds ?? {})) {
-          await ctx.secrets.delete(secretId).catch(() => false);
-        }
-      }
-
-      await ctx.upstreams.reconcile();
-      let reconnectError: string | null = null;
-      if (wasRunning && updated.enabled) {
-        try {
-          await ctx.upstreams.connect(serverId);
-        } catch (error) {
-          reconnectError = error instanceof Error ? error.message : String(error);
-        }
-      }
-
-      json(res, reconnectError ? 409 : 200, {
-        server: toPublicServerConfig(updated),
-        ...(reconnectError ? { reconnectError } : {}),
+      json(res, result.reconnectError ? 409 : 200, {
+        server: toPublicServerConfig(result.server),
+        ...(result.reconnectError
+          ? { reconnectError: result.reconnectError }
+          : {}),
       });
     } catch (error) {
-      if (createdSecretId) {
-        await ctx.secrets.delete(createdSecretId).catch(() => false);
-      }
-
-      let restoreError: string | null = null;
-      if (wasRunning && existing.enabled) {
-        try {
-          await ctx.upstreams.connect(serverId);
-        } catch (restoreFailure) {
-          restoreError =
-            restoreFailure instanceof Error
-              ? restoreFailure.message
-              : String(restoreFailure);
-        }
-      }
-
       json(res, 400, {
         error: error instanceof Error ? error.message : String(error),
-        ...(restoreError ? { restoreError } : {}),
       });
     }
     return true;
   }
 
-  const configSettingsMatch = url.pathname.match(
+  const configSettingsMatch = url.pathname.match(  const configSettingsMatch = url.pathname.match(
     /^\/api\/server-configs\/([0-9a-f-]+)\/settings$/i,
   );
   if (req.method === "POST" && configSettingsMatch) {
     if (!requireDesktopClient(req, res)) return true;
+
+    const serverId = configSettingsMatch[1];
+    if (!ctx.registry.get(serverId)) {
+      json(res, 404, { error: "server configuration not found" });
+      return true;
+    }
 
     try {
       const body = await readJsonBody(req) as {
@@ -386,31 +232,16 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         autoStart?: unknown;
       };
 
-      const serverId = configSettingsMatch[1];
-      if (body.enabled === false) {
-        await ctx.upstreams.disconnect(serverId);
-      }
-
-      const updated = await ctx.registry.updateSettings(
-        serverId,
-        {
-          enabled:
-            body.enabled === undefined
-              ? undefined
-              : body.enabled as boolean,
-          autoStart:
-            body.autoStart === undefined
-              ? undefined
-              : body.autoStart as boolean,
-        },
-      );
-
-      if (!updated) {
-        json(res, 404, { error: "server configuration not found" });
-        return true;
-      }
-
-      await ctx.upstreams.reconcile();
+      const updated = await ctx.servers.updateSettings(serverId, {
+        enabled:
+          body.enabled === undefined
+            ? undefined
+            : body.enabled as boolean,
+        autoStart:
+          body.autoStart === undefined
+            ? undefined
+            : body.autoStart as boolean,
+      });
 
       json(res, 200, { server: toPublicServerConfig(updated) });
     } catch (error) {
@@ -421,44 +252,28 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     return true;
   }
 
-  const configDeleteMatch = url.pathname.match(/^\/api\/server-configs\/([0-9a-f-]+)$/i);
+  const configDeleteMatch = url.pathname.match  const configDeleteMatch = url.pathname.match(/^\/api\/server-configs\/([0-9a-f-]+)$/i);
   if (req.method === "DELETE" && configDeleteMatch) {
     if (!requireDesktopClient(req, res)) return true;
+
     const serverId = configDeleteMatch[1];
-    const existing = ctx.registry.get(serverId);
-
-    try {
-      await ctx.upstreams.disconnect(serverId);
-    } catch (error) {
-      json(res, 500, {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return true;
-    }
-
-    const removed = await ctx.registry.remove(serverId);
-    await ctx.toolPolicy.removeServer(serverId);
-    await ctx.profiles.removeServer(serverId);
-    await ctx.upstreams.reconcile();
-    if (!removed) {
+    if (!ctx.registry.get(serverId)) {
       json(res, 404, { error: "server configuration not found" });
       return true;
     }
 
-    if (existing?.transport === "http" && existing.authSecretId) {
-      await ctx.secrets.delete(existing.authSecretId).catch(() => false);
+    try {
+      await ctx.servers.remove(serverId);
+      json(res, 200, { ok: true });
+    } catch (error) {
+      json(res, 500, {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-    if (existing?.transport === "stdio") {
-      for (const secretId of Object.values(existing.envSecretIds ?? {})) {
-        await ctx.secrets.delete(secretId).catch(() => false);
-      }
-    }
-
-    json(res, 200, { ok: true });
     return true;
   }
 
-  return false;
+  return false;  return false;
 };
 
 function normalizeOptionalAuthorization(value: unknown): string | undefined {
