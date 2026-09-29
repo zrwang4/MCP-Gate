@@ -63,10 +63,6 @@ export class RuntimeReconciler {
       const runtime = this.#upstreams.list().find((item) => item.id === serverId);
       if (!runtime) continue;
 
-      if (!runtime.status || runtime.status === "configured" && !runtime) {
-        continue;
-      }
-
       if (runtime.status === "running") {
         result.alreadyRunning.push(serverId);
         continue;
@@ -149,17 +145,8 @@ export class RuntimeReconciler {
       .filter((config) => config.enabled && config.autoStart)
       .map((config) => config.id);
 
-    const results = await Promise.allSettled(
+    await Promise.allSettled(
       ids.map((id) => this.#upstreams.connect(id)),
     );
-
-    results.forEach((result, index) => {
-      if (result.status === "rejected") {
-        // UpstreamManager already records the detailed runtime error.
-        // Keep this layer responsible only for the aggregate startup operation.
-        void result.reason;
-        void ids[index];
-      }
-    });
   }
 }
