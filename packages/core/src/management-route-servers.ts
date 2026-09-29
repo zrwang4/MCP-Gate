@@ -67,7 +67,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         }
       }
 
-      await ctx.upstreams.disconnect(serverId).catch(() => undefined);
+      await ctx.upstreams.disconnect(serverId);
 
       const oldSecretIds = existing.envSecretIds ?? {};
       const nextSecretIds: Record<string, string> = {};
@@ -242,7 +242,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         clearAuthorization?: unknown;
       };
 
-      await ctx.upstreams.disconnect(serverId).catch(() => undefined);
+      await ctx.upstreams.disconnect(serverId);
 
       const transport =
         body.transport === "http"
@@ -326,8 +326,13 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         autoStart?: unknown;
       };
 
+      const serverId = configSettingsMatch[1];
+      if (body.enabled === false) {
+        await ctx.upstreams.disconnect(serverId);
+      }
+
       const updated = await ctx.registry.updateSettings(
-        configSettingsMatch[1],
+        serverId,
         {
           enabled:
             body.enabled === undefined
@@ -347,12 +352,6 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
 
       ctx.upstreams.syncConfigs();
 
-      if (!updated.enabled) {
-        await ctx.upstreams
-          .disconnect(updated.id)
-          .catch(() => undefined);
-      }
-
       json(res, 200, { server: toPublicServerConfig(updated) });
     } catch (error) {
       json(res, 400, {
@@ -367,7 +366,16 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
     const serverId = configDeleteMatch[1];
     const existing = ctx.registry.get(serverId);
-    await ctx.upstreams.disconnect(serverId).catch(() => undefined);
+
+    try {
+      await ctx.upstreams.disconnect(serverId);
+    } catch (error) {
+      json(res, 500, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return true;
+    }
+
     const removed = await ctx.registry.remove(serverId);
     await ctx.toolPolicy.removeServer(serverId);
     await ctx.profiles.removeServer(serverId);
