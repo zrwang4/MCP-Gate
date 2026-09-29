@@ -126,6 +126,13 @@ test("HTTP upstream client connects to a real local MCP server and survives SSE 
   } as never;
 
   const client = new HttpUpstreamClient(config, secrets, 5_000);
+  let recycled = 0;
+  client.setLifecycleHandlers({
+    onNotificationStreamRecycled: () => {
+      recycled += 1;
+    },
+  });
+
   try {
     await client.connect();
 
@@ -149,6 +156,8 @@ test("HTTP upstream client connects to a real local MCP server and survives SSE 
       () => getRequests >= 2,
       5_000,
     );
+
+    assert.equal(recycled, 1);
 
     assert.deepEqual(
       (await client.listTools()).map((tool) => tool.name),
