@@ -147,12 +147,9 @@ jobs:
           DMG_PATH="$(
             find apps/desktop/src-tauri/target/release/bundle/dmg               -maxdepth 1 -name '*.dmg' -print -quit
           )"
-          )"
 
           test -n "$APP_PATH"
           test -n "$DMG_PATH"
-          test -n "$UPDATER_PATH"
-          test -f "$UPDATER_PATH.sig"
           test -x "$APP_PATH/Contents/MacOS/mcp-gate"
           test -x "$APP_PATH/Contents/MacOS/mcp-gate-node"
           test -f "$APP_PATH/Contents/Resources/core-runtime/dist/main.js"
@@ -181,8 +178,6 @@ jobs:
 
           cp "$DMG_PATH" "$DMG_ASSET"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$APP_ZIP"
-          cp "$UPDATER_PATH" "$UPDATER_ASSET"
-          cp "$UPDATER_PATH.sig" "$UPDATER_ASSET.sig"
 
           echo "RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
           ls -lah "$RELEASE_DIR"
