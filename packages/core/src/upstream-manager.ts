@@ -3,6 +3,7 @@ import type { AuditLogger, AuditSource } from "./audit-logger.ts";
 import type { CoreLogger } from "./logger.ts";
 import type { McpServerConfig, ServerRegistry } from "./server-registry.ts";
 import type { McpToolDefinition, ToolRegistry } from "./tool-registry.ts";
+import type { MutationQueue } from "./mutation-queue.ts";
 
 const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
 
@@ -46,6 +47,7 @@ export interface UpstreamSnapshot {
 export interface UpstreamManagerOptions {
   reconnectDelaysMs?: readonly number[];
   audit?: AuditLogger;
+  mutations?: MutationQueue;
 }
 
 export interface ProfileApplyFailure {
@@ -83,6 +85,7 @@ export class UpstreamManager {
   #runtimes = new Map<string, Runtime>();
   #busy = new Set<string>();
   #connectOperations = new Map<string, Promise<UpstreamSnapshot>>();
+  #mutations: MutationQueue | null;
 
   constructor(
     registry: ServerRegistry,
@@ -96,6 +99,7 @@ export class UpstreamManager {
     this.#factory = factory;
     this.#logger = logger;
     this.#audit = options.audit ?? null;
+    this.#mutations = options.mutations ?? null;
     this.#reconnectDelaysMs =
       options.reconnectDelaysMs && options.reconnectDelaysMs.length > 0
         ? options.reconnectDelaysMs
@@ -638,7 +642,11 @@ export class UpstreamManager {
 
       if (!runtime.desiredConnected || !runtime.config.enabled) return;
 
-      void this.#connectRuntime(runtime, true).catch(() => undefined);
+      const retry = () => this.#connectRuntime(runtime, true);
+      void (this.#mutations
+        ? this.#mutations.run(retry)
+        : retry()
+      ).catch(() => undefined);
     }, delay);
 
     const timer = runtime.reconnectTimer as ReturnType<typeof setTimeout> & {
