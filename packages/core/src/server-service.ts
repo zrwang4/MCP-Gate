@@ -9,6 +9,7 @@ import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
+import type { MutationQueue } from "./mutation-queue.ts";
 
 export interface EnvironmentMutationInput {
   env: Record<string, string>;
@@ -28,6 +29,7 @@ export class ServerService {
   #toolPolicy: ToolPolicyStore;
   #secrets: SecretStore;
   #logger: CoreLogger;
+  #mutations: MutationQueue;
 
   constructor(
     registry: ServerRegistry,
@@ -36,6 +38,7 @@ export class ServerService {
     toolPolicy: ToolPolicyStore,
     secrets: SecretStore,
     logger: CoreLogger,
+    mutations: MutationQueue,
   ) {
     this.#registry = registry;
     this.#profiles = profiles;
@@ -43,11 +46,13 @@ export class ServerService {
     this.#toolPolicy = toolPolicy;
     this.#secrets = secrets;
     this.#logger = logger;
+    this.#mutations = mutations;
   }
 
   async create(
     input: ServerConfigInput & { authorization?: string },
   ): Promise<McpServerConfig> {
+    return this.#mutations.run(async () => {
     let createdSecretId: string | null = null;
 
     try {
@@ -69,6 +74,7 @@ export class ServerService {
       }
       throw error;
     }
+    });
   }
 
   async update(
@@ -79,6 +85,7 @@ export class ServerService {
       headersProvided?: boolean;
     },
   ): Promise<ServerMutationResult> {
+    return this.#mutations.run(async () => {
     const existing = this.#requireServer(id);
     const wasRunning = this.#isRunning(id);
 
@@ -163,12 +170,14 @@ export class ServerService {
 
       throw error;
     }
+    });
   }
 
   async updateEnvironment(
     id: string,
     input: EnvironmentMutationInput,
   ): Promise<ServerMutationResult> {
+    return this.#mutations.run(async () => {
     const existing = this.#requireServer(id);
     if (existing.transport !== "stdio") {
       throw new Error("environment is only available for stdio servers");
@@ -262,12 +271,14 @@ export class ServerService {
 
       throw error;
     }
+    });
   }
 
   async updateSettings(
     id: string,
     input: { enabled?: boolean; autoStart?: boolean },
   ): Promise<McpServerConfig> {
+    return this.#mutations.run(async () => {
     const existing = this.#requireServer(id);
     if (input.enabled === false) {
       await this.#upstreams.disconnect(id);
@@ -278,9 +289,11 @@ export class ServerService {
 
     await this.#upstreams.reconcile();
     return updated;
+    });
   }
 
   async remove(id: string): Promise<void> {
+    return this.#mutations.run(async () => {
     const existing = this.#requireServer(id);
     await this.#upstreams.disconnect(id);
 
@@ -300,6 +313,7 @@ export class ServerService {
         await this.#secrets.delete(secretId).catch(() => false);
       }
     }
+    });
   }
 
   #requireServer(id: string): McpServerConfig {
