@@ -1,6 +1,6 @@
 import { Client, type CallToolResult } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import type { StdioServerConfig } from "./server-registry.ts";
@@ -104,7 +104,12 @@ export class StdioUpstreamClient implements UpstreamClient {  #config: StdioServ
         this.#client = client;
         this.#transport = transport;
       }
-      throw error;
+      const hint = describeStdioSpawnFailure(
+        error,
+        this.#config,
+        env?.PATH ?? "",
+      );
+      throw hint ? new Error(hint) : error;
     }
   }
 
@@ -234,4 +239,63 @@ function listNvmNodeBins(home: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Node attributes every spawn ENOENT to the command, so a bad `cwd` surfaces
+ * as the baffling "spawn node ENOENT" even when the command itself is fine.
+ * Diagnose the real cause — missing working directory vs. unresolvable
+ * command — before the raw error reaches users. Returns null when the failure
+ * is not a recognizable spawn error or the obvious causes are ruled out, in
+ * which case the original error should be surfaced instead.
+ */
+export function describeStdioSpawnFailure(
+  error: unknown,
+  config: Pick<StdioServerConfig, "name" | "command" | "cwd">,
+  resolvedPath = process.env.PATH ?? "",
+): string | null {
+  if (!(error instanceof Error)) return null;
+
+  const match = /\bspawn (.+) (ENOENT|EACCES|ENOTDIR|EISDIR)\b/.exec(
+    error.message,
+  );
+  if (!match) return null;
+  const [, spawnedCommand, code] = match;
+
+  // A missing cwd reports ENOENT against the command even when the command
+  // exists, so rule the working directory out first.
+  if (config.cwd && !isExistingDirectory(config.cwd)) {
+    return `stdio upstream "${config.name}" failed to start (${code}): working directory does not exist or is not a directory: ${config.cwd}`;
+  }
+
+  if (code === "EACCES") {
+    return `stdio upstream "${config.name}" failed to start: permission denied while launching: ${spawnedCommand}`;
+  }
+
+  if (code === "ENOENT" && !resolvesOnPath(spawnedCommand, resolvedPath)) {
+    return `stdio upstream "${config.name}" failed to start: command not found: ${spawnedCommand} (not found on PATH)`;
+  }
+
+  return null;
+}
+
+function isExistingDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function resolvesOnPath(command: string, resolvedPath: string): boolean {
+  if (command.includes("/")) return existsSync(command);
+
+  return resolvedPath.split(delimiter).some((directory) => {
+    if (!directory) return false;
+    try {
+      return existsSync(join(directory, command));
+    } catch {
+      return false;
+    }
+  });
 }

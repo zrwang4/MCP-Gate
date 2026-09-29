@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StdioServerConfig } from "./server-registry.ts";
 import { MemorySecretStore } from "./secret-store.ts";
 import {
   buildStdioPath,
+  describeStdioSpawnFailure,
   resolveStdioEnvironment,
 } from "./stdio-upstream-client.ts";
 
@@ -161,4 +163,111 @@ test("stdio connect succeeds well inside the timeout for a healthy server", asyn
     5_000,
   );
   await assert.rejects(client.connect(), /(timed out|closed|exited|EPIPE)/i);
+});
+
+test("describeStdioSpawnFailure blames a missing working directory over the command", () => {
+  const hint = describeStdioSpawnFailure(
+    new Error("spawn node ENOENT"),
+    { name: "Env MCP", command: "node", cwd: "/nonexistent/mcp-gate-cwd" },
+  );
+  assert.match(hint ?? "", /working directory does not exist/);
+  assert.match(hint ?? "", /\/nonexistent\/mcp-gate-cwd/);
+});
+
+test("describeStdioSpawnFailure blames the command when the cwd is fine", () => {
+  const hint = describeStdioSpawnFailure(
+    new Error("spawn definitely-missing-cmd-xyz ENOENT"),
+    { name: "Env MCP", command: "definitely-missing-cmd-xyz", cwd: tmpdir() },
+  );
+  assert.match(hint ?? "", /command not found: definitely-missing-cmd-xyz/);
+});
+
+test("describeStdioSpawnFailure returns null for non-spawn errors and healthy setups", () => {
+  assert.equal(
+    describeStdioSpawnFailure(new Error("ECONNRESET"), {
+      name: "X",
+      command: "node",
+    }),
+    null,
+  );
+  // node exists and the cwd is real: the raw error should stand.
+  assert.equal(
+    describeStdioSpawnFailure(new Error("spawn node ENOENT"), {
+      name: "X",
+      command: process.execPath,
+      cwd: tmpdir(),
+    }),
+    null,
+  );
+});
+
+test("describeStdioSpawnFailure explains EACCES as permission denied", () => {
+  const hint = describeStdioSpawnFailure(
+    new Error("spawn /restricted/tool EACCES"),
+    { name: "X", command: "/restricted/tool" },
+  );
+  assert.match(
+    hint ?? "",
+    /permission denied while launching: \/restricted\/tool/,
+  );
+});
+
+test("stdio connect reports a clear error when cwd does not exist", async (t) => {
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { StdioUpstreamClient } = await import("./stdio-upstream-client.ts");
+
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-stdio-cwd-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const script = join(dir, "ok.js");
+  await writeFile(script, "process.exit(0);\n");
+
+  // The command exists; only the cwd is broken. The raw spawn error would
+  // blame "node", so the enriched message must point at the directory.
+  const badCwdConfig: StdioServerConfig = {
+    ...config(),
+    env: undefined,
+    envSecretIds: undefined,
+    command: process.execPath,
+    args: [script],
+    cwd: join(dir, "does-not-exist"),
+  };
+  const client = new StdioUpstreamClient(
+    badCwdConfig,
+    new MemorySecretStore(),
+    5_000,
+  );
+  await assert.rejects(
+    client.connect(),
+    /working directory does not exist or is not a directory/,
+  );
+  await client.disconnect();
+});
+
+test("stdio connect reports a clear error when the command is missing", async (t) => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { StdioUpstreamClient } = await import("./stdio-upstream-client.ts");
+
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-stdio-missing-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+
+  const missingCommandConfig: StdioServerConfig = {
+    ...config(),
+    env: undefined,
+    envSecretIds: undefined,
+    command: "mcp-gate-definitely-missing-cmd",
+    args: [],
+    cwd: dir,
+  };
+  const client = new StdioUpstreamClient(
+    missingCommandConfig,
+    new MemorySecretStore(),
+    5_000,
+  );
+  await assert.rejects(
+    client.connect(),
+    /command not found: mcp-gate-definitely-missing-cmd/,
+  );
+  await client.disconnect();
 });
