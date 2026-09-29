@@ -528,7 +528,7 @@ export class UpstreamManager {
 
       await client.connect();
 
-      if (!this.#isConnectCurrent(runtime, generation, config)) {
+      if (!this.#isConnectCurrent(runtime, generation)) {
         if (runtime.client === null) runtime.client = client;
         await client.disconnect();
         if (runtime.client === client) runtime.client = null;
@@ -537,7 +537,7 @@ export class UpstreamManager {
 
       const tools = await client.listTools();
 
-      if (!this.#isConnectCurrent(runtime, generation, config)) {
+      if (!this.#isConnectCurrent(runtime, generation)) {
         if (runtime.client === client) {
           await client.disconnect();
           runtime.client = null;
@@ -553,7 +553,7 @@ export class UpstreamManager {
         tools,
       );
 
-      if (!this.#isConnectCurrent(runtime, generation, config)) {
+      if (!this.#isConnectCurrent(runtime, generation)) {
         if (runtime.client === client) {
           this.#tools.removeServer(id);
           await client.disconnect();
