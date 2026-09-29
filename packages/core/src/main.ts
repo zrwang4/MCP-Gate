@@ -11,6 +11,7 @@ import { ServerRegistry } from "./server-registry.ts";
 import { ServerService } from "./server-service.ts";
 import { ProfileService } from "./profile-service.ts";
 import { MutationQueue } from "./mutation-queue.ts";
+import { RuntimeReconciler } from "./runtime-reconciler.ts";
 import { createPlatformSecretStore } from "./secret-store.ts";
 import { ToolPolicyStore } from "./tool-policy-store.ts";
 import { ToolRegistry } from "./tool-registry.ts";
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
     { audit },
   );
   await upstreams.reconcile();
+  const reconciler = new RuntimeReconciler(registry, upstreams);
   const mutations = new MutationQueue();
   const serverService = new ServerService(
     registry,
@@ -61,11 +63,12 @@ async function main(): Promise<void> {
     secrets,
     logger,
     mutations,
+    reconciler,
   );
   const profileService = new ProfileService(
     profiles,
     registry,
-    upstreams,
+    reconciler,
     mutations,
   );
   const gateway = new GatewayServer(
@@ -126,7 +129,7 @@ async function main(): Promise<void> {
     await gateway.start();
     const activeProfile = profiles.getActive();
     if (activeProfile) {
-      const result = await upstreams.applyExactSet(activeProfile.serverIds);
+      const result = await reconciler.applyExactSet(activeProfile.serverIds);
       if (result.failed.length > 0) {
         logger.warn(
           "profiles",
@@ -134,7 +137,7 @@ async function main(): Promise<void> {
         );
       }
     } else {
-      await upstreams.connectAutoStart();
+      await reconciler.connectAutoStart();
     }
     logger.info("core", "Core is ready");
   } catch (error) {
