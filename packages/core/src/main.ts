@@ -142,6 +142,7 @@ async function main(): Promise<void> {
     } else {
       await mutations.run(() => reconciler.connectAutoStart());
     }
+    upstreams.startHealthMonitoring();
     logger.info("core", "Core is ready");
   } catch (error) {
     logger.error(
