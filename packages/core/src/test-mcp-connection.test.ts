@@ -79,7 +79,7 @@ test("connection test reuses existing stdio secret without persisting changes", 
 
     assert.equal(result.toolCount, 2);
     assert.deepEqual(result.toolNames, ["ping", "status"]);
-    assert.equal(disconnected, true);
+    assert.equal(disconnectCalls, 1);
 
     const unchanged = registry.get(server.id);
     assert.equal(unchanged?.transport, "stdio");
@@ -220,13 +220,13 @@ test("connection test timeout disconnects the temporary client", async () => {
     );
     await registry.init();
 
-    let disconnected = false;
+    let disconnectCalls = 0;
     const factory: ConnectionTestClientFactory = () => ({
       async connect() {
         await new Promise<void>(() => undefined);
       },
       async disconnect() {
-        disconnected = true;
+        disconnectCalls += 1;
       },
       async listTools() {
         return [];
