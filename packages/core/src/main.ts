@@ -48,7 +48,7 @@ async function main(): Promise<void> {
     logger,
     { audit },
   );
-  upstreams.syncConfigs();
+  await upstreams.reconcile();
   const gateway = new GatewayServer(
     config,
     toolRegistry,
