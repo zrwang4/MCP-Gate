@@ -2055,7 +2055,7 @@ export function App() {
         </div>
       )}
 
-      {restoreCandidate && (
+      {Boolean(restoreCandidate) && (
         <div className="modalBackdrop" role="presentation" onMouseDown={() => setRestoreCandidate(null)}>
           <section className="modalCard confirmCard" role="dialog" aria-modal="true" aria-label="恢复配置确认" onMouseDown={(event) => event.stopPropagation()}>
             <div className="modalHeader">
