@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { validateBackupBundle } from "./management-route-backup.ts";
 
-const validBackup = () => ({
+const validBackup = (): {
+  version: 1;
+  exportedAt: string;
+  note: string;
+  servers: { version: 1; servers: unknown[] };
+  profiles: { version: 1; activeProfileId: string | null; profiles: unknown[] };
+  toolPolicy: { version: 1; disabled: Record<string, unknown> };
+  gatewayAccess: { version: 1; apiKeySecretId: string | null; lanEnabled: boolean };
+  sessionSettings: { version: 1; idleTimeoutMs: number };
+} => ({
   version: 1,
   exportedAt: new Date().toISOString(),
   note: "test",
