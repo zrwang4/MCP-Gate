@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile, rename, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const MAX_LOG_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_PENDING_LOG_BYTES = 2 * 1024 * 1024;
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -23,6 +24,7 @@ export class CoreLogger {
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
   #flushPromise: Promise<void> | null = null;
   #fileBytes = 0;
+  #pendingOverflowWarned = false;
 
   constructor(logFile: string, maxEntries = 1000) {
     this.#logFile = logFile;
@@ -116,6 +118,21 @@ export class CoreLogger {
     }
   }
 
+  #trimPendingBuffer(): void {
+    while (
+      this.#pendingLines.length > 1 &&
+      this.#pendingBytes > MAX_PENDING_LOG_BYTES
+    ) {
+      const dropped = this.#pendingLines.shift();
+      this.#pendingBytes -= dropped ? Buffer.byteLength(dropped, "utf8") : 0;
+    }
+
+    if (this.#pendingBytes > MAX_PENDING_LOG_BYTES && !this.#pendingOverflowWarned) {
+      this.#pendingOverflowWarned = true;
+      console.warn("[logger] pending log buffer exceeded 2 MiB; dropping oldest pending entries");
+    }
+  }
+
   #scheduleFlush(): void {
     if (this.#flushTimer) return;
     this.#flushTimer = setTimeout(() => {
@@ -144,6 +161,7 @@ export class CoreLogger {
           }
           await appendFile(this.#logFile, nextBatch, "utf8");
           this.#fileBytes += nextBatchBytes;
+          this.#pendingOverflowWarned = false;
         } catch (error) {
           console.error(`[logger] failed to write log file: ${String(error)}`);
         }
@@ -231,6 +249,7 @@ export class CoreLogger {
     const line = `${JSON.stringify(entry)}\n`;
     this.#pendingLines.push(line);
     this.#pendingBytes += Buffer.byteLength(line, "utf8");
+    this.#trimPendingBuffer();
     if (this.#pendingBytes >= 64 * 1024) {
       void this.#flushPending();
     } else {
