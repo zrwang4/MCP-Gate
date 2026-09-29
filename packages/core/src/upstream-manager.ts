@@ -18,6 +18,7 @@ export type UpstreamStatus =
 export interface UpstreamLifecycleHandlers {
   onClose?: () => void;
   onError?: (error: Error) => void;
+  onNotificationStreamRecycled?: () => void;
 }
 
 export interface UpstreamClient {
@@ -447,6 +448,9 @@ export class UpstreamManager {
         onClose: () => {
           this.#handleClientClose(id, generation);
         },
+        onNotificationStreamRecycled: () => {
+          this.#handleNotificationStreamRecycled(id, generation);
+        },
       });
 
       await client.connect();
@@ -551,29 +555,21 @@ export class UpstreamManager {
     }
   }
 
-  /**
-   * The streamable-HTTP transport keeps a second, long-lived SSE request open
-   * for server-initiated messages. Remote endpoints recycle that stream when
-   * it sits idle — Apifox terminates it every 240 seconds — and the SDK
-   * reconnects it on its own while tool calls ride separate POSTs untouched.
-   * Recording that routine drop as an error pinned a permanent red banner
-   * onto a healthy server, so it is only logged. Real degradation announces
-   * itself differently ("Failed to reconnect SSE stream", "Maximum
-   * reconnection attempts") and keeps the error path below; if the message
-   * ever changes, the worst case is the banner returning, not a lost signal.
-   */
-  #handleClientError(id: string, generation: number, error: Error): void {
+  #handleNotificationStreamRecycled(id: string, generation: number): void {
     const runtime = this.#runtimes.get(id);
     if (!runtime || runtime.generation !== generation) return;
     if (runtime.status !== "running" || !runtime.desiredConnected) return;
 
-    if (error.message.startsWith("SSE stream disconnected:")) {
-      this.#logger.info(
-        "upstream",
-        `notification stream recycled for ${runtime.config.name}; transport reconnects it automatically`,
-      );
-      return;
-    }
+    this.#logger.info(
+      "upstream",
+      `notification stream recycled for ${runtime.config.name}; transport reconnects it automatically`,
+    );
+  }
+
+  #handleClientError(id: string, generation: number, error: Error): void {
+    const runtime = this.#runtimes.get(id);
+    if (!runtime || runtime.generation !== generation) return;
+    if (runtime.status !== "running" || !runtime.desiredConnected) return;
 
     runtime.lastError = error.message;
     this.#logger.warn(
