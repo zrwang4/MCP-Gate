@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { CoreLogger } from "./logger.ts";
 import type {
-  HttpServerConfig,
   McpServerConfig,
   ServerConfigInput,
   ServerRegistry,
