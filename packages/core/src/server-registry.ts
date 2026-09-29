@@ -424,7 +424,10 @@ function cloneServer(server: McpServerConfig): McpServerConfig {
       envSecretIds: server.envSecretIds ? { ...server.envSecretIds } : undefined,
     };
   }
-  return { ...server };
+  return {
+    ...server,
+    headers: server.headers ? { ...server.headers } : undefined,
+  };
 }
 
 function isServerConfig(value: unknown): value is McpServerConfig {
