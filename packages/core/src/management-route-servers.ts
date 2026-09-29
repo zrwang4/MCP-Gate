@@ -278,7 +278,9 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         args: Array.isArray(body.args) ? body.args as string[] : [],
         cwd: typeof body.cwd === "string" ? body.cwd : undefined,
         url: typeof body.url === "string" ? body.url : undefined,
-        headers: readOptionalHeaders(body.headers),
+        ...(Object.prototype.hasOwnProperty.call(body, "headers")
+          ? { headers: readOptionalHeaders(body.headers) }
+          : {}),
         authSecretId,
       });
 
