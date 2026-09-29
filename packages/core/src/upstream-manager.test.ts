@@ -443,6 +443,105 @@ test("upstream manager retains a failed disconnect for retry", async () => {
 
 
 
+
+
+test("upstream manager ignores routine SSE stream recycle errors", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "SSE", command: "fake" });
+
+    const tools = new ToolRegistry();
+    let onError: ((error: Error) => void) | undefined;
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        setLifecycleHandlers(handlers) {
+          onError = handlers.onError;
+        },
+        async connect() {},
+        async disconnect() {},
+        async listTools() {
+          return [{ name: "ping" }];
+        },
+        async callTool() {
+          return {
+            content: [{ type: "text" as const, text: "pong" }],
+          };
+        },
+      }),
+      logger,
+    );
+
+    await upstreams.connect(config.id);
+    onError?.(new Error("SSE stream disconnected: idle notification stream recycled"));
+
+    const snapshot = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(snapshot?.status, "running");
+    assert.equal(snapshot?.lastError, null);
+    assert.equal(snapshot?.toolCount, 1);
+    assert.equal(snapshot?.reconnectAttempt, 0);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("upstream manager records real SSE reconnect failures", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "SSE Failure", command: "fake" });
+
+    const tools = new ToolRegistry();
+    let onError: ((error: Error) => void) | undefined;
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        setLifecycleHandlers(handlers) {
+          onError = handlers.onError;
+        },
+        async connect() {},
+        async disconnect() {},
+        async listTools() {
+          return [{ name: "ping" }];
+        },
+        async callTool() {
+          return {
+            content: [{ type: "text" as const, text: "pong" }],
+          };
+        },
+      }),
+      logger,
+    );
+
+    await upstreams.connect(config.id);
+    onError?.(new Error("Failed to reconnect SSE stream"));
+
+    const snapshot = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(snapshot?.status, "running");
+    assert.equal(snapshot?.lastError, "Failed to reconnect SSE stream");
+    assert.equal(snapshot?.reconnectAttempt, 0);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("upstream manager waits for an in-flight connect when disconnect is requested", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
   let logger: CoreLogger | null = null;
