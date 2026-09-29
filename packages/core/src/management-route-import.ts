@@ -86,7 +86,7 @@ export const handleImport: RouteHandler = async (req, res, url, ctx) => {
         ctx.secrets,
         ctx.logger,
       );
-      ctx.upstreams.syncConfigs();
+      await ctx.upstreams.reconcile();
       json(res, 200, {
         source: loaded.source,
         result,
@@ -137,7 +137,7 @@ export const handleImport: RouteHandler = async (req, res, url, ctx) => {
         ctx.secrets,
         ctx.logger,
       );
-      ctx.upstreams.syncConfigs();
+      await ctx.upstreams.reconcile();
       json(res, 200, { result });
     } catch (error) {
       json(res, 400, {
