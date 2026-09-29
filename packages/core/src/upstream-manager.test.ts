@@ -791,6 +791,55 @@ test("upstream list is read-only and reconcile owns removed runtime cleanup", as
 });
 
 
+test("reconcile disconnects upstreams disabled outside the runtime manager", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Disabled", command: "fake" });
+
+    const tools = new ToolRegistry();
+    let disconnectCalls = 0;
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {},
+        async disconnect() {
+          disconnectCalls += 1;
+        },
+        async listTools() {
+          return [{ name: "ping" }];
+        },
+        async callTool() {
+          return { content: [{ type: "text" as const, text: "pong" }] };
+        },
+      }),
+      logger,
+    );
+
+    await upstreams.connect(config.id);
+    await servers.updateSettings(config.id, { enabled: false });
+
+    assert.equal(disconnectCalls, 0);
+    assert.equal(upstreams.list().find((item) => item.id === config.id)?.status, "running");
+
+    await upstreams.reconcile();
+
+    assert.equal(disconnectCalls, 1);
+    assert.equal(upstreams.list().find((item) => item.id === config.id)?.status, "stopped");
+    assert.equal(tools.list().length, 0);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+
 test("upstream manager applies an exact profile server set", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
   let logger: CoreLogger | null = null;
