@@ -59,3 +59,28 @@ test("loads persisted log history across restarts and preserves sequence numbers
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("rotates the active log file after it crosses the size limit", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-logger-rotate-"));
+  const originalInfo = console.info;
+  console.info = () => {};
+  try {
+    const file = join(dir, "core.jsonl");
+    const logger = new CoreLogger(file, 2);
+    await logger.init();
+
+    logger.info("test", "x".repeat(5 * 1024 * 1024));
+    await logger.flush();
+    logger.info("test", "after-rotation");
+    await logger.flush();
+
+    const rotated = await readFile(file + ".1", "utf8");
+    const current = await readFile(file, "utf8");
+    assert.match(rotated, /"source":"test"/);
+    assert.match(current, /after-rotation/);
+  } finally {
+    console.info = originalInfo;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
