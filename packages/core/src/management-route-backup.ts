@@ -13,6 +13,7 @@ type BackupBundle = {
   profiles: unknown;
   toolPolicy: unknown;
   gatewayAccess: unknown;
+  sessionSettings: unknown;
 };
 
 async function readJsonOrDefault(path: string, fallback: unknown): Promise<unknown> {
@@ -34,7 +35,7 @@ function validateBundle(value: unknown): BackupBundle {
     throw new Error("unsupported backup version");
   }
 
-  for (const key of ["servers", "profiles", "toolPolicy", "gatewayAccess"]) {
+  for (const key of ["servers", "profiles", "toolPolicy", "gatewayAccess", "sessionSettings"]) {
     const item = bundle[key];
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       throw new Error(`backup.${key} must be an object`);
@@ -45,6 +46,7 @@ function validateBundle(value: unknown): BackupBundle {
   const profiles = bundle.profiles as Record<string, unknown>;
   const toolPolicy = bundle.toolPolicy as Record<string, unknown>;
   const gatewayAccess = bundle.gatewayAccess as Record<string, unknown>;
+  const sessionSettings = bundle.sessionSettings as Record<string, unknown>;
 
   if (servers.version !== 1 || !Array.isArray(servers.servers)) {
     throw new Error("invalid server registry backup");
@@ -61,6 +63,11 @@ function validateBundle(value: unknown): BackupBundle {
     (gatewayAccess.lanEnabled !== undefined && typeof gatewayAccess.lanEnabled !== "boolean")
   ) {
     throw new Error("invalid gateway access backup");
+  }
+  if (
+    sessionSettings.version !== 1 ||
+    typeof sessionSettings.idleTimeoutMs !== "number"
+  ) {
   }
 
   const profileIds = new Set(
@@ -85,6 +92,7 @@ function validateBundle(value: unknown): BackupBundle {
     profiles: bundle.profiles,
     toolPolicy: bundle.toolPolicy,
     gatewayAccess: bundle.gatewayAccess,
+    sessionSettings: bundle.sessionSettings,
   };
 }
 
@@ -112,6 +120,10 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
         version: 1,
         apiKeySecretId: null,
         lanEnabled: false,
+      }),
+      sessionSettings: await readJsonOrDefault(ctx.config.sessionSettingsFile, {
+        version: 1,
+        idleTimeoutMs: ctx.config.sessionIdleTimeoutMs,
       }),
     };
 
@@ -155,6 +167,14 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
         {
           directory: dirname(ctx.config.gatewayAccessFile),
           fileName: basename(ctx.config.gatewayAccessFile),
+          logger: ctx.logger,
+        },
+      );
+      await writeJsonWithBackup(
+        backup.sessionSettings,
+        {
+          directory: dirname(ctx.config.sessionSettingsFile),
+          fileName: basename(ctx.config.sessionSettingsFile),
           logger: ctx.logger,
         },
       );
