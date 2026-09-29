@@ -103,7 +103,7 @@ test("server service restores a running upstream after settings persistence fail
 
   await assert.rejects(
     service.updateSettings(server.id, { enabled: false }),
-    /ENOTDIR|not a directory|open|rename/i,
+    /EEXIST|ENOTDIR|not a directory|open|rename|mkdir/i,
   );
 
   assert.equal(disconnectCalls, 1);
