@@ -259,6 +259,63 @@ test("manual disconnect does not schedule automatic reconnect", async () => {
 
 
 
+
+
+test("upstream status polling does not cancel an in-flight connect", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Polling", command: "fake" });
+
+    const tools = new ToolRegistry();
+    let releaseConnect: (() => void) | undefined;
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {
+          await new Promise<void>((resolve) => {
+            releaseConnect = resolve;
+          });
+        },
+        async disconnect() {},
+        async listTools() {
+          return [{ name: "ping" }];
+        },
+        async callTool() {
+          return {
+            content: [{ type: "text" as const, text: "pong" }],
+          };
+        },
+      }),
+      logger,
+    );
+
+    const connecting = upstreams.connect(config.id);
+    await waitFor(() => releaseConnect !== undefined);
+
+    upstreams.list();
+    upstreams.list();
+    upstreams.list();
+
+    releaseConnect?.();
+    const snapshot = await connecting;
+
+    assert.equal(snapshot.status, "running");
+    assert.equal(snapshot.toolCount, 1);
+    assert.equal(snapshot.lastError, null);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("upstream manager discards a connect that is superseded by disconnect", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
   let logger: CoreLogger | null = null;
