@@ -894,3 +894,143 @@ test("upstream manager applies an exact profile server set", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("upstream manager opens a circuit after repeated health check failures", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  let upstreams: UpstreamManager | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Health", command: "fake" });
+    const tools = new ToolRegistry();
+    let healthChecks = 0;
+    let disconnectCalls = 0;
+
+    upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {},
+        async disconnect() { disconnectCalls += 1; },
+        async healthCheck() {
+          healthChecks += 1;
+          throw new Error("health probe failed");
+        },
+        async listTools() { return [{ name: "ping" }]; },
+        async callTool() {
+          return { content: [{ type: "text" as const, text: "pong" }] };
+        },
+      }),
+      logger,
+      {
+        healthCheckIntervalMs: 5,
+        healthCheckTimeoutMs: 20,
+        circuitFailureThreshold: 2,
+        circuitResetMs: 100,
+      },
+    );
+
+    await upstreams.connect(config.id);
+    upstreams.startHealthMonitoring();
+
+    await waitFor(() => {
+      const snapshot = upstreams?.list().find((item) => item.id === config.id);
+      return (
+        healthChecks >= 2 &&
+        disconnectCalls === 1 &&
+        snapshot?.circuitState === "open" &&
+        snapshot?.status === "error"
+      );
+    }, 500);
+
+    const snapshot = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(snapshot?.healthStatus, "unhealthy");
+    assert.equal(snapshot?.consecutiveFailureCount, 2);
+    assert.equal(snapshot?.toolCount, 0);
+    assert.ok(snapshot?.nextRetryAt);
+  } finally {
+    await upstreams?.stopAll().catch(() => undefined);
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("upstream manager recovers after reconnect failures trip the circuit", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  let upstreams: UpstreamManager | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Breaker", command: "fake" });
+    const tools = new ToolRegistry();
+    let factoryCalls = 0;
+    let available = false;
+    let closeHandler: (() => void) | undefined;
+
+    upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => {
+        factoryCalls += 1;
+        return {
+          setLifecycleHandlers(handlers) {
+            if (factoryCalls === 1) closeHandler = handlers.onClose;
+          },
+          async connect() {
+            if (factoryCalls > 1 && !available) throw new Error("downstream unavailable");
+          },
+          async disconnect() {},
+          async listTools() { return [{ name: "ping" }]; },
+          async callTool() {
+            return { content: [{ type: "text" as const, text: "pong" }] };
+          },
+        };
+      },
+      logger,
+      {
+        reconnectDelaysMs: [5],
+        circuitFailureThreshold: 2,
+        circuitResetMs: 25,
+      },
+    );
+
+    await upstreams.connect(config.id);
+    closeHandler?.();
+
+    await waitFor(() => {
+      const snapshot = upstreams?.list().find((item) => item.id === config.id);
+      return snapshot?.circuitState === "open";
+    }, 500);
+
+    const open = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(open?.consecutiveFailureCount, 2);
+    assert.ok(open?.nextRetryAt);
+
+    available = true;
+    await waitFor(() => {
+      const snapshot = upstreams?.list().find((item) => item.id === config.id);
+      return (
+        factoryCalls >= 4 &&
+        snapshot?.status === "running" &&
+        snapshot?.circuitState === "closed"
+      );
+    }, 500);
+
+    const recovered = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(recovered?.healthStatus, "healthy");
+    assert.equal(recovered?.consecutiveFailureCount, 0);
+    assert.equal(recovered?.reconnectAttempt, 0);
+    assert.equal(recovered?.nextRetryAt, null);
+  } finally {
+    await upstreams?.stopAll().catch(() => undefined);
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
