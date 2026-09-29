@@ -110,19 +110,24 @@ export async function testMcpConnection(
     options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
   const listToolsTimeoutMs =
     options.listToolsTimeoutMs ?? DEFAULT_LIST_TOOLS_TIMEOUT_MS;
+  let disconnectPromise: Promise<void> | null = null;
+  const disconnect = (): Promise<void> => {
+    if (!disconnectPromise) disconnectPromise = client.disconnect();
+    return disconnectPromise;
+  };
 
   try {
     await withTimeout(
       client.connect(),
       connectTimeoutMs,
       `MCP connection timed out after ${connectTimeoutMs}ms`,
-      () => client.disconnect(),
+      disconnect,
     );
     const tools = await withTimeout(
       client.listTools(),
       listToolsTimeoutMs,
       `MCP tools/list timed out after ${listToolsTimeoutMs}ms`,
-      () => client.disconnect(),
+      disconnect,
     );
     const result: McpConnectionTestResult = {
       transport,
@@ -144,7 +149,7 @@ export async function testMcpConnection(
     );
     throw error;
   } finally {
-    await client.disconnect().catch(() => undefined);
+    await disconnect().catch(() => undefined);
   }
 }
 
