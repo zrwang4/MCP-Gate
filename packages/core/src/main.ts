@@ -59,7 +59,7 @@ async function main(): Promise<void> {
     { audit, mutations },
   );
   const reconciler = new RuntimeReconciler(registry, upstreams);
-  await reconciler.reconcile();
+  await mutations.run(() => reconciler.reconcile());
   const serverService = new ServerService(
     registry,
     profiles,

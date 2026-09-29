@@ -220,9 +220,13 @@ export class ManagementServer {
             idleTimeoutMs,
             this.#logger,
           );
+          // Keep the in-memory config in step with the file so subsequent
+          // GETs (and /api/status) reflect the new value immediately instead
+          // of serving the stale startup value until a restart.
+          this.#config.sessionIdleTimeoutMs = idleTimeoutMs;
           this.#logger.info(
             "session",
-            `MCP session idle timeout changed to ${Math.round(idleTimeoutMs / 60_000)} minute(s); Core restart required`,
+            `MCP session idle timeout changed to ${Math.round(idleTimeoutMs / 60_000)} minute(s); restart required for existing gateway sessions`,
           );
         });
         json(res, 200, { settings: sessionSettingsSnapshot(idleTimeoutMs), restartRequired: true });

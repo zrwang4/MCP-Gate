@@ -122,10 +122,10 @@ export class StdioUpstreamClient implements UpstreamClient {  #config: StdioServ
   }
 
   async healthCheck(timeoutMs: number): Promise<void> {
-    await this.#requireClient().listTools(undefined, {
-      cacheMode: "bypass",
-      timeout: timeoutMs,
-    });
+    // A cheap standard ping instead of listTools: probing must not depend on
+    // the upstream's tool catalog or cache behavior, and ping is the protocol
+    // liveness check every conforming server answers.
+    await this.#requireClient().ping({ timeout: timeoutMs });
   }
 
   async listTools(): Promise<McpToolDefinition[]> {
