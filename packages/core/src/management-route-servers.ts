@@ -253,7 +253,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     return true;
   }
 
-  const configDeleteMatch = url.pathname.match  const configDeleteMatch = url.pathname.match(/^\/api\/server-configs\/([0-9a-f-]+)$/i);
+  const configDeleteMatch = url.pathname.match(/^\/api\/server-configs\/([0-9a-f-]+)$/i);
   if (req.method === "DELETE" && configDeleteMatch) {
     if (!requireDesktopClient(req, res)) return true;
 
@@ -274,7 +274,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     return true;
   }
 
-  return false;  return false;
+  return false;
 };
 
 function normalizeOptionalAuthorization(value: unknown): string | undefined {
