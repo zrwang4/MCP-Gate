@@ -269,6 +269,20 @@ test("mcp-proxy hosts the secured gateway and routes aggregated tools", async ()
       { type: "text", text: "through mcp-proxy" },
     ]);
 
+    assert.equal(tools.setEnabled("echo__say", false), true);
+    assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name), []);
+    assert.deepEqual(
+      (await legacyClient.listTools()).tools.map((tool) => tool.name),
+      [],
+    );
+
+    assert.equal(tools.setEnabled("echo__say", true), true);
+    assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name), ["echo__say"]);
+    assert.deepEqual(
+      (await legacyClient.listTools()).tools.map((tool) => tool.name),
+      ["echo__say"],
+    );
+
     tools.replaceServerTools("srv-1", "echo", [
       { name: "say", inputSchema: { type: "object" } },
       { name: "status", inputSchema: { type: "object" } },
