@@ -18,6 +18,7 @@ import { handleImport } from "./management-route-import.ts";
 import { handleServers } from "./management-route-servers.ts";
 import { handleTools } from "./management-route-tools.ts";
 import { handleLogs } from "./management-route-logs.ts";
+import { handleBackup } from "./management-route-backup.ts";
 import type { GatewayAccessController } from "./gateway-access.ts";
 import type { GatewayServer } from "./gateway-server.ts";
 import type { ServerRegistry } from "./server-registry.ts";
@@ -63,6 +64,7 @@ const ROUTES: RouteHandler[] = [
   handleServers,
   handleTools,
   handleLogs,
+  handleBackup,
 ];
 
 export class ManagementServer {
