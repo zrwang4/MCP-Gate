@@ -58,7 +58,8 @@ export const handleTools: RouteHandler = async (req, res, url, ctx) => {
       return true;
     }
 
-    const enabled = action === "enable";
+    await ctx.mutations.run(async () => {
+      const enabled = action === "enable";
     await ctx.toolPolicy.setEnabled(
       tool.serverId,
       tool.originalName,
@@ -76,6 +77,8 @@ export const handleTools: RouteHandler = async (req, res, url, ctx) => {
       `${action === "enable" ? "enabled" : "disabled"} ${publicName}`,
     );
     json(res, 200, { tool: updatedTool });
+
+    });
     return true;
   }
 
