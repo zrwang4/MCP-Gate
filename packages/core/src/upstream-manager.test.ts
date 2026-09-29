@@ -526,6 +526,7 @@ test("upstream manager ignores routine SSE stream recycle errors", async () => {
 
     const tools = new ToolRegistry();
     let onError: ((error: Error) => void) | undefined;
+    let onNotificationStreamRecycled: (() => void) | undefined;
 
     const upstreams = new UpstreamManager(
       servers,
@@ -533,6 +534,7 @@ test("upstream manager ignores routine SSE stream recycle errors", async () => {
       () => ({
         setLifecycleHandlers(handlers) {
           onError = handlers.onError;
+          onNotificationStreamRecycled = handlers.onNotificationStreamRecycled;
         },
         async connect() {},
         async disconnect() {},
@@ -549,7 +551,7 @@ test("upstream manager ignores routine SSE stream recycle errors", async () => {
     );
 
     await upstreams.connect(config.id);
-    onError?.(new Error("SSE stream disconnected: idle notification stream recycled"));
+    onNotificationStreamRecycled?.();
 
     const snapshot = upstreams.list().find((item) => item.id === config.id);
     assert.equal(snapshot?.status, "running");
