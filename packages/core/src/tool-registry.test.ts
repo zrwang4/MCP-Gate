@@ -113,3 +113,40 @@ test("failed tool refresh leaves the previous server routes intact", () => {
     ["git__repos", "git__status"],
   );
 });
+
+
+test("tool registry isolates nested schema mutations", () => {
+  const registry = new ToolRegistry();
+  const schema = {
+    type: "object",
+    properties: {
+      input: {
+        type: "string",
+        metadata: { examples: ["secret-example"] },
+      },
+    },
+  };
+
+  registry.replaceServerTools("srv-1", "git", [
+    { name: "query", inputSchema: schema },
+  ]);
+
+  schema.properties.input.metadata.examples[0] = "changed";
+  const returned = registry.resolve("git__query");
+  assert.equal(
+    (returned?.definition.inputSchema as typeof schema).properties.input.metadata.examples[0],
+    "secret-example",
+  );
+
+  if (returned?.definition.inputSchema && typeof returned.definition.inputSchema === "object") {
+    (
+      returned.definition.inputSchema as typeof schema
+    ).properties.input.metadata.examples[0] = "outside";
+  }
+
+  assert.equal(
+    (registry.resolve("git__query")?.definition.inputSchema as typeof schema)
+      .properties.input.metadata.examples[0],
+    "secret-example",
+  );
+});
