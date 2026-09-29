@@ -63,6 +63,9 @@ export class ToolPolicyStore {
     originalName: string,
     enabled: boolean,
   ): Promise<void> {
+    const previous = new Map(
+      [...this.#disabled.entries()].map(([id, names]) => [id, new Set(names)] as const),
+    );
     const names = this.#disabled.get(serverId) ?? new Set<string>();
     if (enabled) names.delete(originalName);
     else names.add(originalName);
@@ -70,12 +73,25 @@ export class ToolPolicyStore {
     if (names.size === 0) this.#disabled.delete(serverId);
     else this.#disabled.set(serverId, names);
 
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      this.#disabled = previous;
+      throw error;
+    }
   }
 
   async removeServer(serverId: string): Promise<void> {
+    const previous = new Map(
+      [...this.#disabled.entries()].map(([id, names]) => [id, new Set(names)] as const),
+    );
     if (!this.#disabled.delete(serverId)) return;
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      this.#disabled = previous;
+      throw error;
+    }
   }
 
   async #persist(): Promise<void> {
