@@ -102,41 +102,39 @@ export function validateBackupBundle(value: unknown): BackupBundle {
 export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
   if (req.method === "GET" && url.pathname === "/api/backup/export") {
     await ctx.mutations.run(async () => {
-  const bundle: BackupBundle = {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    note:
-      "Configuration backup. Secret values are never exported; secret references remain valid only when the secure storage entries still exist.",
-    servers: await readJsonOrDefault(ctx.config.serverConfigFile, {
-      version: 1,
-      servers: [],
-    }),
-    profiles: await readJsonOrDefault(ctx.config.profileFile, {
-      version: 1,
-      activeProfileId: null,
-      profiles: [],
-    }),
-    toolPolicy: await readJsonOrDefault(ctx.config.toolPolicyFile, {
-      version: 1,
-      disabled: {},
-    }),
-    gatewayAccess: await readJsonOrDefault(ctx.config.gatewayAccessFile, {
-      version: 1,
-      apiKeySecretId: null,
-      lanEnabled: false,
-    }),
-    sessionSettings: await readJsonOrDefault(ctx.config.sessionSettingsFile, {
-      version: 1,
-      idleTimeoutMs: ctx.config.sessionIdleTimeoutMs,
-    }),
-  };
-  
-  json(res, 200, { backup: bundle });
-  return true;
+      const bundle: BackupBundle = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        note:
+          "Configuration backup. Secret values are never exported; secret references remain valid only when the secure storage entries still exist.",
+        servers: await readJsonOrDefault(ctx.config.serverConfigFile, {
+          version: 1,
+          servers: [],
+        }),
+        profiles: await readJsonOrDefault(ctx.config.profileFile, {
+          version: 1,
+          activeProfileId: null,
+          profiles: [],
+        }),
+        toolPolicy: await readJsonOrDefault(ctx.config.toolPolicyFile, {
+          version: 1,
+          disabled: {},
+        }),
+        gatewayAccess: await readJsonOrDefault(ctx.config.gatewayAccessFile, {
+          version: 1,
+          apiKeySecretId: null,
+          lanEnabled: false,
+        }),
+        sessionSettings: await readJsonOrDefault(ctx.config.sessionSettingsFile, {
+          version: 1,
+          idleTimeoutMs: ctx.config.sessionIdleTimeoutMs,
+        }),
+      };
+
+      json(res, 200, { backup: bundle });
     });
     return true;
   }
-
   if (req.method === "POST" && url.pathname === "/api/backup/restore") {
     if (!requireDesktopClient(req, res)) return true;
 
@@ -145,46 +143,31 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
       const backup = validateBackupBundle((body as { backup?: unknown }).backup ?? body);
 
       await ctx.mutations.run(async () => {
-        await writeJsonWithBackup(
-          backup.servers,
-          {
-            directory: dirname(ctx.config.serverConfigFile),
-            fileName: basename(ctx.config.serverConfigFile),
-            logger: ctx.logger,
-          },
-        );
-        await writeJsonWithBackup(
-          backup.profiles,
-        {
+        await writeJsonWithBackup(backup.servers, {
+          directory: dirname(ctx.config.serverConfigFile),
+          fileName: basename(ctx.config.serverConfigFile),
+          logger: ctx.logger,
+        });
+        await writeJsonWithBackup(backup.profiles, {
           directory: dirname(ctx.config.profileFile),
           fileName: basename(ctx.config.profileFile),
           logger: ctx.logger,
-          },
-        );
-        await writeJsonWithBackup(
-          backup.toolPolicy,
-        {
+        });
+        await writeJsonWithBackup(backup.toolPolicy, {
           directory: dirname(ctx.config.toolPolicyFile),
           fileName: basename(ctx.config.toolPolicyFile),
           logger: ctx.logger,
-          },
-        );
-        await writeJsonWithBackup(
-          backup.gatewayAccess,
-        {
+        });
+        await writeJsonWithBackup(backup.gatewayAccess, {
           directory: dirname(ctx.config.gatewayAccessFile),
           fileName: basename(ctx.config.gatewayAccessFile),
           logger: ctx.logger,
-          },
-        );
-        await writeJsonWithBackup(
-          backup.sessionSettings,
-        {
+        });
+        await writeJsonWithBackup(backup.sessionSettings, {
           directory: dirname(ctx.config.sessionSettingsFile),
           fileName: basename(ctx.config.sessionSettingsFile),
           logger: ctx.logger,
-          },
-        );
+        });
 
         ctx.logger.info("backup", "configuration backup restored; Core restart required");
       });
@@ -200,6 +183,5 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
     }
     return true;
   }
-
   return false;
 };
