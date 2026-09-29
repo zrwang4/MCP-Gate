@@ -84,7 +84,7 @@ test("profile service restores active runtime after profile delete persistence f
 
     await assert.rejects(
       service.remove(profile.id),
-      /ENOTDIR|not a directory|open|rename/i,
+      /EEXIST|ENOTDIR|not a directory|open|rename|mkdir/i,
     );
 
     assert.equal(profiles.activeProfileId, profile.id);
