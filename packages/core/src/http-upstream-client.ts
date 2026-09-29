@@ -248,6 +248,10 @@ export class HttpUpstreamClient implements UpstreamClient {
       this.#lifecycleHandlers.onClose?.();
     };
     client.onerror = (error) => {
+      if (error.message.startsWith("SSE stream disconnected:")) {
+        this.#lifecycleHandlers.onNotificationStreamRecycled?.();
+        return;
+      }
       this.#lifecycleHandlers.onError?.(error);
     };
   }
