@@ -257,7 +257,70 @@ test("manual disconnect does not schedule automatic reconnect", async () => {
   }
 });
 
-async function waitFor(
+
+
+test("upstream manager discards a connect that is superseded by disconnect", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Race", command: "fake" });
+
+    const tools = new ToolRegistry();
+    let releaseConnect: (() => void) | undefined;
+    let disconnects = 0;
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {
+          await new Promise<void>((resolve) => {
+            releaseConnect = resolve;
+          });
+        },
+        async disconnect() {
+          disconnects += 1;
+        },
+        async listTools() {
+          return [{ name: "stale_tool" }];
+        },
+        async callTool() {
+          return {
+            content: [{ type: "text" as const, text: "stale" }],
+          };
+        },
+      }),
+      logger,
+    );
+
+    const connecting = upstreams.connect(config.id);
+    await waitFor(() => releaseConnect !== undefined);
+
+    await assert.rejects(
+      upstreams.disconnect(config.id),
+      /upstream action already in progress/,
+    );
+
+    releaseConnect?.();
+    await assert.rejects(connecting, /upstream connect superseded/);
+
+    const snapshot = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(snapshot?.status, "stopped");
+    assert.equal(snapshot?.toolCount, 0);
+    assert.equal(snapshot?.lastError, null);
+    assert.equal(tools.list().length, 0);
+    assert.equal(disconnects, 1);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+\nasync function waitFor(
   predicate: () => boolean,
   timeoutMs = 500,
 ): Promise<void> {
