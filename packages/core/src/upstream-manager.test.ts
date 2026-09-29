@@ -8,6 +8,7 @@ import { ServerRegistry } from "./server-registry.ts";
 import { ToolRegistry } from "./tool-registry.ts";
 import { UpstreamManager, type UpstreamClient } from "./upstream-manager.ts";
 import { RuntimeReconciler } from "./runtime-reconciler.ts";
+import { MutationQueue } from "./mutation-queue.ts";
 
 test("upstream manager connects, caches tools, and routes calls", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
@@ -727,6 +728,177 @@ test("upstream manager rejects a concurrent disconnect while one is in progress"
     assert.equal(disconnects, 1);
     assert.equal(tools.list().length, 0);
   } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("unhealthy runtime isolation serializes through the mutation queue", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  let upstreams: UpstreamManager | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Isolate", command: "fake" });
+    const tools = new ToolRegistry();
+    const mutations = new MutationQueue();
+    let healthChecks = 0;
+    let disconnectCalls = 0;
+
+    upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {},
+        async disconnect() {
+          disconnectCalls += 1;
+        },
+        async healthCheck() {
+          healthChecks += 1;
+          throw new Error("health probe failed");
+        },
+        async listTools() {
+          return [{ name: "ping" }];
+        },
+        async callTool() {
+          return { content: [{ type: "text" as const, text: "pong" }] };
+        },
+      }),
+      logger,
+      {
+        mutations,
+        healthCheckIntervalMs: 5,
+        healthCheckTimeoutMs: 20,
+        circuitFailureThreshold: 1,
+        circuitResetMs: 60_000,
+      },
+    );
+
+    await upstreams.connect(config.id);
+
+    // Park the mutation queue: an unrelated long operation is running. The
+    // health check itself still fires (probes are not queued), but the
+    // isolation must wait for the queue instead of racing user operations.
+    let releaseBlocker!: () => void;
+    const blocker = mutations.run(
+      () => new Promise<void>((resolve) => { releaseBlocker = resolve; }),
+    );
+
+    upstreams.startHealthMonitoring();
+    await waitFor(() => healthChecks >= 1);
+
+    // Failure was recorded, but the queued isolation has not executed yet.
+    assert.equal(disconnectCalls, 0);
+    assert.equal(
+      upstreams.list().find((item) => item.id === config.id)?.status,
+      "running",
+    );
+
+    releaseBlocker();
+    await blocker;
+
+    await waitFor(() => {
+      const snapshot = upstreams?.list().find((item) => item.id === config.id);
+      return (
+        disconnectCalls === 1 &&
+        snapshot?.status === "error" &&
+        snapshot?.circuitState === "open"
+      );
+    }, 500);
+  } finally {
+    await upstreams?.stopAll().catch(() => undefined);
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("unhealthy runtime isolation skips a runtime superseded by a queued operation", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  let upstreams: UpstreamManager | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Superseded", command: "fake" });
+    const tools = new ToolRegistry();
+    const mutations = new MutationQueue();
+    let healthChecks = 0;
+    let disconnectCalls = 0;
+
+    upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {},
+        async disconnect() {
+          disconnectCalls += 1;
+        },
+        async healthCheck() {
+          healthChecks += 1;
+          throw new Error("health probe failed");
+        },
+        async listTools() {
+          return [{ name: "ping" }];
+        },
+        async callTool() {
+          return { content: [{ type: "text" as const, text: "pong" }] };
+        },
+      }),
+      logger,
+      {
+        mutations,
+        healthCheckIntervalMs: 5,
+        healthCheckTimeoutMs: 20,
+        circuitFailureThreshold: 1,
+        circuitResetMs: 60_000,
+      },
+    );
+
+    await upstreams.connect(config.id);
+
+    // Park the queue, then queue an explicit user stop ahead of the isolation.
+    // The user operation wins: when the queued isolation finally executes it
+    // must detect the newer generation and leave the runtime alone.
+    let releaseBlocker!: () => void;
+    const blocker = mutations.run(
+      () => new Promise<void>((resolve) => { releaseBlocker = resolve; }),
+    );
+
+    upstreams.startHealthMonitoring();
+    await waitFor(() => healthChecks >= 1);
+
+    const queuedStop = mutations.run(() => upstreams!.disconnect(config.id));
+    await waitFor(() => {
+      // The stop is queued, not running: runtime is still "running" and the
+      // isolation is still waiting behind the blocker.
+      return (
+        upstreams?.list().find((item) => item.id === config.id)?.status ===
+        "running"
+      );
+    });
+
+    releaseBlocker();
+    await blocker;
+    await queuedStop;
+
+    // Small settle window: any incorrectly-queued extra isolation would run.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const snapshot = upstreams.list().find((item) => item.id === config.id);
+    // Exactly one disconnect: the user's stop. The stale isolation was a no-op.
+    assert.equal(disconnectCalls, 1);
+    assert.equal(snapshot?.status, "stopped");
+    assert.equal(snapshot?.circuitState, "closed");
+    // disconnect() resets health state; the failed probe must not have marked
+    // it unhealthy after the stop.
+    assert.equal(snapshot?.healthStatus, "unknown");
+  } finally {
+    await upstreams?.stopAll().catch(() => undefined);
     await logger?.flush();
     await rm(dir, { recursive: true, force: true });
   }

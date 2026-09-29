@@ -793,6 +793,8 @@ export class UpstreamManager {
         if (runtime.consecutiveFailureCount >= this.#circuitFailureThreshold) {
           await this.#isolateUnhealthyRuntime(
             runtime,
+            generation,
+            client,
             `health check failed ${runtime.consecutiveFailureCount} consecutive time(s)`,
           );
         }
@@ -802,30 +804,57 @@ export class UpstreamManager {
     }));
   }
 
-  async #isolateUnhealthyRuntime(runtime: Runtime, reason: string): Promise<void> {
+  /**
+   * Tear down a runtime that failed enough health checks to trip the circuit.
+   * The disconnect mutates shared state (#busy, generation, tools), so it is
+   * serialized through the global mutation queue instead of racing queued user
+   * operations (a concurrent user disconnect would otherwise observe #busy
+   * added by two owners and get its marker deleted early).
+   */
+  async #isolateUnhealthyRuntime(
+    runtime: Runtime,
+    generation: number,
+    client: UpstreamClient,
+    reason: string,
+  ): Promise<void> {
     const id = runtime.config.id;
-    const client = runtime.client;
-    if (!client) {
-      this.#openCircuit(runtime, reason);
-      return;
-    }
 
-    runtime.generation += 1;
-    runtime.status = "stopping";
-    this.#tools.removeServer(id);
-    this.#busy.add(id);
-    try {
-      await client.disconnect();
-      if (runtime.client === client) runtime.client = null;
-      runtime.toolCount = 0;
-    } catch (error) {
-      runtime.client = client;
-      this.#logger.warn("upstream", `failed to isolate unhealthy upstream ${runtime.config.name}: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      this.#busy.delete(id);
-      runtime.toolCount = 0;
-      runtime.status = "error";
-      this.#openCircuit(runtime, reason);
+    const isolate = async (): Promise<void> => {
+      // State may have moved on while this waited for the queue: a user
+      // operation now owns the runtime (or already replaced the client), and
+      // its own generation logic decides the outcome.
+      if (
+        this.#busy.has(id) ||
+        runtime.generation !== generation ||
+        runtime.client !== client ||
+        runtime.status !== "running" ||
+        !runtime.desiredConnected
+      ) {
+        return;
+      }
+
+      runtime.generation += 1;
+      runtime.status = "stopping";
+      this.#tools.removeServer(id);
+      this.#busy.add(id);
+      try {
+        await client.disconnect();
+        if (runtime.client === client) runtime.client = null;
+      } catch (error) {
+        runtime.client = client;
+        this.#logger.warn("upstream", `failed to isolate unhealthy upstream ${runtime.config.name}: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        this.#busy.delete(id);
+        runtime.toolCount = 0;
+        runtime.status = "error";
+        this.#openCircuit(runtime, reason);
+      }
+    };
+
+    if (this.#mutations) {
+      await this.#mutations.run(isolate).catch(() => undefined);
+    } else {
+      await isolate();
     }
   }
 
