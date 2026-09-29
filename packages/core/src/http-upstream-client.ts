@@ -54,6 +54,10 @@ export interface HttpAgentLease {
  * changing timeout values over the lifetime of the process cannot grow the pool
  * without bound.
  */
+export function isRoutineSseRecycleError(error: Error): boolean {
+  return error.message.startsWith("SSE stream disconnected:");
+}
+
 export class HttpAgentPool {
   #entries = new Map<number, HttpAgentEntry>();
 
@@ -248,7 +252,7 @@ export class HttpUpstreamClient implements UpstreamClient {
       this.#lifecycleHandlers.onClose?.();
     };
     client.onerror = (error) => {
-      if (error.message.startsWith("SSE stream disconnected:")) {
+      if (isRoutineSseRecycleError(error)) {
         this.#lifecycleHandlers.onNotificationStreamRecycled?.();
         return;
       }
