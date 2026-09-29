@@ -82,6 +82,7 @@ export class UpstreamManager {
   #reconnectDelaysMs: readonly number[];
   #runtimes = new Map<string, Runtime>();
   #busy = new Set<string>();
+  #connectOperations = new Map<string, Promise<UpstreamSnapshot>>();
 
   constructor(
     registry: ServerRegistry,
@@ -171,7 +172,16 @@ export class UpstreamManager {
     this.#cancelReconnect(runtime, true);
 
     if (this.#busy.has(id)) {
-      throw new Error("upstream action already in progress");
+      const connecting = this.#connectOperations.get(id);
+      if (connecting) {
+        // A config change or explicit stop is a cancellation request for the
+        // in-flight connect. Wait for the stale operation to finish cleaning
+        // itself up, then perform the real disconnect if a client remains.
+        await connecting.catch(() => undefined);
+      }
+      if (this.#busy.has(id)) {
+        throw new Error("upstream action already in progress");
+      }
     }
 
     this.#busy.add(id);
@@ -452,6 +462,25 @@ export class UpstreamManager {
   }
 
   async #connectRuntime(
+    runtime: Runtime,
+    reconnecting: boolean,
+  ): Promise<UpstreamSnapshot> {
+    const id = runtime.config.id;
+    const existing = this.#connectOperations.get(id);
+    if (existing) return existing;
+
+    const operation = this.#connectRuntimeInternal(runtime, reconnecting);
+    this.#connectOperations.set(id, operation);
+    try {
+      return await operation;
+    } finally {
+      if (this.#connectOperations.get(id) === operation) {
+        this.#connectOperations.delete(id);
+      }
+    }
+  }
+
+  async #connectRuntimeInternal(
     runtime: Runtime,
     reconnecting: boolean,
   ): Promise<UpstreamSnapshot> {
