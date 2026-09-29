@@ -473,6 +473,7 @@ export function App() {
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [backupBusy, setBackupBusy] = useState<"export" | "restore" | null>(null);
+  const [sessionSettingBusy, setSessionSettingBusy] = useState(false);
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
   const [restoreCandidate, setRestoreCandidate] = useState<unknown | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
@@ -883,6 +884,34 @@ export function App() {
       await refresh();
     } finally {
       setLanAccessBusy(false);
+    }
+  }
+
+  async function updateSessionIdleTimeout(minutes: number) {
+    setSessionSettingBusy(true);
+    setError(null);
+    setBackupMessage(null);
+    try {
+      await api(
+        "/api/session-settings",
+        {
+          method: "POST",
+          body: JSON.stringify({ idleTimeoutMs: minutes * 60_000 }),
+        },
+        15_000,
+      );
+      if (IS_TAURI) {
+        setBackupMessage("会话生命周期已保存，正在重启 Core…");
+        await restartManagedCore();
+      } else {
+        setBackupMessage("会话生命周期已保存，请重启 Core 后生效。");
+      }
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      await refresh();
+    } finally {
+      setSessionSettingBusy(false);
     }
   }
 
@@ -2419,9 +2448,26 @@ export function App() {
           <div className="settingsRow">
             <div>
               <strong>MCP 会话生命周期</strong>
-              <span>无活动的 Gateway MCP 会话会自动过期，当前配置为 {status?.core.sessionIdleTimeoutMs ? `${Math.round(status.core.sessionIdleTimeoutMs / 60_000)} 分钟` : "30 分钟"}。</span>
+              <span>无活动的 Gateway MCP 会话会自动过期。修改后 Core 会自动重启以应用新值。</span>
             </div>
-            <span className="settingsStatus">自动清理</span>
+            <select
+              className="sessionTimeoutSelect"
+              value={status?.core.sessionIdleTimeoutMs
+                ? String(Math.round(status.core.sessionIdleTimeoutMs / 60_000))
+                : "30"}
+              disabled={sessionSettingBusy || !managementConnected}
+              onChange={(event) => void updateSessionIdleTimeout(Number(event.target.value))}
+              aria-label="设置 MCP 会话生命周期"
+            >
+              <option value="5">5 分钟</option>
+              <option value="15">15 分钟</option>
+              <option value="30">30 分钟</option>
+              <option value="60">1 小时</option>
+              <option value="120">2 小时</option>
+              <option value="360">6 小时</option>
+              <option value="720">12 小时</option>
+              <option value="1440">24 小时</option>
+            </select>
           </div>
 
           <div className="settingsRow">
