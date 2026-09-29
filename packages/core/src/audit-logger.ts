@@ -33,7 +33,10 @@ export class AuditLogger {
   #entries: AuditEntry[] = [];
   #nextSeq = 1;
   #maxEntries: number;
-  #writeQueue = Promise.resolve();
+  #pendingLines: string[] = [];
+  #pendingBytes = 0;
+  #flushTimer: ReturnType<typeof setTimeout> | null = null;
+  #flushPromise: Promise<void> | null = null;
 
   constructor(filePath: string, maxEntries = 1000) {
     this.#filePath = filePath;
