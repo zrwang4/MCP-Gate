@@ -90,3 +90,26 @@ test("tool registry emits change events only for observable changes", () => {
   registry.replaceServerTools("srv-2", "db", [{ name: "query" }]);
   assert.equal(changed, 3);
 });
+
+
+test("failed tool refresh leaves the previous server routes intact", () => {
+  const registry = new ToolRegistry();
+  registry.replaceServerTools("srv-1", "git", [
+    { name: "status" },
+    { name: "repos" },
+  ]);
+
+  assert.throws(
+    () =>
+      registry.replaceServerTools("srv-1", "git", [
+        { name: "new_tool" },
+        { name: "   " },
+      ]),
+    /tool name is required/,
+  );
+
+  assert.deepEqual(
+    registry.list().map((route) => route.publicName),
+    ["git__repos", "git__status"],
+  );
+});
