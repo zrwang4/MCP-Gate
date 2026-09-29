@@ -441,6 +441,69 @@ test("upstream manager retains a failed disconnect for retry", async () => {
   }
 });
 
+
+
+test("upstream manager waits for an in-flight connect when disconnect is requested", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Wait", command: "fake" });
+
+    const tools = new ToolRegistry();
+    let releaseConnect: (() => void) | undefined;
+    let disconnectCalls = 0;
+
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {
+          await new Promise<void>((resolve) => {
+            releaseConnect = resolve;
+          });
+        },
+        async disconnect() {
+          disconnectCalls += 1;
+        },
+        async listTools() {
+          return [{ name: "stale_tool" }];
+        },
+        async callTool() {
+          return {
+            content: [{ type: "text" as const, text: "stale" }],
+          };
+        },
+      }),
+      logger,
+    );
+
+    const connecting = upstreams.connect(config.id);
+    await waitFor(() => releaseConnect !== undefined);
+
+    const disconnecting = upstreams.disconnect(config.id);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const beforeRelease = upstreams.list().find((item) => item.id === config.id);
+    assert.equal(beforeRelease?.status, "connecting");
+
+    releaseConnect?.();
+
+    await assert.rejects(connecting, /upstream connect superseded/);
+    const stopped = await disconnecting;
+    assert.equal(stopped.status, "stopped");
+    assert.equal(disconnectCalls, 1);
+    assert.equal(tools.list().length, 0);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("upstream manager discards a connect that is superseded by disconnect", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
   let logger: CoreLogger | null = null;
