@@ -210,29 +210,26 @@ export class ManagementServer {
     }
 
     if (req.method === "POST" && url.pathname === "/api/session-settings") {
-      if (!isManagementRequestAuthorized(req.headers, this.#config.managementToken)) {
-        json(res, 403, { error: "forbidden" });
-        return;
-      }
       try {
         const body = await readJsonBody(req) as { idleTimeoutMs?: unknown };
         const idleTimeoutMs = normalizeSessionIdleTimeout(body.idleTimeoutMs);
-        await saveSessionIdleTimeout(
-          this.#config.sessionSettingsFile,
-          idleTimeoutMs,
-          this.#logger,
-        );
-        this.#logger.info(
-          "session",
-          `MCP session idle timeout changed to ${Math.round(idleTimeoutMs / 60_000)} minute(s); Core restart required`,
-        );
+        await this.#mutations.run(async () => {
+          await saveSessionIdleTimeout(
+            this.#config.sessionSettingsFile,
+            idleTimeoutMs,
+            this.#logger,
+          );
+          this.#logger.info(
+            "session",
+            `MCP session idle timeout changed to ${Math.round(idleTimeoutMs / 60_000)} minute(s); Core restart required`,
+          );
+        });
         json(res, 200, { settings: sessionSettingsSnapshot(idleTimeoutMs), restartRequired: true });
       } catch (error) {
         json(res, 400, { error: error instanceof Error ? error.message : String(error) });
       }
-      return;
+      return true;
     }
-
     const ctx: ManagementContext = {
       config: this.#config,
       gateway: this.#gateway,
