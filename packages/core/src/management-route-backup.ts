@@ -141,14 +141,15 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
       const body = await readJsonBody(req, 1024 * 1024);
       const backup = validateBackupBundle((body as { backup?: unknown }).backup ?? body);
 
-      await writeJsonWithBackup(
-        backup.servers,
-        {
-          directory: dirname(ctx.config.serverConfigFile),
-          fileName: basename(ctx.config.serverConfigFile),
-          logger: ctx.logger,
-        },
-      );
+      await ctx.mutations.run(async () => {
+        await writeJsonWithBackup(
+          backup.servers,
+          {
+            directory: dirname(ctx.config.serverConfigFile),
+            fileName: basename(ctx.config.serverConfigFile),
+            logger: ctx.logger,
+          },
+        );
       await writeJsonWithBackup(
         backup.profiles,
         {
@@ -182,7 +183,8 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
         },
       );
 
-      ctx.logger.info("backup", "configuration backup restored; Core restart required");
+        ctx.logger.info("backup", "configuration backup restored; Core restart required");
+      });
       json(res, 200, {
         ok: true,
         restartRequired: true,
