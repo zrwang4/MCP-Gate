@@ -529,16 +529,21 @@ export class UpstreamManager {
       await client.connect();
 
       if (!this.#isConnectCurrent(runtime, generation, config)) {
-        runtime.client = null;
-        await client.disconnect().catch(() => undefined);
+        if (runtime.client === null) runtime.client = client;
+        await client.disconnect();
+        if (runtime.client === client) runtime.client = null;
         throw new Error("upstream connect superseded");
       }
 
       const tools = await client.listTools();
 
       if (!this.#isConnectCurrent(runtime, generation, config)) {
-        runtime.client = null;
-        await client.disconnect().catch(() => undefined);
+        if (runtime.client === client) {
+          await client.disconnect();
+          runtime.client = null;
+        } else {
+          await client.disconnect();
+        }
         throw new Error("upstream connect superseded");
       }
 
@@ -549,9 +554,13 @@ export class UpstreamManager {
       );
 
       if (!this.#isConnectCurrent(runtime, generation, config)) {
-        runtime.client = null;
-        this.#tools.removeServer(id);
-        await client.disconnect().catch(() => undefined);
+        if (runtime.client === client) {
+          this.#tools.removeServer(id);
+          await client.disconnect();
+          runtime.client = null;
+        } else {
+          await client.disconnect();
+        }
         throw new Error("upstream connect superseded");
       }
 
@@ -587,9 +596,17 @@ export class UpstreamManager {
       this.#tools.removeServer(id);
 
       const client = runtime.client;
-      runtime.client = null;
       if (client) {
-        await client.disconnect().catch(() => undefined);
+        try {
+          await client.disconnect();
+          if (runtime.client === client) runtime.client = null;
+        } catch (disconnectError) {
+          runtime.client = client;
+          this.#logger.warn(
+            "upstream",
+            `cleanup failed for ${runtime.config.name}: ${disconnectError instanceof Error ? disconnectError.message : String(disconnectError)}`,
+          );
+        }
       }
 
       retryAfterFailure =
