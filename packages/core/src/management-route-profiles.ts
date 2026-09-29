@@ -125,6 +125,19 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
             ? await ctx.upstreams.applyExactSet(profile.serverIds)
             : await ctx.upstreams.disconnectSet(profile.serverIds);
 
+        // Keep an active profile when deactivation could not fully disconnect
+        // its members. Otherwise failed transports become running without a
+        // profile representing the desired ownership/state anymore.
+        if (action === "deactivate" && result.failed.length > 0) {
+          json(res, 409, {
+            error: "profile deactivation incomplete",
+            profile,
+            activeProfileId: ctx.profiles.activeProfileId,
+            result,
+          });
+          return;
+        }
+
         if (action === "activate") {
           await ctx.profiles.setActive(profileId);
         } else if (ctx.profiles.activeProfileId === profileId) {
@@ -164,6 +177,16 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
         const result = wasActive
           ? await ctx.upstreams.disconnectSet(profile.serverIds)
           : undefined;
+
+        if (wasActive && result && result.failed.length > 0) {
+          json(res, 409, {
+            error: "active profile cannot be deleted until all members disconnect",
+            profile,
+            activeProfileId: ctx.profiles.activeProfileId,
+            result,
+          });
+          return;
+        }
 
         const removed = await ctx.profiles.remove(profileId);
         if (!removed) {
