@@ -24,6 +24,7 @@ import type { ServerRegistry } from "./server-registry.ts";
 import type { ServerService } from "./server-service.ts";
 import type { ProfileService } from "./profile-service.ts";
 import type { MutationQueue } from "./mutation-queue.ts";
+import type { RuntimeReconciler } from "./runtime-reconciler.ts";
 import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
@@ -72,6 +73,7 @@ export class ManagementServer {
   #servers: ServerService;
   #profileService: ProfileService;
   #mutations: MutationQueue;
+  #reconciler: RuntimeReconciler;
   #profiles: ProfileStore;
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
@@ -91,6 +93,7 @@ export class ManagementServer {
     profiles: ProfileStore,
     profileService: ProfileService,
     mutations: MutationQueue,
+    reconciler: RuntimeReconciler,
     upstreams: UpstreamManager,
     tools: ToolRegistry,
     toolPolicy: ToolPolicyStore,
@@ -106,6 +109,7 @@ export class ManagementServer {
     this.#profiles = profiles;
     this.#profileService = profileService;
     this.#mutations = mutations;
+    this.#reconciler = reconciler;
     this.#upstreams = upstreams;
     this.#tools = tools;
     this.#toolPolicy = toolPolicy;
@@ -205,6 +209,7 @@ export class ManagementServer {
       profiles: this.#profiles,
       profileService: this.#profileService,
       mutations: this.#mutations,
+      reconciler: this.#reconciler,
       upstreams: this.#upstreams,
       tools: this.#tools,
       toolPolicy: this.#toolPolicy,
