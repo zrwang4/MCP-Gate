@@ -22,6 +22,7 @@ import type { GatewayAccessController } from "./gateway-access.ts";
 import type { GatewayServer } from "./gateway-server.ts";
 import type { ServerRegistry } from "./server-registry.ts";
 import type { ServerService } from "./server-service.ts";
+import type { ProfileService } from "./profile-service.ts";
 import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
@@ -68,6 +69,7 @@ export class ManagementServer {
   #gatewayAccess: GatewayAccessController;
   #registry: ServerRegistry;
   #servers: ServerService;
+  #profileService: ProfileService;
   #profiles: ProfileStore;
   #upstreams: UpstreamManager;
   #tools: ToolRegistry;
@@ -85,6 +87,7 @@ export class ManagementServer {
     registry: ServerRegistry,
     servers: ServerService,
     profiles: ProfileStore,
+    profileService: ProfileService,
     upstreams: UpstreamManager,
     tools: ToolRegistry,
     toolPolicy: ToolPolicyStore,
@@ -98,6 +101,7 @@ export class ManagementServer {
     this.#registry = registry;
     this.#servers = servers;
     this.#profiles = profiles;
+    this.#profileService = profileService;
     this.#upstreams = upstreams;
     this.#tools = tools;
     this.#toolPolicy = toolPolicy;
@@ -195,6 +199,7 @@ export class ManagementServer {
       registry: this.#registry,
       servers: this.#servers,
       profiles: this.#profiles,
+      profileService: this.#profileService,
       upstreams: this.#upstreams,
       tools: this.#tools,
       toolPolicy: this.#toolPolicy,
