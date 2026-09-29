@@ -320,25 +320,40 @@ export class ServerService {
 
   async remove(id: string): Promise<void> {
     return this.#mutations.run(async () => {
-    const existing = this.#requireServer(id);
-    await this.#upstreams.disconnect(id);
+      const existing = this.#requireServer(id);
+      const wasRunning = this.#isRunning(id);
+      await this.#upstreams.disconnect(id);
 
-    const removed = await this.#registry.remove(id);
-    if (!removed) throw new Error("server configuration not found");
-
-    await this.#toolPolicy.removeServer(id);
-    await this.#profiles.removeServer(id);
-    await this.#reconciler.reconcile();
-
-    if (existing.transport === "http" && existing.authSecretId) {
-      await this.#secrets.delete(existing.authSecretId).catch(() => false);
-    }
-
-    if (existing.transport === "stdio") {
-      for (const secretId of Object.values(existing.envSecretIds ?? {})) {
-        await this.#secrets.delete(secretId).catch(() => false);
+      try {
+        const removed = await this.#registry.remove(id);
+        if (!removed) throw new Error("server configuration not found");
+      } catch (error) {
+        if (wasRunning && existing.enabled) {
+          try {
+            await this.#upstreams.connect(id);
+          } catch (restoreError) {
+            this.#logger.warn(
+              "servers",
+              `failed to restore ${existing.name} after delete failure: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`,
+            );
+          }
+        }
+        throw error;
       }
-    }
+
+      await this.#toolPolicy.removeServer(id);
+      await this.#profiles.removeServer(id);
+      await this.#reconciler.reconcile();
+
+      if (existing.transport === "http" && existing.authSecretId) {
+        await this.#secrets.delete(existing.authSecretId).catch(() => false);
+      }
+
+      if (existing.transport === "stdio") {
+        for (const secretId of Object.values(existing.envSecretIds ?? {})) {
+          await this.#secrets.delete(secretId).catch(() => false);
+        }
+      }
     });
   }
 
