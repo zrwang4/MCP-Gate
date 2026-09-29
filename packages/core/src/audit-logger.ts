@@ -121,29 +121,39 @@ export class AuditLogger {
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line) as Partial<AuditEntry>;
+          const seq = parsed.seq;
+          const timestamp = parsed.timestamp;
+          const source = parsed.source;
+          const publicName = parsed.publicName;
+          const serverId = parsed.serverId;
+          const serverAlias = parsed.serverAlias;
+          const originalName = parsed.originalName;
+          const success = parsed.success;
+          const durationMs = parsed.durationMs;
+          const errorValue = parsed.error;
           if (
-            Number.isInteger(parsed.seq) &&
-            typeof parsed.timestamp === "string" &&
-            (parsed.source === "gateway" || parsed.source === "tester") &&
-            typeof parsed.publicName === "string" &&
-            typeof parsed.serverId === "string" &&
-            typeof parsed.serverAlias === "string" &&
-            typeof parsed.originalName === "string" &&
-            typeof parsed.success === "boolean" &&
-            typeof parsed.durationMs === "number"
+            Number.isInteger(seq) &&
+            typeof timestamp === "string" &&
+            (source === "gateway" || source === "tester") &&
+            typeof publicName === "string" &&
+            typeof serverId === "string" &&
+            typeof serverAlias === "string" &&
+            typeof originalName === "string" &&
+            typeof success === "boolean" &&
+            typeof durationMs === "number"
           ) {
             entries.push({
-              seq: parsed.seq,
-              timestamp: parsed.timestamp,
-              source: parsed.source,
-              publicName: parsed.publicName,
-              serverId: parsed.serverId,
-              serverAlias: parsed.serverAlias,
-              originalName: parsed.originalName,
-              success: parsed.success,
-              durationMs: parsed.durationMs,
-              ...(typeof parsed.error === "string"
-                ? { error: parsed.error }
+              seq,
+              timestamp,
+              source,
+              publicName,
+              serverId,
+              serverAlias,
+              originalName,
+              success,
+              durationMs,
+              ...(typeof errorValue === "string"
+                ? { error: errorValue }
                 : {}),
             });
           }
