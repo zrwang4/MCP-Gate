@@ -455,7 +455,7 @@ export class UpstreamManager {
     try {
       const client = await this.#factory(config);
 
-      if (!this.#isConnectCurrent(runtime, generation, config)) {
+      if (!this.#isConnectCurrent(runtime, generation))
         await client.disconnect().catch(() => undefined);
         throw new Error("upstream connect superseded");
       }
@@ -609,13 +609,11 @@ export class UpstreamManager {
   #isConnectCurrent(
     runtime: Runtime,
     generation: number,
-    config: McpServerConfig,
   ): boolean {
     return (
       runtime.generation === generation &&
       runtime.desiredConnected &&
-      runtime.config === config &&
-      config.enabled
+      runtime.config.enabled
     );
   }
 
