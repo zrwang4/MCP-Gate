@@ -80,6 +80,13 @@ export class StdioUpstreamClient implements UpstreamClient {
     this.#transport = null;
   }
 
+  async healthCheck(timeoutMs: number): Promise<void> {
+    await this.#requireClient().listTools(undefined, {
+      cacheMode: "bypass",
+      timeout: timeoutMs,
+    });
+  }
+
   async listTools(): Promise<McpToolDefinition[]> {
     const client = this.#requireClient();
     const result = await client.listTools();
