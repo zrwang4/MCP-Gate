@@ -1,4 +1,23 @@
 import type { McpServerConfig } from "./server-registry.ts";
+
+let profileMutationTail: Promise<void> = Promise.resolve();
+
+async function serializeProfileMutation<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = profileMutationTail;
+  let release!: () => void;
+  profileMutationTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
 import {
   json,
   readJsonBody,
@@ -23,17 +42,19 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     try {
-      const body = await readJsonBody(req) as {
-        name?: unknown;
-        serverIds?: unknown;
-      };
-      const serverIds = normalizeProfileServerIds(body.serverIds);
-      assertKnownServers(serverIds, ctx.registry.list());
-      const profile = await ctx.profiles.create(
-        body.name as string,
-        serverIds,
-      );
-      json(res, 201, { profile });
+      await serializeProfileMutation(async () => {
+        const body = await readJsonBody(req) as {
+          name?: unknown;
+          serverIds?: unknown;
+        };
+        const serverIds = normalizeProfileServerIds(body.serverIds);
+        assertKnownServers(serverIds, ctx.registry.list());
+        const profile = await ctx.profiles.create(
+          body.name as string,
+          serverIds,
+        );
+        json(res, 201, { profile });
+      });
     } catch (error) {
       json(res, 400, {
         error: error instanceof Error ? error.message : String(error),
@@ -46,31 +67,33 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     try {
-      const body = await readJsonBody(req) as {
-        name?: unknown;
-        serverIds?: unknown;
-      };
-      const serverIds = normalizeProfileServerIds(body.serverIds);
-      assertKnownServers(serverIds, ctx.registry.list());
-      const profileId = profileMatch[1];
-      const wasActive = ctx.profiles.activeProfileId === profileId;
-      const profile = await ctx.profiles.update(profileId, {
-        name: body.name as string,
-        serverIds,
-      });
-      if (!profile) {
-        json(res, 404, { error: "profile not found" });
-        return true;
-      }
+      await serializeProfileMutation(async () => {
+        const body = await readJsonBody(req) as {
+          name?: unknown;
+          serverIds?: unknown;
+        };
+        const serverIds = normalizeProfileServerIds(body.serverIds);
+        assertKnownServers(serverIds, ctx.registry.list());
+        const profileId = profileMatch[1];
+        const wasActive = ctx.profiles.activeProfileId === profileId;
+        const profile = await ctx.profiles.update(profileId, {
+          name: body.name as string,
+          serverIds,
+        });
+        if (!profile) {
+          json(res, 404, { error: "profile not found" });
+          return;
+        }
 
-      const result = wasActive
-        ? await ctx.upstreams.applyExactSet(profile.serverIds)
-        : undefined;
+        const result = wasActive
+          ? await ctx.upstreams.applyExactSet(profile.serverIds)
+          : undefined;
 
-      json(res, 200, {
-        profile,
-        activeProfileId: ctx.profiles.activeProfileId,
-        ...(result ? { result } : {}),
+        json(res, 200, {
+          profile,
+          activeProfileId: ctx.profiles.activeProfileId,
+          ...(result ? { result } : {}),
+        });
       });
     } catch (error) {
       json(res, 400, {
@@ -93,22 +116,30 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
       return true;
     }
 
-    const result =
-      action === "activate"
-        ? await ctx.upstreams.applyExactSet(profile.serverIds)
-        : await ctx.upstreams.disconnectSet(profile.serverIds);
+    try {
+      await serializeProfileMutation(async () => {
+        const result =
+          action === "activate"
+            ? await ctx.upstreams.applyExactSet(profile.serverIds)
+            : await ctx.upstreams.disconnectSet(profile.serverIds);
 
-    if (action === "activate") {
-      await ctx.profiles.setActive(profileId);
-    } else if (ctx.profiles.activeProfileId === profileId) {
-      await ctx.profiles.setActive(null);
+        if (action === "activate") {
+          await ctx.profiles.setActive(profileId);
+        } else if (ctx.profiles.activeProfileId === profileId) {
+          await ctx.profiles.setActive(null);
+        }
+
+        json(res, 200, {
+          profile,
+          activeProfileId: ctx.profiles.activeProfileId,
+          result,
+        });
+      });
+    } catch (error) {
+      json(res, 409, {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-
-    json(res, 200, {
-      profile,
-      activeProfileId: ctx.profiles.activeProfileId,
-      result,
-    });
     return true;
   }
 
@@ -122,22 +153,30 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
       return true;
     }
 
-    const wasActive = ctx.profiles.activeProfileId === profileId;
-    const result = wasActive
-      ? await ctx.upstreams.disconnectSet(profile.serverIds)
-      : undefined;
+    try {
+      await serializeProfileMutation(async () => {
+        const wasActive = ctx.profiles.activeProfileId === profileId;
+        const result = wasActive
+          ? await ctx.upstreams.disconnectSet(profile.serverIds)
+          : undefined;
 
-    const removed = await ctx.profiles.remove(profileId);
-    if (!removed) {
-      json(res, 404, { error: "profile not found" });
-      return true;
+        const removed = await ctx.profiles.remove(profileId);
+        if (!removed) {
+          json(res, 404, { error: "profile not found" });
+          return;
+        }
+
+        json(res, 200, {
+          ok: true,
+          activeProfileId: ctx.profiles.activeProfileId,
+          ...(result ? { result } : {}),
+        });
+      });
+    } catch (error) {
+      json(res, 409, {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-
-    json(res, 200, {
-      ok: true,
-      activeProfileId: ctx.profiles.activeProfileId,
-      ...(result ? { result } : {}),
-    });
     return true;
   }
 
