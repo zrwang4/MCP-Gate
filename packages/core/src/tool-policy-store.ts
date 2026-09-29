@@ -54,6 +54,32 @@ export class ToolPolicyStore {
     }
   }
 
+  /**
+   * Re-read the policy file into memory after an out-of-band write (backup
+   * restore). Unlike init(), a reload never repairs or recreates the file.
+   */
+  async reload(): Promise<void> {
+    const raw = await readFile(this.#filePath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<ToolPolicyFile>;
+    if (parsed.version !== 1 || !parsed.disabled || typeof parsed.disabled !== "object") {
+      throw new Error("unsupported tool policy format");
+    }
+
+    const disabled = new Map<string, Set<string>>();
+    for (const [serverId, names] of Object.entries(parsed.disabled)) {
+      if (!Array.isArray(names)) continue;
+      disabled.set(
+        serverId,
+        new Set(names.filter((name): name is string => typeof name === "string")),
+      );
+    }
+    this.#disabled = disabled;
+    this.#logger.info(
+      "tools",
+      `reloaded tool policy: ${disabled.size} server(s) with disabled tool(s)`,
+    );
+  }
+
   isEnabled(serverId: string, originalName: string): boolean {
     return !this.#disabled.get(serverId)?.has(originalName);
   }

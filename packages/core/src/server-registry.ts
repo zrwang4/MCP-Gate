@@ -90,6 +90,21 @@ export class ServerRegistry {
     }
   }
 
+  /**
+   * Re-read the registry file into memory after an out-of-band write
+   * (backup restore). Unlike init(), a reload never repairs or recreates the
+   * file: the caller decides how to handle a failed parse.
+   */
+  async reload(): Promise<void> {
+    const raw = await readFile(this.#filePath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<RegistryFile>;
+    if (parsed.version !== 1 || !Array.isArray(parsed.servers)) {
+      throw new Error("unsupported registry format");
+    }
+    this.#servers = parsed.servers.filter(isServerConfig);
+    this.#logger.info("registry", `reloaded ${this.#servers.length} MCP configuration(s)`);
+  }
+
   list(): McpServerConfig[] {
     return this.#servers.map(cloneServer);
   }

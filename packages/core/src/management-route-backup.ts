@@ -2,7 +2,7 @@ import { readFile, unlink } from "node:fs/promises";
 import { dirname, basename } from "node:path";
 import { writeJsonWithBackup } from "./atomic-write.ts";
 import { json, readJsonBody, requireDesktopClient, type RouteHandler } from "./management-context.ts";
-import { normalizeSessionIdleTimeout } from "./session-settings.ts";
+import { loadSessionIdleTimeout, normalizeSessionIdleTimeout } from "./session-settings.ts";
 
 const BACKUP_VERSION = 1;
 
@@ -319,6 +319,7 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
     try {
       const body = await readJsonBody(req, 1024 * 1024);
       const backup = validateBackupBundle((body as { backup?: unknown }).backup ?? body);
+      let reloadWarnings: string[] = [];
 
       await ctx.mutations.run(async () => {
         await restoreConfigurationFiles(
@@ -335,12 +336,66 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
           ctx.logger,
         );
 
-        ctx.logger.info("backup", "configuration backup restored; Core restart required");
+        // Reload every in-memory store from the files we just wrote. Without
+        // this, the next mutation would persist the stale pre-restore state
+        // back over the restored files (write poisoning), and reads would
+        // disagree with disk until restart.
+        const reloadErrors: string[] = [];
+        const reloads: Array<[string, () => Promise<void>]> = [
+          ["servers", () => ctx.registry.reload()],
+          ["profiles", () => ctx.profiles.reload()],
+          ["toolPolicy", () => ctx.toolPolicy.reload()],
+          ["gatewayAccess", () => ctx.gatewayAccess.reload()],
+          [
+            "sessionSettings",
+            async () => {
+              ctx.config.sessionIdleTimeoutMs = await loadSessionIdleTimeout(
+                ctx.config.sessionSettingsFile,
+                ctx.config.sessionIdleTimeoutMs,
+              );
+            },
+          ],
+        ];
+        for (const [name, reload] of reloads) {
+          try {
+            await reload();
+          } catch (error) {
+            reloadErrors.push(
+              `${name}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+
+        // Align runtime state with the restored registry: disconnect upstreams
+        // that the restored configuration removed or disabled. Restart is
+        // still required for full effect (connected upstreams keep running
+        // with their pre-restore config until then).
+        try {
+          await ctx.reconciler.reconcile();
+        } catch (error) {
+          reloadErrors.push(
+            `runtime reconcile: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+
+        if (reloadErrors.length > 0) {
+          ctx.logger.error(
+            "backup",
+            `configuration backup restored, but reloading in-memory state failed: ${reloadErrors.join("; ")}`,
+          );
+        } else {
+          ctx.logger.info(
+            "backup",
+            "configuration backup restored; in-memory state reloaded",
+          );
+        }
+        reloadWarnings = reloadErrors;
       });
       json(res, 200, {
         ok: true,
         restartRequired: true,
         note: backup.note,
+        warnings: reloadWarnings,
       });
     } catch (error) {
       json(res, 400, {

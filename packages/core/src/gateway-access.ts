@@ -112,6 +112,66 @@ export class GatewayAccessController {
     }
   }
 
+  /**
+   * Re-read the access file into memory after an out-of-band write (backup
+   * restore). Unlike init(), a reload never repairs or recreates the file; a
+   * LAN flag without a usable key is clamped in memory only and the next
+   * restart's init() persists the same clamp.
+   */
+  async reload(): Promise<void> {
+    const raw = await readFile(this.#filePath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<GatewayAccessFile>;
+    if (
+      parsed.version !== 1 ||
+      !Object.prototype.hasOwnProperty.call(parsed, "apiKeySecretId") ||
+      (parsed.apiKeySecretId !== null &&
+        typeof parsed.apiKeySecretId !== "string") ||
+      (parsed.lanEnabled !== undefined &&
+        typeof parsed.lanEnabled !== "boolean")
+    ) {
+      throw new Error("unsupported gateway access format");
+    }
+
+    const secretId = parsed.apiKeySecretId ?? null;
+    let apiKey: string | null = null;
+    let lastError: string | null = null;
+    if (secretId) {
+      try {
+        apiKey = await this.#secrets.get(secretId);
+        if (!apiKey) {
+          lastError =
+            "Gateway API Key is configured but missing from secure storage";
+          this.#logger.error("gateway-access", lastError);
+        }
+      } catch (error) {
+        apiKey = null;
+        lastError = error instanceof Error ? error.message : String(error);
+        this.#logger.error(
+          "gateway-access",
+          `failed to load Gateway API Key: ${lastError}`,
+        );
+      }
+    }
+
+    let lanEnabled = parsed.lanEnabled === true;
+    if (lanEnabled && (!secretId || !apiKey)) {
+      lanEnabled = false;
+      this.#logger.warn(
+        "gateway-access",
+        "LAN mode was disabled because a usable Gateway API Key is required",
+      );
+    }
+
+    this.#secretId = secretId;
+    this.#apiKey = apiKey;
+    this.#lastError = lastError;
+    this.#lanEnabled = lanEnabled;
+    this.#logger.info(
+      "gateway-access",
+      `reloaded gateway access config: enabled=${secretId !== null} lan=${lanEnabled}`,
+    );
+  }
+
   snapshot(): GatewayAccessSnapshot {
     return {
       enabled: this.#secretId !== null,

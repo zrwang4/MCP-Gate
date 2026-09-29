@@ -3,7 +3,19 @@ import test from "node:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { restoreConfigurationFiles, validateBackupBundle, redactServerSecrets, stripRedactedHeaders, HEADER_REDACTED_PLACEHOLDER } from "./management-route-backup.ts";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { restoreConfigurationFiles, validateBackupBundle, redactServerSecrets, stripRedactedHeaders, HEADER_REDACTED_PLACEHOLDER, handleBackup } from "./management-route-backup.ts";
+import { ServerRegistry } from "./server-registry.ts";
+import { ProfileStore } from "./profile-store.ts";
+import { ToolPolicyStore } from "./tool-policy-store.ts";
+import { GatewayAccessController } from "./gateway-access.ts";
+import { CoreLogger } from "./logger.ts";
+import { MemorySecretStore } from "./secret-store.ts";
+import { MutationQueue } from "./mutation-queue.ts";
+import { RuntimeReconciler } from "./runtime-reconciler.ts";
+import { UpstreamManager } from "./upstream-manager.ts";
+import { ToolRegistry } from "./tool-registry.ts";
+import type { RouteHandler, ManagementContext } from "./management-context.ts";
 
 const validBackup = (): {
   version: 1;
@@ -167,6 +179,125 @@ test("configuration restore rolls back files already replaced when a later write
       JSON.parse(await readFile(profiles, "utf8")),
       { version: 1, profiles: [{ name: "old-profile" }] },
     );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("backup restore reloads in-memory stores so later writes do not poison restored files", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-backup-reload-"));
+  try {
+    const logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const serversFile = join(dir, "servers.json");
+    const registry = new ServerRegistry(serversFile, logger);
+    await registry.init();
+    const oldServer = await registry.create({ name: "OldServer", command: "node", args: ["old.js"] });
+
+    const profiles = new ProfileStore(join(dir, "profiles.json"), logger);
+    await profiles.init();
+    const toolPolicy = new ToolPolicyStore(join(dir, "tool-policy.json"), logger);
+    await toolPolicy.init();
+    const secrets = new MemorySecretStore();
+    const gatewayAccess = new GatewayAccessController(join(dir, "gateway-access.json"), secrets, logger);
+    await gatewayAccess.init();
+
+    // A backup taken before OldServer existed: restoring must remove it from
+    // disk AND from the in-memory registry.
+    const backup = validBackup();
+    backup.servers = { version: 1, servers: [] };
+    (backup.sessionSettings as { idleTimeoutMs: number }).idleTimeoutMs = 45 * 60_000;
+
+    const reconciles: number[] = [];
+    const upstreams = new UpstreamManager(
+      registry,
+      new ToolRegistry(toolPolicy),
+      () => ({
+        async connect() {},
+        async disconnect() {},
+        async listTools() {
+          return [];
+        },
+        async callTool() {
+          throw new Error("not used");
+        },
+      }),
+      logger,
+    );
+    const reconciler = new RuntimeReconciler(registry, upstreams);
+    const originalReconcile = reconciler.reconcile.bind(reconciler);
+    reconciler.reconcile = () => {
+      reconciles.push(1);
+      return originalReconcile();
+    };
+
+    const mutations = new MutationQueue();
+    const config = {
+      serverConfigFile: serversFile,
+      profileFile: join(dir, "profiles.json"),
+      toolPolicyFile: join(dir, "tool-policy.json"),
+      gatewayAccessFile: join(dir, "gateway-access.json"),
+      sessionSettingsFile: join(dir, "session-settings.json"),
+      sessionIdleTimeoutMs: 30 * 60_000,
+    };
+    const ctx = {
+      config,
+      registry,
+      profiles,
+      toolPolicy,
+      gatewayAccess,
+      reconciler,
+      mutations,
+      logger,
+    } as unknown as ManagementContext;
+
+    const req = {
+      method: "POST",
+      headers: { "x-mcp-gate-client": "desktop" },
+      [Symbol.asyncIterator]() {
+        const chunks = [Buffer.from(JSON.stringify({ backup }))].values();
+        return {
+          next: async () => chunks.next(),
+        };
+      },
+    } as unknown as IncomingMessage;
+    const written: string[] = [];
+    const resHeaders: Record<string, string> = {};
+    const res = {
+      statusCode: 0,
+      headers: resHeaders,
+      setHeader(name: string, value: string) {
+        resHeaders[name] = value;
+      },
+      end(body?: string) {
+        if (body) written.push(body);
+      },
+    } as unknown as ServerResponse;
+
+    const handled = await (handleBackup as RouteHandler)(
+      req,
+      res,
+      new URL("http://x/api/backup/restore"),
+      ctx,
+    );
+    assert.equal(handled, true);
+
+    const response = JSON.parse(written.join(""));
+    assert.equal(response.ok, true);
+    assert.deepEqual(response.warnings, []);
+
+    // The in-memory registry no longer holds the pre-restore server.
+    assert.equal(registry.get(oldServer.id), undefined);
+    // A later mutation persists the reloaded state, not the stale one.
+    assert.deepEqual(JSON.parse(await readFile(serversFile, "utf8")), {
+      version: 1,
+      servers: [],
+    });
+    // Session settings followed the restored file immediately.
+    assert.equal(ctx.config.sessionIdleTimeoutMs, 45 * 60_000);
+    // Runtime was reconciled exactly once against the restored registry.
+    assert.equal(reconciles.length, 1);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

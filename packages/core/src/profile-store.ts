@@ -70,6 +70,30 @@ export class ProfileStore {
     }
   }
 
+  /**
+   * Re-read the profile file into memory after an out-of-band write (backup
+   * restore). Unlike init(), a reload never repairs or recreates the file.
+   */
+  async reload(): Promise<void> {
+    const raw = await readFile(this.#filePath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<ProfileFile>;
+    if (parsed.version !== 1 || !Array.isArray(parsed.profiles)) {
+      throw new Error("unsupported profile format");
+    }
+
+    this.#profiles = parsed.profiles.filter(isProfile).map(cloneProfile);
+    this.#activeProfileId =
+      typeof parsed.activeProfileId === "string" &&
+      this.#profiles.some((profile) => profile.id === parsed.activeProfileId)
+        ? parsed.activeProfileId
+        : null;
+
+    this.#logger.info(
+      "profiles",
+      `reloaded ${this.#profiles.length} profile(s)${this.#activeProfileId ? `; active=${this.#activeProfileId}` : ""}`,
+    );
+  }
+
   list(): McpProfile[] {
     return this.#profiles.map(cloneProfile);
   }
