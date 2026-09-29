@@ -171,7 +171,7 @@ export class AuditLogger {
             this.#fileBytes > 0 &&
             this.#fileBytes + nextBatchBytes > MAX_AUDIT_FILE_BYTES
           ) {
-            await this.#rotateIfNeeded();
+            await this.#rotateActiveFile();
           }
           await appendFile(this.#filePath, nextBatch, "utf8");
           this.#fileBytes += nextBatchBytes;
@@ -249,6 +249,11 @@ export class AuditLogger {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") throw error;
     }
+  }
+
+  async #rotateActiveFile(): Promise<void> {
+    await rename(this.#filePath, this.#filePath + ".1");
+    this.#fileBytes = 0;
   }
 
   async #rotateIfNeeded(): Promise<void> {
