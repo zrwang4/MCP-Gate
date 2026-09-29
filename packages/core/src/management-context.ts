@@ -11,6 +11,7 @@ import type {
 } from "./server-registry.ts";
 import type { ServerService } from "./server-service.ts";
 import type { ProfileService } from "./profile-service.ts";
+import type { MutationQueue } from "./mutation-queue.ts";
 import type { ProfileStore } from "./profile-store.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
@@ -25,6 +26,7 @@ export interface ManagementContext {
   servers: ServerService;
   profiles: ProfileStore;
   profileService: ProfileService;
+  mutations: MutationQueue;
   upstreams: UpstreamManager;
   tools: ToolRegistry;
   toolPolicy: ToolPolicyStore;
