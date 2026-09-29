@@ -215,11 +215,7 @@ export class ManagementServer {
         return;
       }
       try {
-        const body = await (async () => {
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-          return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as { idleTimeoutMs?: unknown };
-        })();
+        const body = await readJsonBody(req) as { idleTimeoutMs?: unknown };
         const idleTimeoutMs = normalizeSessionIdleTimeout(body.idleTimeoutMs);
         await saveSessionIdleTimeout(
           this.#config.sessionSettingsFile,
