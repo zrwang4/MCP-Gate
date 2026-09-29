@@ -1068,7 +1068,9 @@ test("circuit recovery retries cleanup of a retained client before reconnecting"
           },
           async healthCheck() {
             healthChecks += 1;
-            throw new Error("health probe failed");
+            if (healthChecks === 1) {
+              throw new Error("health probe failed");
+            }
           },
           async listTools() {
             return [{ name: "ping" }];
