@@ -49,18 +49,25 @@ export class ToolRegistry {
         .map((route) => [route.originalName, route.enabled] as const),
     );
 
-    this.#removeServerRoutes(serverId);
-
+    // Build the complete replacement set before mutating the registry. A malformed
+    // tool must not leave a partially refreshed server visible to the gateway.
+    const occupiedNames = new Set(
+      [...this.#routes.values()]
+        .filter((route) => route.serverId !== serverId)
+        .map((route) => route.publicName),
+    );
     const created: ToolRoute[] = [];
+
     for (const tool of tools) {
       const originalName = validateToolName(tool.name);
       const baseName = `${sanitizeName(serverAlias)}__${sanitizeName(originalName)}`;
       let publicName = baseName;
       let suffix = 2;
 
-      while (this.#routes.has(publicName)) {
+      while (occupiedNames.has(publicName)) {
         publicName = `${baseName}__${suffix++}`;
       }
+      occupiedNames.add(publicName);
 
       const route: ToolRoute = {
         publicName,
@@ -78,12 +85,16 @@ export class ToolRegistry {
         },
       };
 
-      this.#routes.set(publicName, route);
-      created.push(cloneRoute(route));
+      created.push(route);
+    }
+
+    this.#removeServerRoutes(serverId);
+    for (const route of created) {
+      this.#routes.set(route.publicName, route);
     }
 
     this.#emitIfChanged(before, { type: "reset", serverId });
-    return created;
+    return created.map(cloneRoute);
   }
 
   removeServer(serverId: string): void {
