@@ -208,12 +208,28 @@ export class UpstreamManager {
   }
 
   async refreshTools(id: string): Promise<UpstreamSnapshot> {
+    this.syncConfigs();
     const runtime = this.#requireRuntime(id);
     if (runtime.status !== "running" || !runtime.client) {
       throw new Error("upstream is not running");
     }
 
-    const tools = await runtime.client.listTools();
+    const generation = runtime.generation;
+    const client = runtime.client;
+    const tools = await client.listTools();
+
+    // Disconnect/reconnect or a config change may have invalidated this
+    // refresh while the remote listTools request was in flight. Do not let
+    // stale tools resurrect after the manager has already removed them.
+    if (
+      runtime.generation !== generation ||
+      runtime.client !== client ||
+      runtime.status !== "running" ||
+      !runtime.desiredConnected
+    ) {
+      throw new Error("upstream refresh superseded");
+    }
+
     const routes = this.#tools.replaceServerTools(
       runtime.config.id,
       runtime.config.alias,
