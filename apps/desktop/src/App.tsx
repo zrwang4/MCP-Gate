@@ -224,6 +224,7 @@ interface StatusResponse {
     version: string;
     startedAt: string;
     logFile: string;
+    sessionIdleTimeoutMs: number;
   };
   gateway: {
     endpoint: string;
@@ -2413,6 +2414,14 @@ export function App() {
                     ? "已开启"
                     : "已关闭"}
             </button>
+          </div>
+
+          <div className="settingsRow">
+            <div>
+              <strong>MCP 会话生命周期</strong>
+              <span>无活动的 Gateway MCP 会话会自动过期，当前配置为 {status?.core.sessionIdleTimeoutMs ? `${Math.round(status.core.sessionIdleTimeoutMs / 60_000)} 分钟` : "30 分钟"}。</span>
+            </div>
+            <span className="settingsStatus">自动清理</span>
           </div>
 
           <div className="settingsRow">
