@@ -1419,18 +1419,9 @@ export function App() {
       {deletingProfileId && (
         <DeleteProfileConfirm deletingProfileId={deletingProfileId} profileBusy={profileBusy} profiles={profiles} removeProfile={removeProfile} setDeletingProfileId={setDeletingProfileId} />
       )}
-
-
-
-
-
-
-
       <ToolsSection tools={tools} busy={busy} openToolTester={openToolTester} toggleTool={toggleTool} toolSearch={toolSearch} setToolSearch={setToolSearch} toolPage={toolPage} setToolPage={setToolPage} filteredTools={filteredTools} totalToolPages={totalToolPages} safeToolPage={safeToolPage} pagedTools={pagedTools} />
       <LogsSection logs={logs} error={error} status={status} refresh={refresh} logLevel={logLevel} setLogLevel={setLogLevel} logSource={logSource} setLogSource={setLogSource} logQuery={logQuery} setLogQuery={setLogQuery} logSources={logSources} visibleLogs={visibleLogs} logFollow={logFollow} setLogFollow={setLogFollow} logsCopied={logsCopied} copyVisibleLogs={copyVisibleLogs} logPanelRef={logPanelRef} handleLogScroll={handleLogScroll} scrollLogsToBottom={scrollLogsToBottom} />
       <AuditSection auditEntries={auditEntries} error={error} />
-
-
 
       <DesktopSettingsSection autostartBusy={autostartBusy} autostartEnabled={autostartEnabled} availableUpdate={availableUpdate} backupBusy={backupBusy} backupInputRef={backupInputRef} backupMessage={backupMessage} checkForUpdate={checkForUpdate} copyDiagnosticsSnapshot={copyDiagnosticsSnapshot} diagnosticsBusy={diagnosticsBusy} diagnosticsCopied={diagnosticsCopied} disableGatewayApiKey={disableGatewayApiKey} exportConfigurationBackup={exportConfigurationBackup} generatedGatewayKey={generatedGatewayKey} gatewayKeyBusy={gatewayKeyBusy} gatewayKeyCopied={gatewayKeyCopied} installAvailableUpdate={installAvailableUpdate} lanAccessBusy={lanAccessBusy} managementConnected={managementConnected} rotateGatewayApiKey={rotateGatewayApiKey} selectBackupFile={selectBackupFile} sessionSettingBusy={sessionSettingBusy} setGeneratedGatewayKey={setGeneratedGatewayKey} setRestoreCandidate={setRestoreCandidate} status={status} toggleAutostart={toggleAutostart} toggleLanAccess={toggleLanAccess} updateBusy={updateBusy} updateError={updateError} updateMessage={updateMessage} updateSessionIdleTimeout={updateSessionIdleTimeout} />
       {showProfileEditor && (
