@@ -98,22 +98,27 @@ export class CoreLogger {
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line) as Partial<LogEntry>;
+          const seq = parsed.seq;
+          const timestamp = parsed.timestamp;
+          const level = parsed.level;
+          const source = parsed.source;
+          const message = parsed.message;
           if (
-            Number.isInteger(parsed.seq) &&
-            typeof parsed.timestamp === "string" &&
-            (parsed.level === "debug" ||
-              parsed.level === "info" ||
-              parsed.level === "warn" ||
-              parsed.level === "error") &&
-            typeof parsed.source === "string" &&
-            typeof parsed.message === "string"
+            Number.isInteger(seq) &&
+            typeof timestamp === "string" &&
+            (level === "debug" ||
+              level === "info" ||
+              level === "warn" ||
+              level === "error") &&
+            typeof source === "string" &&
+            typeof message === "string"
           ) {
             entries.push({
-              seq: parsed.seq,
-              timestamp: parsed.timestamp,
-              level: parsed.level,
-              source: parsed.source,
-              message: parsed.message,
+              seq,
+              timestamp,
+              level,
+              source,
+              message,
             });
           }
         } catch {
