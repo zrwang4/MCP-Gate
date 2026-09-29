@@ -120,10 +120,35 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
           return;
         }
 
+        const previousActiveProfileId = ctx.profiles.activeProfileId;
+        const previousActiveProfile =
+          previousActiveProfileId && previousActiveProfileId !== profileId
+            ? ctx.profiles.get(previousActiveProfileId)
+            : null;
+
         const result =
           action === "activate"
             ? await ctx.upstreams.applyExactSet(profile.serverIds)
             : await ctx.upstreams.disconnectSet(profile.serverIds);
+
+        // Do not advertise a profile as active when its complete server set
+        // could not be applied. Try to restore the previous active profile
+        // before returning the failure so the persisted active id and runtime
+        // ownership stay aligned as closely as possible.
+        if (action === "activate" && result.failed.length > 0) {
+          const rollback = previousActiveProfile
+            ? await ctx.upstreams.applyExactSet(previousActiveProfile.serverIds)
+            : null;
+
+          json(res, 409, {
+            error: "profile activation incomplete",
+            profile,
+            activeProfileId: previousActiveProfileId,
+            result,
+            ...(rollback ? { rollback } : {}),
+          });
+          return;
+        }
 
         // Keep an active profile when deactivation could not fully disconnect
         // its members. Otherwise failed transports become running without a
