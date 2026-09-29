@@ -69,7 +69,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     return true;
   }
 
-  const upstreamActionMatch = url.pathname.match(  const upstreamActionMatch = url.pathname.match(
+  const upstreamActionMatch = url.pathname.match(
     /^\/api\/upstreams\/([0-9a-f-]+)\/(connect|disconnect|refresh-tools)$/i,
   );
   if (req.method === "POST" && upstreamActionMatch) {
@@ -156,7 +156,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     return true;
   }
 
-  const configEditMatch = url.pathname.match(  const configEditMatch = url.pathname.match(
+  const configEditMatch = url.pathname.match(
     /^\/api\/server-configs\/([0-9a-f-]+)$/i,
   );
   if (req.method === "POST" && configEditMatch) {
@@ -215,7 +215,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     return true;
   }
 
-  const configSettingsMatch = url.pathname.match(  const configSettingsMatch = url.pathname.match(
+  const configSettingsMatch = url.pathname.match(
     /^\/api\/server-configs\/([0-9a-f-]+)\/settings$/i,
   );
   if (req.method === "POST" && configSettingsMatch) {
