@@ -62,11 +62,15 @@ export class StdioUpstreamClient implements UpstreamClient {
 
   async disconnect(): Promise<void> {
     const client = this.#client;
-    this.#client = null;
-    this.#transport = null;
+
     if (client) {
       await client.close();
     }
+
+    // Preserve the client reference when close fails so a later disconnect
+    // can retry the actual transport shutdown.
+    this.#client = null;
+    this.#transport = null;
   }
 
   async listTools(): Promise<McpToolDefinition[]> {
