@@ -9,6 +9,7 @@ import { ManagementServer } from "./management-server.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { ServerRegistry } from "./server-registry.ts";
 import { ServerService } from "./server-service.ts";
+import { ProfileService } from "./profile-service.ts";
 import { createPlatformSecretStore } from "./secret-store.ts";
 import { ToolPolicyStore } from "./tool-policy-store.ts";
 import { ToolRegistry } from "./tool-registry.ts";
@@ -58,6 +59,11 @@ async function main(): Promise<void> {
     secrets,
     logger,
   );
+  const profileService = new ProfileService(
+    profiles,
+    registry,
+    upstreams,
+  );
   const gateway = new GatewayServer(
     config,
     toolRegistry,
@@ -72,6 +78,7 @@ async function main(): Promise<void> {
     registry,
     serverService,
     profiles,
+    profileService,
     upstreams,
     toolRegistry,
     toolPolicy,
