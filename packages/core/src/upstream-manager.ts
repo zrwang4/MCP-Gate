@@ -178,19 +178,22 @@ export class UpstreamManager {
     runtime.status = "stopping";
 
     const client = runtime.client;
-    runtime.client = null;
-    runtime.toolCount = 0;
-    this.#tools.removeServer(id);
 
     try {
       if (client) {
         await client.disconnect();
       }
+      runtime.client = null;
+      runtime.toolCount = 0;
+      this.#tools.removeServer(id);
       runtime.status = "stopped";
       runtime.lastError = null;
       this.#logger.info("upstream", `disconnected ${runtime.config.name}`);
       return this.#snapshot(runtime);
     } catch (error) {
+      // Keep the client reference after a failed disconnect so a subsequent
+      // stop/delete/config-change attempt can retry the actual close instead
+      // of orphaning a live transport that the manager can no longer reach.
       const message = error instanceof Error ? error.message : String(error);
       runtime.status = "error";
       runtime.lastError = message;
