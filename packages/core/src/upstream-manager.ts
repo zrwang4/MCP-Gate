@@ -445,6 +445,13 @@ export class UpstreamManager {
     if (this.#busy.has(id)) throw new Error("upstream action already in progress");
     if (!runtime.config.enabled) throw new Error("upstream is disabled");
 
+    // A failed disconnect keeps the client reference so it can be retried.
+    // Never overwrite that still-owned client with a new connection attempt,
+    // otherwise the old transport becomes orphaned.
+    if (runtime.client) {
+      throw new Error("upstream must be disconnected successfully before reconnecting");
+    }
+
     this.#busy.add(id);
     runtime.status = "connecting";
     runtime.nextRetryAt = null;
