@@ -81,7 +81,7 @@ export class ToolRegistry {
         definition: {
           name: publicName,
           description: tool.description,
-          inputSchema: tool.inputSchema,
+          inputSchema: cloneToolValue(tool.inputSchema),
         },
       };
 
@@ -195,6 +195,14 @@ function sanitizeName(value: string): string {
 function cloneRoute(route: ToolRoute): ToolRoute {
   return {
     ...route,
-    definition: { ...route.definition },
+    definition: {
+      ...route.definition,
+      inputSchema: cloneToolValue(route.definition.inputSchema),
+    },
   };
+}
+
+
+function cloneToolValue<T>(value: T): T {
+  return structuredClone(value);
 }
