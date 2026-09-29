@@ -76,20 +76,22 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
     const [, upstreamId, action] = upstreamActionMatch;
 
-    try {
-      const upstream =
-        action === "connect"
-          ? await ctx.upstreams.connect(upstreamId)
-          : action === "disconnect"
-            ? await ctx.upstreams.disconnect(upstreamId)
-            : await ctx.upstreams.refreshTools(upstreamId);
+    await ctx.mutations.run(async () => {
+      try {
+        const upstream =
+          action === "connect"
+            ? await ctx.upstreams.connect(upstreamId)
+            : action === "disconnect"
+              ? await ctx.upstreams.disconnect(upstreamId)
+              : await ctx.upstreams.refreshTools(upstreamId);
 
-      json(res, 200, { upstream });
-    } catch (error) {
-      json(res, 500, {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+        json(res, 200, { upstream });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
     return true;
   }
 
