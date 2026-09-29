@@ -132,7 +132,7 @@ export class AuditLogger {
           const durationMs = parsed.durationMs;
           const errorValue = parsed.error;
           if (
-            Number.isInteger(seq) &&
+            typeof seq === "number" && Number.isInteger(seq) &&
             typeof timestamp === "string" &&
             (source === "gateway" || source === "tester") &&
             typeof publicName === "string" &&
