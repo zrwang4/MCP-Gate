@@ -107,7 +107,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         }
       }
 
-      ctx.upstreams.syncConfigs();
+      await ctx.upstreams.reconcile();
       let reconnectError: string | null = null;
       if (wasRunning && updated.enabled) {
         try {
@@ -228,7 +228,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         headers: readOptionalHeaders(body.headers),
         authSecretId: createdSecretId ?? undefined,
       });
-      ctx.upstreams.syncConfigs();
+      await ctx.upstreams.reconcile();
       json(res, 201, { server: toPublicServerConfig(server) });
     } catch (error) {
       if (createdSecretId) {
@@ -335,7 +335,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         }
       }
 
-      ctx.upstreams.syncConfigs();
+      await ctx.upstreams.reconcile();
       let reconnectError: string | null = null;
       if (wasRunning && updated.enabled) {
         try {
@@ -410,7 +410,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         return true;
       }
 
-      ctx.upstreams.syncConfigs();
+      await ctx.upstreams.reconcile();
 
       json(res, 200, { server: toPublicServerConfig(updated) });
     } catch (error) {
@@ -439,7 +439,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     const removed = await ctx.registry.remove(serverId);
     await ctx.toolPolicy.removeServer(serverId);
     await ctx.profiles.removeServer(serverId);
-    ctx.upstreams.syncConfigs();
+    await ctx.upstreams.reconcile();
     if (!removed) {
       json(res, 404, { error: "server configuration not found" });
       return true;
