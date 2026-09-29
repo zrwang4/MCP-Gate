@@ -1,6 +1,7 @@
 import type { ServerRegistry } from "./server-registry.ts";
 import type { McpProfile, ProfileStore } from "./profile-store.ts";
-import type { UpstreamManager, ProfileApplyResult } from "./upstream-manager.ts";
+import type { ProfileApplyResult } from "./upstream-manager.ts";
+import type { RuntimeReconciler } from "./runtime-reconciler.ts";
 import type { MutationQueue } from "./mutation-queue.ts";
 
 export interface ProfileMutationOutcome {
@@ -14,18 +15,18 @@ export interface ProfileMutationOutcome {
 export class ProfileService {
   #store: ProfileStore;
   #registry: ServerRegistry;
-  #upstreams: UpstreamManager;
+  #reconciler: RuntimeReconciler;
   #mutations: MutationQueue;
 
   constructor(
     store: ProfileStore,
     registry: ServerRegistry,
-    upstreams: UpstreamManager,
+    reconciler: RuntimeReconciler,
     mutations: MutationQueue,
   ) {
     this.#store = store;
     this.#registry = registry;
-    this.#upstreams = upstreams;
+    this.#reconciler = reconciler;
     this.#mutations = mutations;
   }
 
@@ -64,9 +65,9 @@ export class ProfileService {
         };
       }
 
-      const result = await this.#upstreams.applyExactSet(input.serverIds);
+      const result = await this.#reconciler.applyExactSet(input.serverIds);
       if (result.failed.length > 0) {
-        const rollback = await this.#upstreams.applyExactSet(previous.serverIds);
+        const rollback = await this.#reconciler.applyExactSet(previous.serverIds);
         return {
           ok: false,
           profile: previous,
@@ -86,7 +87,7 @@ export class ProfileService {
           result,
         };
       } catch (error) {
-        const rollback = await this.#upstreams.applyExactSet(previous.serverIds);
+        const rollback = await this.#reconciler.applyExactSet(previous.serverIds);
         throw new Error(
           `profile update persisted failed: ${error instanceof Error ? error.message : String(error)}; runtime rollback failed/succeeded with ${rollback.failed.length} failure(s)`,
         );
@@ -105,11 +106,11 @@ export class ProfileService {
           ? this.#store.get(previousActiveProfileId)
           : null;
 
-      const result = await this.#upstreams.applyExactSet(profile.serverIds);
+      const result = await this.#reconciler.applyExactSet(profile.serverIds);
       if (result.failed.length > 0) {
         const rollback = previousActiveProfile
-          ? await this.#upstreams.applyExactSet(previousActiveProfile.serverIds)
-          : await this.#upstreams.applyExactSet([]);
+          ? await this.#reconciler.applyExactSet(previousActiveProfile.serverIds)
+          : await this.#reconciler.applyExactSet([]);
         return {
           ok: false,
           profile,
@@ -123,8 +124,8 @@ export class ProfileService {
         await this.#store.setActive(id);
       } catch (error) {
         const rollback = previousActiveProfile
-          ? await this.#upstreams.applyExactSet(previousActiveProfile.serverIds)
-          : await this.#upstreams.applyExactSet([]);
+          ? await this.#reconciler.applyExactSet(previousActiveProfile.serverIds)
+          : await this.#reconciler.applyExactSet([]);
         throw new Error(
           `profile activation persistence failed: ${error instanceof Error ? error.message : String(error)}; runtime rollback failures=${rollback.failed.length}`,
         );
@@ -145,7 +146,7 @@ export class ProfileService {
       if (!profile) throw new Error("profile not found");
 
       const wasActive = this.#store.activeProfileId === id;
-      const result = await this.#upstreams.disconnectSet(profile.serverIds);
+      const result = await this.#reconciler.disconnectSet(profile.serverIds);
 
       if (wasActive && result.failed.length > 0) {
         return {
@@ -160,7 +161,7 @@ export class ProfileService {
         try {
           await this.#store.setActive(null);
         } catch (error) {
-          const rollback = await this.#upstreams.applyExactSet(profile.serverIds);
+          const rollback = await this.#reconciler.applyExactSet(profile.serverIds);
           throw new Error(
             `profile deactivation persistence failed: ${error instanceof Error ? error.message : String(error)}; runtime rollback failures=${rollback.failed.length}`,
           );
@@ -183,7 +184,7 @@ export class ProfileService {
 
       const wasActive = this.#store.activeProfileId === id;
       const result = wasActive
-        ? await this.#upstreams.disconnectSet(profile.serverIds)
+        ? await this.#reconciler.disconnectSet(profile.serverIds)
         : undefined;
 
       if (wasActive && result && result.failed.length > 0) {
