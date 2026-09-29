@@ -8,6 +8,7 @@ import {
 } from "./management-auth.ts";
 import {
   json,
+  readJsonBody,
   type ManagementContext,
   type RouteHandler,
 } from "./management-context.ts";
@@ -228,8 +229,9 @@ export class ManagementServer {
       } catch (error) {
         json(res, 400, { error: error instanceof Error ? error.message : String(error) });
       }
-      return true;
+      return;
     }
+
     const ctx: ManagementContext = {
       config: this.#config,
       gateway: this.#gateway,
