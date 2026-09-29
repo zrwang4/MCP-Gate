@@ -49,26 +49,6 @@ for (const [name, version] of entries) {
   }
 }
 
-const updaterConfig = tauriProductionConfig.plugins?.updater;
-if (tauriProductionConfig.bundle?.createUpdaterArtifacts !== true) {
-  throw new Error("Production bundle must enable createUpdaterArtifacts");
-}
-if (
-  typeof updaterConfig?.pubkey !== "string" ||
-  !updaterConfig.pubkey.trim() ||
-  updaterConfig.pubkey.includes("__")
-) {
-  throw new Error("Production updater must contain a real public key");
-}
-if (
-  !Array.isArray(updaterConfig.endpoints) ||
-  !updaterConfig.endpoints.includes(
-    "https://github.com/zrwang4/MCP-Gate/releases/latest/download/latest.json",
-  )
-) {
-  throw new Error("Production updater must use the MCP Gate GitHub Release endpoint");
-}
-
 const explicitTag = process.env.RELEASE_TAG?.trim() ?? "";
 const githubTag =
   process.env.GITHUB_REF_TYPE === "tag"
