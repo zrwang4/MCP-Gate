@@ -115,7 +115,6 @@ export class AuditLogger {
       this.#flushTimer = null;
     }
     await this.#flushPending();
-    await this.#writeQueue;
   }
 
   #scheduleFlush(): void {
@@ -132,12 +131,27 @@ export class AuditLogger {
     const batch = this.#pendingLines.join("");
     this.#pendingLines = [];
     this.#pendingBytes = 0;
-    this.#writeQueue = this.#writeQueue
-      .then(() => appendFile(this.#filePath, batch, "utf8"))
-      .catch((error) => {
-        console.error(`[audit] failed to write audit file: ${String(error)}`);
-      });
-    await this.#writeQueue;
+    if (this.#flushPromise) return this.#flushPromise;
+
+    this.#flushPromise = (async () => {
+      while (this.#pendingLines.length > 0) {
+        const nextBatch = this.#pendingLines.join("");
+        this.#pendingLines = [];
+        this.#pendingBytes = 0;
+        try {
+          await appendFile(this.#filePath, nextBatch, "utf8");
+        } catch (error) {
+          console.error(`[audit] failed to write audit file: ${String(error)}`);
+        }
+      }
+    })().finally(() => {
+      this.#flushPromise = null;
+      if (this.#pendingLines.length > 0) {
+        void this.#flushPending();
+      }
+    });
+
+    return this.#flushPromise;
   }
   async #loadExisting(): Promise<void> {
     try {
