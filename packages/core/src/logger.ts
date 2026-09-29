@@ -1,6 +1,8 @@
 import { appendFile, mkdir, readFile, rename, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
+const MAX_LOG_FILE_BYTES = 5 * 1024 * 1024;
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface LogEntry {
@@ -20,6 +22,7 @@ export class CoreLogger {
   #pendingBytes = 0;
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
   #flushPromise: Promise<void> | null = null;
+  #fileBytes = 0;
 
   constructor(logFile: string, maxEntries = 1000) {
     this.#logFile = logFile;
@@ -28,13 +31,12 @@ export class CoreLogger {
 
   async init(): Promise<void> {
     await mkdir(dirname(this.#logFile), { recursive: true });
+    await this.#rotateIfNeeded();
     try {
-      const info = await stat(this.#logFile);
-      if (info.size >= 5 * 1024 * 1024) {
-        await rename(this.#logFile, `${this.#logFile}.1`).catch(() => undefined);
-      }
-    } catch {
-      // The file does not exist yet.
+      this.#fileBytes = (await stat(this.#logFile)).size;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      this.#fileBytes = 0;
     }
 
     await this.#loadExisting();
@@ -96,6 +98,24 @@ export class CoreLogger {
     await this.#flushPending();
   }
 
+  async #rotateIfNeeded(): Promise<void> {
+    try {
+      const info = await stat(this.#logFile);
+      if (info.size >= MAX_LOG_FILE_BYTES) {
+        await rename(this.#logFile, this.#logFile + ".1");
+        this.#fileBytes = 0;
+      } else {
+        this.#fileBytes = info.size;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        this.#fileBytes = 0;
+        return;
+      }
+      throw error;
+    }
+  }
+
   #scheduleFlush(): void {
     if (this.#flushTimer) return;
     this.#flushTimer = setTimeout(() => {
@@ -112,10 +132,18 @@ export class CoreLogger {
     this.#flushPromise = (async () => {
       while (this.#pendingLines.length > 0) {
         const nextBatch = this.#pendingLines.join("");
+        const nextBatchBytes = Buffer.byteLength(nextBatch, "utf8");
         this.#pendingLines = [];
         this.#pendingBytes = 0;
         try {
+          if (
+            this.#fileBytes > 0 &&
+            this.#fileBytes + nextBatchBytes > MAX_LOG_FILE_BYTES
+          ) {
+            await this.#rotateIfNeeded();
+          }
           await appendFile(this.#logFile, nextBatch, "utf8");
+          this.#fileBytes += nextBatchBytes;
         } catch (error) {
           console.error(`[logger] failed to write log file: ${String(error)}`);
         }
