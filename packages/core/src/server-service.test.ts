@@ -8,7 +8,7 @@ import { ServerRegistry } from "./server-registry.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { ToolPolicyStore } from "./tool-policy-store.ts";
 import { ToolRegistry } from "./tool-registry.ts";
-import { SecretStore } from "./secret-store.ts";
+import type { SecretStore } from "./secret-store.ts";
 import { UpstreamManager } from "./upstream-manager.ts";
 import { ServerService } from "./server-service.ts";
 import { MutationQueue } from "./mutation-queue.ts";
