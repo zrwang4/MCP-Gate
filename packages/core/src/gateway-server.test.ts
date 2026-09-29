@@ -148,6 +148,7 @@ test("mcp-proxy hosts the secured gateway and routes aggregated tools", async ()
       gatewayAccessFile: join(dir, "gateway-access.json"),
       auditFile: join(dir, "audit.jsonl"),
       sessionSettingsFile: join(dir, "session-settings.json"),
+      stdioConnectTimeoutMs: 30_000,
     },
     tools,
     {

@@ -12,16 +12,53 @@ import type {
 } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
 
-export class StdioUpstreamClient implements UpstreamClient {
-  #config: StdioServerConfig;
+/** Default handshake budget for a stdio upstream (npx cold starts land here). */
+export const DEFAULT_STDIO_CONNECT_TIMEOUT_MS = 30_000;
+
+/**
+ * Reject a promise after `timeoutMs`. The underlying operation keeps running —
+ * a stdio handshake cannot be cancelled — so its eventual failure is attached
+ * a no-op handler: if the timeout wins the race, the late rejection must not
+ * surface as an unhandledRejection.
+ */
+export function withTimeout<T>(
+  operation: () => Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  const original = operation();
+  original.catch(() => undefined);
+
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    original.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+export class StdioUpstreamClient implements UpstreamClient {  #config: StdioServerConfig;
   #secrets: SecretStore;
+  #connectTimeoutMs: number;
   #client: Client | null = null;
   #transport: StdioClientTransport | null = null;
   #lifecycleHandlers: UpstreamLifecycleHandlers = {};
 
-  constructor(config: StdioServerConfig, secrets: SecretStore) {
+  constructor(
+    config: StdioServerConfig,
+    secrets: SecretStore,
+    connectTimeoutMs = DEFAULT_STDIO_CONNECT_TIMEOUT_MS,
+  ) {
     this.#config = config;
     this.#secrets = secrets;
+    this.#connectTimeoutMs = connectTimeoutMs;
   }
 
   setLifecycleHandlers(handlers: UpstreamLifecycleHandlers): void {
@@ -51,7 +88,11 @@ export class StdioUpstreamClient implements UpstreamClient {
     this.#transport = transport;
 
     try {
-      await client.connect(transport);
+      await withTimeout(
+        () => client.connect(transport),
+        this.#connectTimeoutMs,
+        `stdio handshake timed out after ${this.#connectTimeoutMs}ms (${this.#config.command})`,
+      );
     } catch (error) {
       try {
         await client.close();

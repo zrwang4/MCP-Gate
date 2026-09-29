@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { restoreConfigurationFiles, validateBackupBundle } from "./management-route-backup.ts";
+import { restoreConfigurationFiles, validateBackupBundle, redactServerSecrets, stripRedactedHeaders, HEADER_REDACTED_PLACEHOLDER } from "./management-route-backup.ts";
 
 const validBackup = (): {
   version: 1;
@@ -45,6 +45,84 @@ test("backup validator rejects a dangling active profile", () => {
     profiles: [],
   };
   assert.throws(() => validateBackupBundle(backup), /active profile does not exist/);
+});
+
+test("backup export redacts credential header values but keeps other headers", () => {
+  const registry = {
+    version: 1,
+    servers: [
+      {
+        id: "http-1",
+        name: "Apifox",
+        transport: "http",
+        headers: {
+          "X-Apifox-Api-Version": "2025-09-01",
+          Authorization: "Bearer super-secret-token",
+          "X-Custom": "fine",
+        },
+      },
+      {
+        id: "stdio-1",
+        name: "Local",
+        transport: "stdio",
+        command: "node",
+      },
+    ],
+  };
+
+  const redacted = redactServerSecrets(registry) as typeof registry;
+  const httpServer = redacted.servers[0]!;
+  assert.deepEqual(httpServer.headers, {
+    "X-Apifox-Api-Version": "2025-09-01",
+    Authorization: HEADER_REDACTED_PLACEHOLDER,
+    "X-Custom": "fine",
+  });
+  // The stdio server without headers must pass through untouched.
+  assert.deepEqual(redacted.servers[1], registry.servers[1]);
+  // And the original in-memory registry is not mutated.
+  assert.equal(registry.servers[0]!.headers!.Authorization, "Bearer super-secret-token");
+});
+
+test("backup restore drops redacted placeholder headers instead of sending them upstream", () => {
+  const registry = {
+    version: 1,
+    servers: [
+      {
+        id: "http-1",
+        name: "Apifox",
+        transport: "http",
+        headers: {
+          "X-Apifox-Api-Version": "2025-09-01",
+          Authorization: HEADER_REDACTED_PLACEHOLDER,
+          "Proxy-Authorization": HEADER_REDACTED_PLACEHOLDER,
+          "X-Custom": "fine",
+        },
+      },
+    ],
+  };
+
+  const restored = stripRedactedHeaders(registry) as typeof registry;
+  assert.deepEqual(restored.servers[0]!.headers, {
+    "X-Apifox-Api-Version": "2025-09-01",
+    "X-Custom": "fine",
+  });
+});
+
+test("backup restore keeps a literal Authorization header that was never redacted", () => {
+  const registry = {
+    version: 1,
+    servers: [
+      {
+        id: "http-1",
+        name: "Apifox",
+        transport: "http",
+        headers: { Authorization: "Bearer user-typed-this" },
+      },
+    ],
+  };
+
+  const restored = stripRedactedHeaders(registry) as typeof registry;
+  assert.equal(restored.servers[0]!.headers.Authorization, "Bearer user-typed-this");
 });
 
 

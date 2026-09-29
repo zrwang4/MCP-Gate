@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     (serverConfig) =>
       serverConfig.transport === "http"
         ? new HttpUpstreamClient(serverConfig, secrets, config.connectionTimeoutMs)
-        : new StdioUpstreamClient(serverConfig, secrets),
+        : new StdioUpstreamClient(serverConfig, secrets, config.stdioConnectTimeoutMs),
     logger,
     { audit, mutations },
   );

@@ -6,6 +6,95 @@ import { normalizeSessionIdleTimeout } from "./session-settings.ts";
 
 const BACKUP_VERSION = 1;
 
+/**
+ * Header names whose values must never leave the process in a backup. Values
+ * are stored as plain text in servers.json (unlike authSecretId), so a naive
+ * export would leak bearer tokens into the backup file.
+ */
+const REDACTED_HEADER_PATTERN =
+  /^(authorization|proxy-authorization|cookie|set-cookie)$/i;
+export const HEADER_REDACTED_PLACEHOLDER = "[REDACTED]";
+
+export function redactServerSecrets(servers: unknown): unknown {
+  if (
+    !servers ||
+    typeof servers !== "object" ||
+    Array.isArray(servers) ||
+    !Array.isArray((servers as { servers?: unknown }).servers)
+  ) {
+    return servers;
+  }
+  const registry = servers as {
+    servers: Array<Record<string, unknown> | null>;
+  };
+  return {
+    ...registry,
+    servers: registry.servers.map((server) => {
+      if (!server || typeof server !== "object") return server;
+      const headers = server.headers;
+      if (
+        !headers ||
+        typeof headers !== "object" ||
+        Array.isArray(headers)
+      ) {
+        return server;
+      }
+      const redacted = Object.fromEntries(
+        Object.entries(headers as Record<string, string>).map(
+          ([name, value]) => [
+            name,
+            REDACTED_HEADER_PATTERN.test(name)
+              ? HEADER_REDACTED_PLACEHOLDER
+              : value,
+          ],
+        ),
+      );
+      return { ...server, headers: redacted };
+    }),
+  };
+}
+
+/**
+ * Drop redacted header entries on restore: a placeholder is not a credential,
+ * and sending "[REDACTED]" upstream would fail authentication in a confusing
+ * way. The user re-enters the value in the UI after restoring.
+ */
+export function stripRedactedHeaders(servers: unknown): unknown {
+  if (
+    !servers ||
+    typeof servers !== "object" ||
+    Array.isArray(servers) ||
+    !Array.isArray((servers as { servers?: unknown }).servers)
+  ) {
+    return servers;
+  }
+  const registry = servers as {
+    servers: Array<Record<string, unknown> | null>;
+  };
+  return {
+    ...registry,
+    servers: registry.servers.map((server) => {
+      if (!server || typeof server !== "object") return server;
+      const headers = server.headers;
+      if (
+        !headers ||
+        typeof headers !== "object" ||
+        Array.isArray(headers)
+      ) {
+        return server;
+      }
+      const kept = Object.fromEntries(
+        Object.entries(headers as Record<string, string>).filter(
+          ([name, value]) =>
+            !REDACTED_HEADER_PATTERN.test(name) ||
+            value !== HEADER_REDACTED_PLACEHOLDER,
+        ),
+      );
+      return { ...server, headers: kept };
+    }),
+  };
+}
+
 type BackupBundle = {
   version: 1;
   exportedAt: string;
@@ -193,11 +282,13 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
         version: 1,
         exportedAt: new Date().toISOString(),
         note:
-          "Configuration backup. Secret values are never exported; secret references remain valid only when the secure storage entries still exist.",
-        servers: await readJsonOrDefault(ctx.config.serverConfigFile, {
-          version: 1,
-          servers: [],
-        }),
+          "Configuration backup. Secret values are never exported: Keychain-backed secrets export as opaque references, and Authorization/Cookie-style header values are replaced with [REDACTED] and dropped on restore (re-enter them after restoring). Secret references remain valid only when the secure storage entries still exist.",
+        servers: redactServerSecrets(
+          await readJsonOrDefault(ctx.config.serverConfigFile, {
+            version: 1,
+            servers: [],
+          }),
+        ),
         profiles: await readJsonOrDefault(ctx.config.profileFile, {
           version: 1,
           activeProfileId: null,
@@ -232,7 +323,10 @@ export const handleBackup: RouteHandler = async (req, res, url, ctx) => {
       await ctx.mutations.run(async () => {
         await restoreConfigurationFiles(
           [
-            { path: ctx.config.serverConfigFile, value: backup.servers },
+            {
+              path: ctx.config.serverConfigFile,
+              value: stripRedactedHeaders(backup.servers),
+            },
             { path: ctx.config.profileFile, value: backup.profiles },
             { path: ctx.config.toolPolicyFile, value: backup.toolPolicy },
             { path: ctx.config.gatewayAccessFile, value: backup.gatewayAccess },

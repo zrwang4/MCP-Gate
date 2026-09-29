@@ -6,6 +6,7 @@ export interface CoreConfig {
   port: number;
   filesystemRoot: string;
   connectionTimeoutMs: number;
+  stdioConnectTimeoutMs: number;
   requestTimeoutMs: number;
   sessionIdleTimeoutMs: number;
   managementHost: string;
@@ -41,6 +42,15 @@ export function loadConfig(): CoreConfig {
     port: readPositiveInt("MCP_GATE_PORT", 24888),
     filesystemRoot: resolve(root),
     connectionTimeoutMs: readPositiveInt("MCP_GATE_CONNECTION_TIMEOUT_MS", 60_000),
+    // stdio spawns a process and waits for the MCP initialize handshake; a
+    // server that starts but never answers would otherwise pin the global
+    // mutation queue for the SDK's full default timeout. Short of the HTTP
+    // budget because no package download is involved... except npx cold
+    // starts, which is why this is still generous.
+    stdioConnectTimeoutMs: readPositiveInt(
+      "MCP_GATE_STDIO_CONNECT_TIMEOUT_MS",
+      30_000,
+    ),
     requestTimeoutMs: readPositiveInt("MCP_GATE_REQUEST_TIMEOUT_MS", 300_000),
     sessionIdleTimeoutMs: readPositiveInt("MCP_GATE_SESSION_IDLE_TIMEOUT_MS", 30 * 60_000),
     managementHost: process.env.MCP_GATE_MANAGEMENT_HOST ?? "127.0.0.1",
