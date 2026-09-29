@@ -67,13 +67,14 @@ export class AuditLogger {
       this.#entries.splice(0, this.#entries.length - this.#maxEntries);
     }
 
-    this.#writeQueue = this.#writeQueue
-      .then(() =>
-        appendFile(this.#filePath, `${JSON.stringify(entry)}\n`, "utf8"),
-      )
-      .catch((error) => {
-        console.error(`[audit] failed to write audit file: ${String(error)}`);
-      });
+    const line = `${JSON.stringify(entry)}\n`;
+    this.#pendingLines.push(line);
+    this.#pendingBytes += Buffer.byteLength(line, "utf8");
+    if (this.#pendingBytes >= 64 * 1024) {
+      void this.#flushPending();
+    } else {
+      this.#scheduleFlush();
+    }
 
     return { ...entry };
   }
@@ -109,9 +110,35 @@ export class AuditLogger {
   }
 
   async flush(): Promise<void> {
+    if (this.#flushTimer) {
+      clearTimeout(this.#flushTimer);
+      this.#flushTimer = null;
+    }
+    await this.#flushPending();
     await this.#writeQueue;
   }
 
+  #scheduleFlush(): void {
+    if (this.#flushTimer) return;
+    this.#flushTimer = setTimeout(() => {
+      this.#flushTimer = null;
+      void this.#flushPending();
+    }, 250);
+    (this.#flushTimer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
+  }
+
+  async #flushPending(): Promise<void> {
+    if (this.#pendingLines.length === 0) return;
+    const batch = this.#pendingLines.join("");
+    this.#pendingLines = [];
+    this.#pendingBytes = 0;
+    this.#writeQueue = this.#writeQueue
+      .then(() => appendFile(this.#filePath, batch, "utf8"))
+      .catch((error) => {
+        console.error(`[audit] failed to write audit file: ${String(error)}`);
+      });
+    await this.#writeQueue;
+  }
   async #loadExisting(): Promise<void> {
     try {
       const raw = await readFile(this.#filePath, "utf8");
