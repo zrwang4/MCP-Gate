@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, basename } from "node:path";
 import { writeJsonWithBackup } from "./atomic-write.ts";
 import { json, readJsonBody, requireDesktopClient, type RouteHandler } from "./management-context.ts";
+import { normalizeSessionIdleTimeout } from "./session-settings.ts";
 
 const BACKUP_VERSION = 1;
 
@@ -68,7 +69,9 @@ function validateBundle(value: unknown): BackupBundle {
     sessionSettings.version !== 1 ||
     typeof sessionSettings.idleTimeoutMs !== "number"
   ) {
+    throw new Error("invalid session settings backup");
   }
+  normalizeSessionIdleTimeout(sessionSettings.idleTimeoutMs);
 
   const profileIds = new Set(
     (profiles.profiles as unknown[])
