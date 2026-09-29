@@ -1,4 +1,3 @@
-import type { McpServerConfig } from "./server-registry.ts";
 import {
   json,
   readJsonBody,
@@ -6,24 +5,6 @@ import {
   type RouteHandler,
 } from "./management-context.ts";
 
-let profileMutationTail: Promise<void> = Promise.resolve();
-
-async function serializeProfileMutation<T>(
-  operation: () => Promise<T>,
-): Promise<T> {
-  const previous = profileMutationTail;
-  let release!: () => void;
-  profileMutationTail = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-
-  await previous;
-  try {
-    return await operation();
-  } finally {
-    release();
-  }
-}
 export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
   const profileMatch = url.pathname.match(
     /^\/api\/profiles\/([0-9a-f-]+)$/i,
@@ -32,7 +13,7 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
   if (req.method === "GET" && url.pathname === "/api/profiles") {
     json(res, 200, {
       profiles: ctx.profiles.list(),
-      activeProfileId: ctx.profiles.activeProfileId,
+      activeProfileId: ctx.profileService.activeProfileId,
     });
     return true;
   }
@@ -41,19 +22,15 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     try {
-      await serializeProfileMutation(async () => {
-        const body = await readJsonBody(req) as {
-          name?: unknown;
-          serverIds?: unknown;
-        };
-        const serverIds = normalizeProfileServerIds(body.serverIds);
-        assertKnownServers(serverIds, ctx.registry.list());
-        const profile = await ctx.profiles.create(
-          body.name as string,
-          serverIds,
-        );
-        json(res, 201, { profile });
-      });
+      const body = await readJsonBody(req) as {
+        name?: unknown;
+        serverIds?: unknown;
+      };
+      const profile = await ctx.profileService.create(
+        body.name as string,
+        normalizeProfileServerIds(body.serverIds),
+      );
+      json(res, 201, { profile });
     } catch (error) {
       json(res, 400, {
         error: error instanceof Error ? error.message : String(error),
@@ -66,33 +43,30 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     try {
-      await serializeProfileMutation(async () => {
-        const body = await readJsonBody(req) as {
-          name?: unknown;
-          serverIds?: unknown;
-        };
-        const serverIds = normalizeProfileServerIds(body.serverIds);
-        assertKnownServers(serverIds, ctx.registry.list());
-        const profileId = profileMatch[1];
-        const wasActive = ctx.profiles.activeProfileId === profileId;
-        const profile = await ctx.profiles.update(profileId, {
-          name: body.name as string,
-          serverIds,
-        });
-        if (!profile) {
-          json(res, 404, { error: "profile not found" });
-          return;
-        }
+      const body = await readJsonBody(req) as {
+        name?: unknown;
+        serverIds?: unknown;
+      };
+      const outcome = await ctx.profileService.update(profileMatch[1], {
+        name: body.name as string,
+        serverIds: normalizeProfileServerIds(body.serverIds),
+      });
 
-        const result = wasActive
-          ? await ctx.upstreams.applyExactSet(profile.serverIds)
-          : undefined;
-
-        json(res, 200, {
-          profile,
-          activeProfileId: ctx.profiles.activeProfileId,
-          ...(result ? { result } : {}),
+      if (!outcome.ok) {
+        json(res, 409, {
+          error: "profile update could not be fully applied",
+          profile: outcome.profile,
+          activeProfileId: outcome.activeProfileId,
+          result: outcome.result,
+          ...(outcome.rollback ? { rollback: outcome.rollback } : {}),
         });
+        return true;
+      }
+
+      json(res, 200, {
+        profile: outcome.profile,
+        activeProfileId: outcome.activeProfileId,
+        ...(outcome.result ? { result: outcome.result } : {}),
       });
     } catch (error) {
       json(res, 400, {
@@ -109,71 +83,30 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     const [, profileId, action] = profileActionMatch;
-
     try {
-      await serializeProfileMutation(async () => {
-        // Re-read after waiting for the mutation lock. Another request may
-        // have updated or deleted this profile while we were queued.
-        const profile = ctx.profiles.get(profileId);
-        if (!profile) {
-          json(res, 404, { error: "profile not found" });
-          return;
-        }
+      const outcome =
+        action === "activate"
+          ? await ctx.profileService.activate(profileId)
+          : await ctx.profileService.deactivate(profileId);
 
-        const previousActiveProfileId = ctx.profiles.activeProfileId;
-        const previousActiveProfile =
-          previousActiveProfileId && previousActiveProfileId !== profileId
-            ? ctx.profiles.get(previousActiveProfileId)
-            : null;
-
-        const result =
-          action === "activate"
-            ? await ctx.upstreams.applyExactSet(profile.serverIds)
-            : await ctx.upstreams.disconnectSet(profile.serverIds);
-
-        // Do not advertise a profile as active when its complete server set
-        // could not be applied. Try to restore the previous active profile
-        // before returning the failure so the persisted active id and runtime
-        // ownership stay aligned as closely as possible.
-        if (action === "activate" && result.failed.length > 0) {
-          const rollback = previousActiveProfile
-            ? await ctx.upstreams.applyExactSet(previousActiveProfile.serverIds)
-            : null;
-
-          json(res, 409, {
-            error: "profile activation incomplete",
-            profile,
-            activeProfileId: previousActiveProfileId,
-            result,
-            ...(rollback ? { rollback } : {}),
-          });
-          return;
-        }
-
-        // Keep an active profile when deactivation could not fully disconnect
-        // its members. Otherwise failed transports become running without a
-        // profile representing the desired ownership/state anymore.
-        if (action === "deactivate" && result.failed.length > 0) {
-          json(res, 409, {
-            error: "profile deactivation incomplete",
-            profile,
-            activeProfileId: ctx.profiles.activeProfileId,
-            result,
-          });
-          return;
-        }
-
-        if (action === "activate") {
-          await ctx.profiles.setActive(profileId);
-        } else if (ctx.profiles.activeProfileId === profileId) {
-          await ctx.profiles.setActive(null);
-        }
-
-        json(res, 200, {
-          profile,
-          activeProfileId: ctx.profiles.activeProfileId,
-          result,
+      if (!outcome.ok) {
+        json(res, 409, {
+          error:
+            action === "activate"
+              ? "profile activation incomplete"
+              : "profile deactivation incomplete",
+          profile: outcome.profile,
+          activeProfileId: outcome.activeProfileId,
+          result: outcome.result,
+          ...(outcome.rollback ? { rollback: outcome.rollback } : {}),
         });
+        return true;
+      }
+
+      json(res, 200, {
+        profile: outcome.profile,
+        activeProfileId: outcome.activeProfileId,
+        result: outcome.result,
       });
     } catch (error) {
       json(res, 409, {
@@ -186,44 +119,22 @@ export const handleProfiles: RouteHandler = async (req, res, url, ctx) => {
   if (req.method === "DELETE" && profileMatch) {
     if (!requireDesktopClient(req, res)) return true;
 
-    const profileId = profileMatch[1];
-
     try {
-      await serializeProfileMutation(async () => {
-        // Re-read after waiting for the mutation lock to avoid acting on a
-        // profile snapshot that another request has already changed.
-        const profile = ctx.profiles.get(profileId);
-        if (!profile) {
-          json(res, 404, { error: "profile not found" });
-          return;
-        }
-
-        const wasActive = ctx.profiles.activeProfileId === profileId;
-        const result = wasActive
-          ? await ctx.upstreams.disconnectSet(profile.serverIds)
-          : undefined;
-
-        if (wasActive && result && result.failed.length > 0) {
-          json(res, 409, {
-            error: "active profile cannot be deleted until all members disconnect",
-            profile,
-            activeProfileId: ctx.profiles.activeProfileId,
-            result,
-          });
-          return;
-        }
-
-        const removed = await ctx.profiles.remove(profileId);
-        if (!removed) {
-          json(res, 404, { error: "profile not found" });
-          return;
-        }
-
-        json(res, 200, {
-          ok: true,
-          activeProfileId: ctx.profiles.activeProfileId,
-          ...(result ? { result } : {}),
+      const outcome = await ctx.profileService.remove(profileMatch[1]);
+      if (!outcome.ok) {
+        json(res, 409, {
+          error: "active profile cannot be deleted until all members disconnect",
+          profile: outcome.profile,
+          activeProfileId: outcome.activeProfileId,
+          result: outcome.result,
         });
+        return true;
+      }
+
+      json(res, 200, {
+        ok: true,
+        activeProfileId: outcome.activeProfileId,
+        ...(outcome.result ? { result: outcome.result } : {}),
       });
     } catch (error) {
       json(res, 409, {
@@ -257,15 +168,4 @@ function normalizeProfileServerIds(value: unknown): string[] {
     }
   }
   return result;
-}
-
-function assertKnownServers(
-  serverIds: string[],
-  servers: McpServerConfig[],
-): void {
-  const known = new Set(servers.map((server) => server.id));
-  const missing = serverIds.filter((id) => !known.has(id));
-  if (missing.length > 0) {
-    throw new Error(`unknown server id(s): ${missing.join(", ")}`);
-  }
 }
