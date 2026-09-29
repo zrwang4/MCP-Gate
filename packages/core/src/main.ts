@@ -8,6 +8,7 @@ import { HttpUpstreamClient } from "./http-upstream-client.ts";
 import { ManagementServer } from "./management-server.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { ServerRegistry } from "./server-registry.ts";
+import { ServerService } from "./server-service.ts";
 import { createPlatformSecretStore } from "./secret-store.ts";
 import { ToolPolicyStore } from "./tool-policy-store.ts";
 import { ToolRegistry } from "./tool-registry.ts";
@@ -49,6 +50,14 @@ async function main(): Promise<void> {
     { audit },
   );
   await upstreams.reconcile();
+  const serverService = new ServerService(
+    registry,
+    profiles,
+    upstreams,
+    toolPolicy,
+    secrets,
+    logger,
+  );
   const gateway = new GatewayServer(
     config,
     toolRegistry,
@@ -61,6 +70,7 @@ async function main(): Promise<void> {
     gateway,
     gatewayAccess,
     registry,
+    serverService,
     profiles,
     upstreams,
     toolRegistry,
