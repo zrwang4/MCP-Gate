@@ -60,24 +60,23 @@ export const handleTools: RouteHandler = async (req, res, url, ctx) => {
 
     await ctx.mutations.run(async () => {
       const enabled = action === "enable";
-    await ctx.toolPolicy.setEnabled(
-      tool.serverId,
-      tool.originalName,
-      enabled,
-    );
-    const changed = ctx.tools.setEnabled(publicName, enabled);
-    if (!changed) {
-      json(res, 404, { error: "tool not found" });
-      return true;
-    }
+      await ctx.toolPolicy.setEnabled(
+        tool.serverId,
+        tool.originalName,
+        enabled,
+      );
+      const changed = ctx.tools.setEnabled(publicName, enabled);
+      if (!changed) {
+        json(res, 404, { error: "tool not found" });
+        return;
+      }
 
-    const updatedTool = ctx.tools.resolve(publicName);
-    ctx.logger.info(
-      "tools",
-      `${action === "enable" ? "enabled" : "disabled"} ${publicName}`,
-    );
-    json(res, 200, { tool: updatedTool });
-
+      const updatedTool = ctx.tools.resolve(publicName);
+      ctx.logger.info(
+        "tools",
+        `${action === "enable" ? "enabled" : "disabled"} ${publicName}`,
+      );
+      json(res, 200, { tool: updatedTool });
     });
     return true;
   }
