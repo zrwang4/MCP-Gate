@@ -119,12 +119,18 @@ export class ServerService {
         authSecretId = null;
       }
 
-      const updated = await this.#registry.update(id, {
-        ...input,
+      const registryInput: ServerConfigInput = {
+        name: input.name,
         transport,
+        command: input.command,
+        args: input.args,
+        cwd: input.cwd,
+        url: input.url,
         ...(input.headersProvided ? { headers: input.headers } : {}),
         authSecretId,
-      });
+      };
+
+      const updated = await this.#registry.update(id, registryInput);
 
       if (!updated) throw new Error("server configuration not found");
 
