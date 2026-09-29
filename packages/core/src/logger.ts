@@ -104,7 +104,7 @@ export class CoreLogger {
           const source = parsed.source;
           const message = parsed.message;
           if (
-            Number.isInteger(seq) &&
+            typeof seq === "number" && Number.isInteger(seq) &&
             typeof timestamp === "string" &&
             (level === "debug" ||
               level === "info" ||
