@@ -3,7 +3,9 @@ import {
   Check,
   Chrome,
   Copy,
+  Download,
   FileText,
+  Upload,
   Folder,
   Github,
   Globe,
@@ -53,6 +55,11 @@ interface UpstreamInfo {
   lastError: string | null;
   reconnectAttempt: number;
   nextRetryAt: string | null;
+  healthStatus?: "unknown" | "healthy" | "unhealthy";
+  lastHealthCheckAt?: string | null;
+  consecutiveFailureCount?: number;
+  circuitState?: "closed" | "open" | "half-open";
+  circuitOpenedAt?: string | null;
 }
 
 interface ServerConfigInfo {
@@ -463,6 +470,11 @@ export function App() {
   const [newServerCwd, setNewServerCwd] = useState("");
   const [deletingServerId, setDeletingServerId] = useState<string | null>(null);
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
+  const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+  const [backupBusy, setBackupBusy] = useState<"export" | "restore" | null>(null);
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
+  const [restoreCandidate, setRestoreCandidate] = useState<unknown | null>(null);
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
   const [newServerEnv, setNewServerEnv] = useState("");
   const [newServerSecretEnv, setNewServerSecretEnv] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
@@ -639,7 +651,9 @@ export function App() {
     showImportConfig ||
     showAddServer ||
     Boolean(deletingProfileId) ||
-    Boolean(deletingServerId);
+    Boolean(deletingServerId) ||
+    Boolean(selectedServerId) ||
+    Boolean(restoreCandidate);
 
   useEffect(() => {
     if (!anyModalOpen) return;
@@ -666,6 +680,10 @@ export function App() {
         setDeletingProfileId(null);
       } else if (deletingServerId) {
         setDeletingServerId(null);
+      } else if (selectedServerId) {
+        setSelectedServerId(null);
+      } else if (restoreCandidate) {
+        setRestoreCandidate(null);
       }
     };
 
@@ -680,6 +698,8 @@ export function App() {
     showAddServer,
     deletingProfileId,
     deletingServerId,
+    selectedServerId,
+    restoreCandidate,
   ]);
 
   const gatewayUrl = status?.gateway.endpoint ?? DEFAULT_GATEWAY_URL;
@@ -862,6 +882,81 @@ export function App() {
       await refresh();
     } finally {
       setLanAccessBusy(false);
+    }
+  }
+
+  async function exportConfigurationBackup() {
+    setBackupBusy("export");
+    setBackupMessage(null);
+    setError(null);
+    try {
+      const response = await api<{ backup: unknown }>(
+        "/api/backup/export",
+        undefined,
+        15_000,
+      );
+      const blob = new Blob(
+        [JSON.stringify(response.backup, null, 2)],
+        { type: "application/json;charset=utf-8" },
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `mcp-gate-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setBackupMessage("配置备份已导出。Secret 值不会包含在备份中。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBackupBusy(null);
+    }
+  }
+
+  function selectBackupFile(file: File | undefined) {
+    if (!file) return;
+    void file.text()
+      .then((raw) => {
+        const parsed = JSON.parse(raw) as unknown;
+        setRestoreCandidate(parsed);
+        setBackupMessage(null);
+      })
+      .catch((cause) => {
+        setError(`备份文件读取失败：${cause instanceof Error ? cause.message : String(cause)}`);
+      });
+  }
+
+  async function restoreConfigurationBackup() {
+    if (!restoreCandidate) return;
+    setBackupBusy("restore");
+    setError(null);
+    try {
+      await api(
+        "/api/backup/restore",
+        {
+          method: "POST",
+          body: JSON.stringify({ backup: restoreCandidate }),
+        },
+        20_000,
+      );
+      setRestoreCandidate(null);
+      setBackupMessage(
+        IS_TAURI
+          ? "配置已恢复，正在重启 Core 使配置生效…"
+          : "配置已恢复。请重启 Core 使配置生效。",
+      );
+      if (IS_TAURI) {
+        await restartManagedCore();
+      } else {
+        await refresh();
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBackupBusy(null);
+      if (backupInputRef.current) backupInputRef.current.value = "";
     }
   }
 
@@ -1743,6 +1838,12 @@ export function App() {
                         自动重连 #{upstream.reconnectAttempt} · {formatTime(upstream.nextRetryAt)}
                       </div>
                     )}
+                    {upstream && upstream.healthStatus && upstream.healthStatus !== "unknown" && (
+                      <div className={`serverHealth ${upstream.healthStatus}`}>
+                        健康检查：{upstream.healthStatus === "healthy" ? "正常" : "异常"}
+                        {upstream.circuitState === "open" ? " · 熔断中" : upstream.circuitState === "half-open" ? " · 恢复探测" : ""}
+                      </div>
+                    )}
                   </div>
                   <div className="serverActions">
                     {connected ? (
@@ -1792,6 +1893,13 @@ export function App() {
                       自动 {server.autoStart ? "开" : "关"}
                     </button>
                     <button
+                      className="actionButton"
+                      disabled={changing}
+                      onClick={() => setSelectedServerId(server.id)}
+                    >
+                      <Activity size={14} /> 详情
+                    </button>
+                    <button
                       className="actionButton iconOnly"
                       disabled={configBusy || changing}
                       onClick={() => openEditServer(server)}
@@ -1816,6 +1924,70 @@ export function App() {
           </div>
         )}
       </section>
+
+      {selectedServerId && (() => {
+        const server = serverConfigs.find((item) => item.id === selectedServerId);
+        const upstream = upstreams.find((item) => item.id === selectedServerId);
+        const serverLogs = logs
+          .filter((entry) =>
+            entry.source === "upstream" &&
+            entry.message.toLowerCase().includes((server?.name ?? "").toLowerCase()),
+          )
+          .slice(-8)
+          .reverse();
+
+        if (!server) return null;
+
+        return (
+          <div className="modalBackdrop" role="presentation" onMouseDown={() => setSelectedServerId(null)}>
+            <section className="modalCard serverDetailModal" role="dialog" aria-modal="true" aria-label="MCP 详情" onMouseDown={(event) => event.stopPropagation()}>
+              <div className="modalHeader">
+                <div>
+                  <h2>{server.name}</h2>
+                  <p>{server.transport.toUpperCase()} · {server.alias}</p>
+                </div>
+                <button className="iconButton" onClick={() => setSelectedServerId(null)} aria-label="关闭">
+                  <X size={17} />
+                </button>
+              </div>
+              <div className="serverDetailGrid">
+                <div><span>连接状态</span><strong>{server.enabled ? upstreamStatusLabel(upstream?.status ?? "configured") : "已禁用"}</strong></div>
+                <div><span>健康状态</span><strong>{upstream?.healthStatus === "healthy" ? "正常" : upstream?.healthStatus === "unhealthy" ? "异常" : "未知"}</strong></div>
+                <div><span>熔断状态</span><strong>{upstream?.circuitState === "open" ? "开启" : upstream?.circuitState === "half-open" ? "恢复探测" : "关闭"}</strong></div>
+                <div><span>工具数量</span><strong>{upstream?.toolCount ?? 0}</strong></div>
+                <div><span>连续失败</span><strong>{upstream?.consecutiveFailureCount ?? 0}</strong></div>
+                <div><span>最近检查</span><strong>{formatTime(upstream?.lastHealthCheckAt ?? null)}</strong></div>
+              </div>
+              <div className="serverDetailBlock">
+                <span>连接配置</span>
+                <code>
+                  {server.transport === "http"
+                    ? server.url
+                    : `${server.command ?? ""} ${(server.args ?? []).join(" ")}`.trim()}
+                </code>
+              </div>
+              {upstream?.lastError && (
+                <div className="serverDetailError">
+                  <strong>最近错误</strong>
+                  <span>{upstream.lastError}</span>
+                </div>
+              )}
+              <div className="serverDetailBlock">
+                <span>最近运行日志</span>
+                {serverLogs.length === 0 ? (
+                  <div className="serverDetailEmpty">暂无匹配日志</div>
+                ) : (
+                  <div className="serverDetailLogs">
+                    {serverLogs.map((entry) => (
+                      <div key={entry.seq}><time>{formatTime(entry.timestamp)}</time><span>{entry.message}</span></div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        );
+      })()}
 
       {deletingServerId && (
         <div className="modalBackdrop" role="presentation" onMouseDown={() => setDeletingServerId(null)}>
@@ -1847,6 +2019,31 @@ export function App() {
                 onClick={() => void removeServerConfig(deletingServerId)}
               >
                 删除
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {restoreCandidate && (
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => setRestoreCandidate(null)}>
+          <section className="modalCard confirmCard" role="dialog" aria-modal="true" aria-label="恢复配置确认" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <h2>恢复配置</h2>
+                <p>会覆盖当前 Server、Profile、Tool 策略和 Gateway 配置文件。</p>
+              </div>
+              <button className="iconButton" onClick={() => setRestoreCandidate(null)} aria-label="关闭">
+                <X size={17} />
+              </button>
+            </div>
+            <p className="confirmText">
+              确定恢复这个备份吗？Secret 值不会从备份恢复；同一台机器上仍存在的 Keychain Secret 可以继续使用。
+            </p>
+            <div className="modalActions">
+              <button className="secondaryButton" disabled={backupBusy !== null} onClick={() => setRestoreCandidate(null)}>取消</button>
+              <button className="actionButton danger" disabled={backupBusy !== null} onClick={() => void restoreConfigurationBackup()}>
+                {backupBusy === "restore" ? "恢复中…" : "确认恢复"}
               </button>
             </div>
           </section>
@@ -2291,6 +2488,39 @@ export function App() {
                   ? "已复制"
                   : "复制诊断信息"}
             </button>
+          </div>
+
+          <div className="settingsRow">
+            <div>
+              <strong>配置备份</strong>
+              <span>
+                导出 Server、Profile、Tool 策略和 Gateway 配置。备份不会包含 Keychain 中保存的 Secret 值。
+                {backupMessage ? ` ${backupMessage}` : ""}
+              </span>
+            </div>
+            <div className="settingsActions">
+              <input
+                ref={backupInputRef}
+                type="file"
+                accept=".json,application/json"
+                hidden
+                onChange={(event) => selectBackupFile(event.target.files?.[0])}
+              />
+              <button
+                className="secondaryButton"
+                disabled={backupBusy !== null || !managementConnected}
+                onClick={() => void exportConfigurationBackup()}
+              >
+                <Download size={14} /> {backupBusy === "export" ? "导出中…" : "导出"}
+              </button>
+              <button
+                className="secondaryButton"
+                disabled={backupBusy !== null || !managementConnected}
+                onClick={() => backupInputRef.current?.click()}
+              >
+                <Upload size={14} /> 选择恢复文件
+              </button>
+            </div>
           </div>
 
           <div className="settingsRow gatewayAccessRow">
