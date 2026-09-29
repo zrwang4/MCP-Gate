@@ -51,7 +51,8 @@ Management Routes
       GatewayServer
           │
           ▼
-       MCP Proxy```
+       MCP Proxy
+```
 
 核心职责边界：
 
