@@ -53,8 +53,8 @@ async function main(): Promise<void> {
     logger,
     { audit, mutations },
   );
-  await upstreams.reconcile();
   const reconciler = new RuntimeReconciler(registry, upstreams);
+  await reconciler.reconcile();
   const serverService = new ServerService(
     registry,
     profiles,
@@ -87,6 +87,7 @@ async function main(): Promise<void> {
     profiles,
     profileService,
     mutations,
+    reconciler,
     upstreams,
     toolRegistry,
     toolPolicy,
