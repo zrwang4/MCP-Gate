@@ -2,6 +2,8 @@ import { appendFile, mkdir, readFile, rename, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { redactSecrets } from "./logger.ts";
 
+const MAX_AUDIT_FILE_BYTES = 5 * 1024 * 1024;
+
 export type AuditSource = "gateway" | "tester";
 
 export interface AuditEntry {
@@ -37,6 +39,7 @@ export class AuditLogger {
   #pendingBytes = 0;
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
   #flushPromise: Promise<void> | null = null;
+  #fileBytes = 0;
 
   constructor(filePath: string, maxEntries = 1000) {
     this.#filePath = filePath;
@@ -46,6 +49,12 @@ export class AuditLogger {
   async init(): Promise<void> {
     await mkdir(dirname(this.#filePath), { recursive: true });
     await this.#rotateIfNeeded();
+    try {
+      this.#fileBytes = (await stat(this.#filePath)).size;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      this.#fileBytes = 0;
+    }
     await this.#loadExisting();
   }
 
@@ -136,10 +145,18 @@ export class AuditLogger {
     this.#flushPromise = (async () => {
       while (this.#pendingLines.length > 0) {
         const nextBatch = this.#pendingLines.join("");
+        const nextBatchBytes = Buffer.byteLength(nextBatch, "utf8");
         this.#pendingLines = [];
         this.#pendingBytes = 0;
         try {
+          if (
+            this.#fileBytes > 0 &&
+            this.#fileBytes + nextBatchBytes > MAX_AUDIT_FILE_BYTES
+          ) {
+            await this.#rotateIfNeeded();
+          }
           await appendFile(this.#filePath, nextBatch, "utf8");
+          this.#fileBytes += nextBatchBytes;
         } catch (error) {
           console.error(`[audit] failed to write audit file: ${String(error)}`);
         }
@@ -218,13 +235,18 @@ export class AuditLogger {
   async #rotateIfNeeded(): Promise<void> {
     try {
       const info = await stat(this.#filePath);
-      if (info.size >= 5 * 1024 * 1024) {
-        await rename(this.#filePath, `${this.#filePath}.1`).catch(
-          () => undefined,
-        );
+      if (info.size >= MAX_AUDIT_FILE_BYTES) {
+        await rename(this.#filePath, this.#filePath + ".1");
+        this.#fileBytes = 0;
+      } else {
+        this.#fileBytes = info.size;
       }
-    } catch {
-      // The file does not exist yet.
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        this.#fileBytes = 0;
+        return;
+      }
+      throw error;
     }
   }
 }
