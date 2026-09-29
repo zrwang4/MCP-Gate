@@ -332,6 +332,7 @@ test("upstream manager discards a stale tool refresh after disconnect", async ()
     const config = await servers.create({ name: "Refresh", command: "fake" });
 
     const tools = new ToolRegistry();
+    let listToolsCalls = 0;
     let releaseListTools: (() => void) | undefined;
 
     const upstreams = new UpstreamManager(
@@ -341,7 +342,10 @@ test("upstream manager discards a stale tool refresh after disconnect", async ()
         async connect() {},
         async disconnect() {},
         async listTools() {
-          if (!releaseListTools) {
+          listToolsCalls += 1;
+          if (listToolsCalls === 2) {
+            // Gate only the refresh call; the connect-time list must settle
+            // for the upstream to reach "running" in the first place.
             await new Promise<void>((resolve) => {
               releaseListTools = resolve;
             });
@@ -665,7 +669,7 @@ test("upstream manager waits for an in-flight connect when disconnect is request
   }
 });
 
-test("upstream manager discards a connect that is superseded by disconnect", async () => {
+test("upstream manager rejects a concurrent disconnect while one is in progress", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
   let logger: CoreLogger | null = null;
   try {
@@ -677,20 +681,19 @@ test("upstream manager discards a connect that is superseded by disconnect", asy
     const config = await servers.create({ name: "Race", command: "fake" });
 
     const tools = new ToolRegistry();
-    let releaseConnect: (() => void) | undefined;
+    let releaseDisconnect: (() => void) | undefined;
     let disconnects = 0;
 
     const upstreams = new UpstreamManager(
       servers,
       tools,
       () => ({
-        async connect() {
-          await new Promise<void>((resolve) => {
-            releaseConnect = resolve;
-          });
-        },
+        async connect() {},
         async disconnect() {
           disconnects += 1;
+          await new Promise<void>((resolve) => {
+            releaseDisconnect = resolve;
+          });
         },
         async listTools() {
           return [{ name: "stale_tool" }];
@@ -704,29 +707,28 @@ test("upstream manager discards a connect that is superseded by disconnect", asy
       logger,
     );
 
-    const connecting = upstreams.connect(config.id);
-    await waitFor(() => releaseConnect !== undefined);
+    await upstreams.connect(config.id);
 
+    const disconnecting = upstreams.disconnect(config.id);
+    await waitFor(() => releaseDisconnect !== undefined);
     await assert.rejects(
       upstreams.disconnect(config.id),
       /upstream action already in progress/,
     );
 
-    releaseConnect?.();
-    await assert.rejects(connecting, /upstream connect superseded/);
+    releaseDisconnect?.();
+    const stopped = await disconnecting;
 
-    const snapshot = upstreams.list().find((item) => item.id === config.id);
-    assert.equal(snapshot?.status, "stopped");
-    assert.equal(snapshot?.toolCount, 0);
-    assert.equal(snapshot?.lastError, null);
-    assert.equal(tools.list().length, 0);
+    assert.equal(stopped.status, "stopped");
     assert.equal(disconnects, 1);
+    assert.equal(tools.list().length, 0);
   } finally {
     await logger?.flush();
     await rm(dir, { recursive: true, force: true });
   }
 });
-\nasync function waitFor(
+
+async function waitFor(
   predicate: () => boolean,
   timeoutMs = 500,
 ): Promise<void> {

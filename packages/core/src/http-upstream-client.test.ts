@@ -19,17 +19,20 @@ test("HTTP Agent pool reuses agents while leases are active and evicts idle agen
   const second = pool.acquire(10_000);
   assert.strictEqual(first.agent, second.agent);
 
+  const shared = first.agent;
   await first.release();
 
   const third = pool.acquire(10_000);
-  assert.strictEqual(third.agent, second.agent);
+  // `second` still holds a lease, so the shared agent must be reused.
+  assert.strictEqual(third.agent, shared);
 
   await second.release();
+  await third.release();
 
   const fourth = pool.acquire(10_000);
-  assert.notStrictEqual(fourth.agent, third.agent);
+  // Every lease was released, so the idle agent must have been evicted.
+  assert.notStrictEqual(fourth.agent, shared);
 
-  await third.release();
   await fourth.release();
 });
 

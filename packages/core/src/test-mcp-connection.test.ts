@@ -35,7 +35,7 @@ test("connection test reuses existing stdio secret without persisting changes", 
     const secrets = new MemorySecretStore();
     await secrets.set("stdio-env:existing", "existing-secret");
 
-    let disconnected = false;
+    let disconnectCalls = 0;
     const factory: ConnectionTestClientFactory = (config) => {
       assert.equal(config.transport, "stdio");
       if (config.transport === "stdio") {
@@ -48,7 +48,7 @@ test("connection test reuses existing stdio secret without persisting changes", 
       return {
         async connect() {},
         async disconnect() {
-          disconnected = true;
+          disconnectCalls += 1;
         },
         async listTools() {
           return [{ name: "ping" }, { name: "status" }];
@@ -256,7 +256,7 @@ test("connection test timeout disconnects the temporary client", async () => {
       /MCP connection timed out after 5ms/,
     );
 
-    assert.equal(disconnected, true);
+    assert.equal(disconnectCalls, 1);
   } finally {
     await logger?.flush();
     await rm(dir, { recursive: true, force: true });
