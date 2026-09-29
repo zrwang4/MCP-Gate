@@ -100,7 +100,12 @@ export class ProfileStore {
     };
 
     this.#profiles.push(profile);
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      this.#profiles.pop();
+      throw error;
+    }
     this.#logger.info("profiles", `created profile: ${profile.name}`);
     return cloneProfile(profile);
   }
@@ -112,11 +117,19 @@ export class ProfileStore {
     const profile = this.#profiles.find((item) => item.id === id);
     if (!profile) return undefined;
 
+    const previous = cloneProfile(profile);
     profile.name = validateName(input.name);
     profile.serverIds = validateServerIds(input.serverIds);
     profile.updatedAt = new Date().toISOString();
 
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      profile.name = previous.name;
+      profile.serverIds = previous.serverIds;
+      profile.updatedAt = previous.updatedAt;
+      throw error;
+    }
     this.#logger.info("profiles", `updated profile: ${profile.name}`);
     return cloneProfile(profile);
   }
@@ -126,8 +139,14 @@ export class ProfileStore {
       throw new Error("profile not found");
     }
 
+    const previousActiveProfileId = this.#activeProfileId;
     this.#activeProfileId = id;
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      this.#activeProfileId = previousActiveProfileId;
+      throw error;
+    }
     this.#logger.info("profiles", id ? `activated profile: ${id}` : "cleared active profile");
   }
 
@@ -135,11 +154,18 @@ export class ProfileStore {
     const index = this.#profiles.findIndex((profile) => profile.id === id);
     if (index < 0) return false;
 
+    const previousActiveProfileId = this.#activeProfileId;
     const [removed] = this.#profiles.splice(index, 1);
     if (this.#activeProfileId === id) {
       this.#activeProfileId = null;
     }
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      this.#profiles.splice(index, 0, removed);
+      this.#activeProfileId = previousActiveProfileId;
+      throw error;
+    }
     this.#logger.info("profiles", `removed profile: ${removed.name}`);
     return true;
   }
@@ -156,7 +182,13 @@ export class ProfileStore {
     }
 
     if (changed) {
-      await this.#persist();
+      const previous = this.#profiles.map(cloneProfile);
+      try {
+        await this.#persist();
+      } catch (error) {
+        this.#profiles = previous;
+        throw error;
+      }
       this.#logger.info("profiles", `removed server ${serverId} from profiles`);
     }
   }
