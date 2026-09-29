@@ -72,24 +72,26 @@ export const handleImport: RouteHandler = async (req, res, url, ctx) => {
         throw new Error("sourceId is required");
       }
 
-      const loaded = await readMcpImportSource(body.sourceId);
-      if (
-        typeof body.expectedModifiedAt === "string" &&
-        loaded.source.modifiedAt !== body.expectedModifiedAt
-      ) {
-        throw new Error("import source changed since preview; preview it again before importing");
-      }
+      await ctx.mutations.run(async () => {
+        const loaded = await readMcpImportSource(body.sourceId as string);
+        if (
+          typeof body.expectedModifiedAt === "string" &&
+          loaded.source.modifiedAt !== body.expectedModifiedAt
+        ) {
+          throw new Error("import source changed since preview; preview it again before importing");
+        }
 
-      const result = await applyMcpClientConfig(
-        loaded.config,
-        ctx.registry,
-        ctx.secrets,
-        ctx.logger,
-      );
-      await ctx.upstreams.reconcile();
-      json(res, 200, {
-        source: loaded.source,
-        result,
+        const result = await applyMcpClientConfig(
+          loaded.config,
+          ctx.registry,
+          ctx.secrets,
+          ctx.logger,
+        );
+        await ctx.upstreams.reconcile();
+        json(res, 200, {
+          source: loaded.source,
+          result,
+        });
       });
     } catch (error) {
       json(res, 400, {
@@ -131,14 +133,16 @@ export const handleImport: RouteHandler = async (req, res, url, ctx) => {
       const body = await readJsonBody(req, 512 * 1024) as {
         config?: unknown;
       };
-      const result = await applyMcpClientConfig(
-        body.config,
-        ctx.registry,
-        ctx.secrets,
-        ctx.logger,
-      );
-      await ctx.upstreams.reconcile();
-      json(res, 200, { result });
+      await ctx.mutations.run(async () => {
+        const result = await applyMcpClientConfig(
+          body.config,
+          ctx.registry,
+          ctx.secrets,
+          ctx.logger,
+        );
+        await ctx.upstreams.reconcile();
+        json(res, 200, { result });
+      });
     } catch (error) {
       json(res, 400, {
         error: error instanceof Error ? error.message : String(error),
