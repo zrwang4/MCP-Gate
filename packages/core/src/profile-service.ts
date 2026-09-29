@@ -1,4 +1,4 @@
-import type { McpServerConfig, ServerRegistry } from "./server-registry.ts";
+import type { ServerRegistry } from "./server-registry.ts";
 import type { McpProfile, ProfileStore } from "./profile-store.ts";
 import type { UpstreamManager, ProfileApplyResult } from "./upstream-manager.ts";
 
