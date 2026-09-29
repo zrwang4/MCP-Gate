@@ -70,7 +70,6 @@ export class ServerService {
         ...input,
         authSecretId: createdSecretId ?? undefined,
       });
-      await this.#reconciler.reconcile();
       return server;
     } catch (error) {
       if (createdSecretId) {
@@ -147,7 +146,6 @@ export class ServerService {
         }
       }
 
-      await this.#reconciler.reconcile();
 
       if (wasRunning && updated.enabled) {
         try {
@@ -248,7 +246,6 @@ export class ServerService {
         }
       }
 
-      await this.#reconciler.reconcile();
 
       if (wasRunning && updated.enabled) {
         try {
@@ -300,7 +297,6 @@ export class ServerService {
         const updated = await this.#registry.updateSettings(id, input);
         if (!updated) throw new Error("server configuration not found");
 
-        await this.#reconciler.reconcile();
         return updated;
       } catch (error) {
         if (wasRunning && existing.enabled) {
