@@ -20,6 +20,7 @@ export interface ManagementContext {
   gateway: GatewayServer;
   gatewayAccess: GatewayAccessController;
   registry: ServerRegistry;
+  servers: ServerService;
   profiles: ProfileStore;
   upstreams: UpstreamManager;
   tools: ToolRegistry;
