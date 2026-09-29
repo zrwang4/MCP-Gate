@@ -45,6 +45,9 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
     }
 
     const createdSecretIds: string[] = [];
+    const wasRunning = ctx.upstreams
+      .list()
+      .some((upstream) => upstream.id === serverId && upstream.status === "running");
     try {
       const body = await readJsonBody(req) as {
         env?: unknown;
@@ -105,13 +108,39 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
       }
 
       ctx.upstreams.syncConfigs();
-      json(res, 200, { server: toPublicServerConfig(updated) });
+      let reconnectError: string | null = null;
+      if (wasRunning && updated.enabled) {
+        try {
+          await ctx.upstreams.connect(serverId);
+        } catch (error) {
+          reconnectError = error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      json(res, reconnectError ? 409 : 200, {
+        server: toPublicServerConfig(updated),
+        ...(reconnectError ? { reconnectError } : {}),
+      });
     } catch (error) {
       for (const secretId of createdSecretIds) {
         await ctx.secrets.delete(secretId).catch(() => false);
       }
+
+      let restoreError: string | null = null;
+      if (wasRunning && existing.enabled) {
+        try {
+          await ctx.upstreams.connect(serverId);
+        } catch (restoreFailure) {
+          restoreError =
+            restoreFailure instanceof Error
+              ? restoreFailure.message
+              : String(restoreFailure);
+        }
+      }
+
       json(res, 400, {
         error: error instanceof Error ? error.message : String(error),
+        ...(restoreError ? { restoreError } : {}),
       });
     }
     return true;
