@@ -218,6 +218,13 @@ export class HttpUpstreamClient implements UpstreamClient {
     this.#agentLease = null;
   }
 
+  async healthCheck(timeoutMs: number): Promise<void> {
+    await this.#requireClient().listTools(undefined, {
+      cacheMode: "bypass",
+      timeout: timeoutMs,
+    });
+  }
+
   async listTools(): Promise<McpToolDefinition[]> {
     const result = await this.#requireClient().listTools();
     return result.tools.map((tool) => ({
