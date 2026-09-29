@@ -1,14 +1,10 @@
 import {
   Activity,
   Check,
-  Chrome,
   Copy,
   Download,
   FileText,
   Upload,
-  Folder,
-  Github,
-  Globe,
   Layers3,
   Pencil,
   Play,
@@ -57,6 +53,10 @@ import {
   statusLabel,
   upstreamStatusLabel,
 } from "./lib/format";
+import { ProfileEditorModal } from "./components/ProfileEditorModal";
+import { ImportConfigModal } from "./components/ImportConfigModal";
+import { AddServerModal } from "./components/AddServerModal";
+import { ToolTesterModal } from "./components/ToolTesterModal";
 
 export function App() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
@@ -2356,570 +2356,90 @@ export function App() {
           )}
         </div>
       </section>
-
       {showProfileEditor && (
-        <div className="modalBackdrop" role="presentation" onMouseDown={() => {
-          setShowProfileEditor(false);
-          setEditingProfileId(null);
-        }}>
-          <section
-            className="modalCard"
-            role="dialog"
-            aria-modal="true"
-            aria-label={editingProfileId ? "编辑 Profile" : "新建 Profile"}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="modalHeader">
-              <div>
-                <h2>{editingProfileId ? "编辑 Profile" : "新建 Profile"}</h2>
-                <p>
-                  激活后，只保留选中的 MCP 运行；编辑当前 Profile 并保存时也会立即按新成员重算运行集合。
-                </p>
-              </div>
-              <button
-                className="iconButton"
-                onClick={() => {
-                  setShowProfileEditor(false);
-                  setEditingProfileId(null);
-                }}
-                aria-label="关闭"
-              >
-                <X size={17} />
-              </button>
-            </div>
-
-            <label className="field">
-              <span>名称</span>
-              <input
-                value={profileName}
-                onChange={(event) => setProfileName(event.target.value)}
-                placeholder="例如 Coding"
-              />
-            </label>
-
-            <div className="profilePicker">
-              <div className="profilePickerToolbar">
-                <span className="profilePickerTitle">MCP 成员</span>
-                <div>
-                  <button
-                    type="button"
-                    className="profilePickerButton"
-                    onClick={() =>
-                      setProfileServerIds(
-                        upstreams
-                          .filter((upstream) => upstream.status === "running")
-                          .map((upstream) => upstream.id),
-                      )
-                    }
-                  >
-                    使用当前运行集合
-                  </button>
-                  <button
-                    type="button"
-                    className="profilePickerButton"
-                    onClick={() =>
-                      setProfileServerIds(
-                        serverConfigs
-                          .filter((server) => server.enabled)
-                          .map((server) => server.id),
-                      )
-                    }
-                  >
-                    全选已启用
-                  </button>
-                  <button
-                    type="button"
-                    className="profilePickerButton"
-                    onClick={() => setProfileServerIds([])}
-                  >
-                    清空
-                  </button>
-                </div>
-              </div>
-              {serverConfigs.length === 0 ? (
-                <div className="emptyState compact">
-                  <span>先添加 MCP，再创建 Profile。</span>
-                </div>
-              ) : (
-                serverConfigs.map((server) => (
-                  <label className="profilePickerRow" key={server.id}>
-                    <input
-                      type="checkbox"
-                      checked={profileServerIds.includes(server.id)}
-                      onChange={() => toggleProfileServer(server.id)}
-                    />
-                    <div>
-                      <strong>{server.name}</strong>
-                      <span>
-                        {server.transport.toUpperCase()} · {server.alias}
-                        {!server.enabled ? " · 已禁用" : ""}
-                      </span>
-                    </div>
-                  </label>
-                ))
-              )}
-            </div>
-
-            <div className="modalActions">
-              <button
-                className="secondaryButton"
-                onClick={() => {
-                  setShowProfileEditor(false);
-                  setEditingProfileId(null);
-                }}
-              >
-                取消
-              </button>
-              <button
-                className="actionButton primary"
-                disabled={profileBusy || !profileName.trim()}
-                onClick={() => void saveProfile()}
-              >
-                {profileBusy ? "保存中…" : editingProfileId ? "保存修改" : "创建 Profile"}
-              </button>
-            </div>
-          </section>
-        </div>
+        <ProfileEditorModal
+          editingProfileId={editingProfileId}
+          profileBusy={profileBusy}
+          profileName={profileName}
+          profileServerIds={profileServerIds}
+          saveProfile={saveProfile}
+          serverConfigs={serverConfigs}
+          setEditingProfileId={setEditingProfileId}
+          setProfileName={setProfileName}
+          setProfileServerIds={setProfileServerIds}
+          setShowProfileEditor={setShowProfileEditor}
+          status={status}
+          toggleProfileServer={toggleProfileServer}
+          upstreams={upstreams}
+        />
       )}
-
       {showImportConfig && (
-        <div
-          className="modalBackdrop"
-          role="presentation"
-          onMouseDown={() => {
-            if (importBusy) return;
-            setShowImportConfig(false);
-            setImportPreview(null);
-            setImportApplyResult(null);
-            setImportSourceId(null);
-            setImportSourceSnapshot(null);
-          }}
-        >
-          <section
-            className="modalCard importConfigCard"
-            role="dialog"
-            aria-modal="true"
-            aria-label="导入 MCP 配置"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="modalHeader">
-              <div>
-                <h2>导入 MCP 配置</h2>
-                <p>
-                  支持 Claude / Cursor 风格 mcpServers JSON。先预览，再写入 Registry 和 Keychain。
-                </p>
-              </div>
-              <button
-                className="iconButton"
-                disabled={importBusy}
-                onClick={() => {
-                  setShowImportConfig(false);
-                  setImportPreview(null);
-                  setImportApplyResult(null);
-                }}
-                aria-label="关闭"
-              >
-                <X size={17} />
-              </button>
-            </div>
-
-            <div className="importSources">
-              <div className="importSourcesHeader">
-                <div>
-                  <strong>本机配置</strong>
-                  <span>Core 直接读取，原始 JSON 和 Secret 不会发给 WebView</span>
-                </div>
-                <button
-                  type="button"
-                  className="profilePickerButton"
-                  disabled={importBusy}
-                  onClick={() => void refreshImportSources()}
-                >
-                  刷新检测
-                </button>
-              </div>
-
-              {importSources.map((source) => (
-                <button
-                  type="button"
-                  className={`importSourceRow ${importSourceId === source.id ? "selected" : ""}`}
-                  key={source.id}
-                  disabled={importBusy || !source.exists}
-                  onClick={() => void previewImportSource(source.id)}
-                >
-                  <div>
-                    <strong>{source.label}</strong>
-                    <code>{source.displayPath}</code>
-                  </div>
-                  <span className={source.exists ? "sourceFound" : "sourceMissing"}>
-                    {source.exists ? "预览" : "未发现"}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <div className="importDivider"><span>或粘贴 JSON</span></div>
-
-            <label className="field">
-              <span>JSON 配置</span>
-              <textarea
-                className="importConfigText"
-                value={importConfigText}
-                onChange={(event) => {
-                  setImportConfigText(event.target.value);
-                  setImportPreview(null);
-                  setImportApplyResult(null);
-                  setImportSourceId(null);
-                  setImportSourceSnapshot(null);
-                }}
-                rows={10}
-                spellCheck={false}
-                placeholder={'{\n  "mcpServers": {\n    "github": {\n      "command": "npx",\n      "args": ["-y", "server-package"],\n      "env": { "GITHUB_TOKEN": "..." }\n    }\n  }\n}'}
-              />
-              <small>
-                Preview 不回显 Secret 值；敏感 env 和 HTTP Authorization 在导入时写入 macOS Keychain。
-              </small>
-            </label>
-
-            {importPreview && (
-              <div className="importPreview">
-                <div className="importPreviewHeader">
-                  <strong>{importPreview.candidates.length} 个可导入</strong>
-                  <span>{importPreview.issues.length} 个问题</span>
-                </div>
-
-                {importPreview.candidates.map((candidate) => (
-                  <div className="importCandidate" key={candidate.sourceName}>
-                    <div className="importCandidateHeader">
-                      <strong>{candidate.name}</strong>
-                      <span className="toolSource">{candidate.transport.toUpperCase()}</span>
-                    </div>
-                    <code>
-                      {candidate.transport === "stdio"
-                        ? `${candidate.command ?? ""} ${(candidate.args ?? []).join(" ")}`
-                        : candidate.url}
-                    </code>
-                    <div className="importMeta">
-                      {candidate.plainEnvKeys.length > 0 && (
-                        <span>Env: {candidate.plainEnvKeys.join(", ")}</span>
-                      )}
-                      {candidate.secretEnvKeys.length > 0 && (
-                        <span>Keychain: {candidate.secretEnvKeys.join(", ")}</span>
-                      )}
-                      {candidate.headerKeys.length > 0 && (
-                        <span>Header: {candidate.headerKeys.join(", ")}</span>
-                      )}
-                      {candidate.hasAuthorization && (
-                        <span>Authorization → Keychain</span>
-                      )}
-                    </div>
-                    {candidate.warnings.map((warning) => (
-                      <div className="importWarning" key={warning}>{warning}</div>
-                    ))}
-                  </div>
-                ))}
-
-                {importPreview.issues.map((issue, index) => (
-                  <div
-                    className="importIssue"
-                    key={`${issue.sourceName ?? "config"}:${index}`}
-                  >
-                    <strong>{issue.sourceName ?? "配置"}</strong>
-                    <span>{issue.message}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {importApplyResult && (
-              <div className="importResult">
-                <strong>导入结果</strong>
-                <span>
-                  已导入 {importApplyResult.imported.length} ·
-                  跳过 {importApplyResult.skipped.length} ·
-                  失败 {importApplyResult.failed.length}
-                </span>
-                {importApplyResult.failed.map((item) => (
-                  <div className="importIssue" key={`failed:${item.sourceName}`}>
-                    <strong>{item.sourceName}</strong>
-                    <span>{item.error}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="modalActions">
-              <button
-                className="secondaryButton"
-                disabled={importBusy}
-                onClick={() => {
-                  setShowImportConfig(false);
-                  setImportPreview(null);
-                  setImportApplyResult(null);
-                }}
-              >
-                关闭
-              </button>
-              <button
-                className="secondaryButton"
-                disabled={importBusy || !importConfigText.trim() || Boolean(importSourceId)}
-                onClick={() => void previewImportConfig()}
-              >
-                {importBusy ? "处理中…" : "预览"}
-              </button>
-              <button
-                className="actionButton primary"
-                disabled={
-                  importBusy ||
-                  !importPreview ||
-                  importPreview.candidates.length === 0
-                }
-                onClick={() => void applyImportConfig()}
-              >
-                {importBusy
-                  ? "导入中…"
-                  : `导入 ${importPreview?.candidates.length ?? 0} 个`}
-              </button>
-            </div>
-          </section>
-        </div>
+        <ImportConfigModal
+          applyImportConfig={applyImportConfig}
+          importApplyResult={importApplyResult}
+          importBusy={importBusy}
+          importConfigText={importConfigText}
+          importPreview={importPreview}
+          importSourceId={importSourceId}
+          importSources={importSources}
+          previewImportConfig={previewImportConfig}
+          previewImportSource={previewImportSource}
+          refreshImportSources={refreshImportSources}
+          setImportApplyResult={setImportApplyResult}
+          setImportConfigText={setImportConfigText}
+          setImportPreview={setImportPreview}
+          setImportSourceId={setImportSourceId}
+          setImportSourceSnapshot={setImportSourceSnapshot}
+          setShowImportConfig={setShowImportConfig}
+        />
       )}
-
       {showAddServer && (
-        <div className="modalBackdrop" role="presentation" onMouseDown={() => {
-          if (connectionTestBusy || configBusy) return;
-          setShowAddServer(false);
-          setEditingServerId(null);
-          setConnectionTestState(null);
-        }}>
-          <section className="modalCard" role="dialog" aria-modal="true" aria-label={editingServerId ? "编辑 MCP" : "添加 MCP"} onMouseDown={(event) => event.stopPropagation()}>
-            <div className="modalHeader">
-              <div>
-                <h2>{editingServerId ? "编辑 MCP" : "添加 MCP"}</h2>
-                <p>{editingServerId ? "保存时会先断开当前连接，alias 保持不变。" : "支持 stdio 与 HTTP MCP；HTTP 请求头在自定义 Header 中逐条配置。"}</p>
-              </div>
-              <button
-                className="iconButton"
-                disabled={connectionTestBusy || configBusy}
-                onClick={() => {
-                  setShowAddServer(false);
-                  setEditingServerId(null);
-                  setConnectionTestState(null);
-                }}
-                aria-label="关闭"
-              >
-                <X size={17} />
-              </button>
-            </div>
-            <label className="field">
-              <span>名称</span>
-              <input value={newServerName} onChange={(event) => setNewServerName(event.target.value)} placeholder="例如 GitHub" />
-            </label>
-            <label className="field">
-              <span>类型</span>
-              <select
-                value={newServerTransport}
-                onChange={(event) => setNewServerTransport(event.target.value as "stdio" | "http")}
-              >
-                <option value="stdio">本地命令（stdio）</option>
-                <option value="http">远端 MCP（HTTP）</option>
-              </select>
-            </label>
-            {newServerTransport === "stdio" ? (
-              <>
-            <label className="field">
-              <span>命令</span>
-              <input value={newServerCommand} onChange={(event) => setNewServerCommand(event.target.value)} placeholder="例如 npx" />
-            </label>
-            <label className="field">
-              <span>参数（每行一个）</span>
-              <textarea value={newServerArgs} onChange={(event) => setNewServerArgs(event.target.value)} rows={4} placeholder={"-y\n@modelcontextprotocol/server-github"} />
-            </label>
-            <label className="field">
-              <span>工作目录（可选）</span>
-              <input value={newServerCwd} onChange={(event) => setNewServerCwd(event.target.value)} placeholder="/Users/me/project" />
-            </label>
-            <label className="field">
-              <span>环境变量（每行 KEY=VALUE）</span>
-              <textarea
-                value={newServerEnv}
-                onChange={(event) => setNewServerEnv(event.target.value)}
-                rows={3}
-                placeholder={"API_URL=https://example.com\nMODE=production"}
-                spellCheck={false}
-              />
-              <small>普通变量会保存在 servers.json；SDK 仍会自动继承 HOME、PATH、SHELL 等安全默认环境。</small>
-            </label>
-            <label className="field">
-              <span>Secret 环境变量（每行 KEY=VALUE）</span>
-              <textarea
-                value={newServerSecretEnv}
-                onChange={(event) => setNewServerSecretEnv(event.target.value)}
-                rows={3}
-                placeholder={"GITHUB_TOKEN=...\nAPI_KEY=..."}
-                spellCheck={false}
-              />
-              <small>Secret 只写入 macOS Keychain。编辑已有 Secret 时保留 KEY= 空值即可保持原值；删除整行会清除它。</small>
-            </label>
-              </>
-            ) : (
-              <>
-                <label className="field">
-                  <span>MCP URL</span>
-                  <input
-                    value={newServerUrl}
-                    onChange={(event) => setNewServerUrl(event.target.value)}
-                    placeholder="https://example.com/mcp"
-                  />
-                </label>
-                <label className="field">
-                  <span>自定义 Header（每行 KEY=VALUE）</span>
-                  <textarea
-                    value={newServerHeaders}
-                    onChange={(event) => setNewServerHeaders(event.target.value)}
-                    rows={3}
-                    placeholder={"X-Apifox-Api-Version=2025-09-01\nX-Custom-Header=value"}
-                    spellCheck={false}
-                  />
-                  <small>
-                    随每次请求发送，以明文保存在 servers.json。Authorization 也直接写在这里
-                    （例如 Authorization=Bearer ...）；文件权限为 0600，仅当前用户可读。
-                  </small>
-                </label>
-              </>
-            )}
-            {connectionTestState && (
-              <div
-                className={`connectionTestResult ${connectionTestState.status}`}
-                role="status"
-              >
-                {connectionTestState.status === "success" ? (
-                  <>
-                    <div className="connectionTestSummary">
-                      <strong>连接成功</strong>
-                      <span>
-                        {connectionTestState.result.toolCount} 个 Tools ·
-                        {" "}
-                        {connectionTestState.result.durationMs} ms
-                      </span>
-                    </div>
-                    {connectionTestState.result.toolNames.length > 0 && (
-                      <div className="connectionTestTools">
-                        {connectionTestState.result.toolNames
-                          .slice(0, 12)
-                          .map((toolName) => (
-                            <code key={toolName}>{toolName}</code>
-                          ))}
-                        {connectionTestState.result.toolNames.length > 12 && (
-                          <span>
-                            +{connectionTestState.result.toolNames.length - 12}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <strong>连接失败</strong>
-                    <span>{connectionTestState.error}</span>
-                  </>
-                )}
-                <small>
-                  这是临时连接测试，不会保存配置；修改表单后请重新测试。
-                </small>
-              </div>
-            )}
-
-            <div className="modalActions">
-              <button
-                className="secondaryButton"
-                disabled={connectionTestBusy || configBusy}
-                onClick={() => {
-                  setShowAddServer(false);
-                  setEditingServerId(null);
-                  setConnectionTestState(null);
-                }}
-              >
-                取消
-              </button>
-              <button
-                className="secondaryButton"
-                disabled={
-                  connectionTestBusy ||
-                  configBusy ||
-                  (newServerTransport === "stdio"
-                    ? !newServerCommand.trim()
-                    : !newServerUrl.trim())
-                }
-                onClick={() => void testServerConnection()}
-              >
-                {connectionTestBusy ? "测试中…" : "测试连接"}
-              </button>
-              <button
-                className="actionButton primary"
-                disabled={
-                  configBusy ||
-                  connectionTestBusy ||
-                  !newServerName.trim() ||
-                  (newServerTransport === "stdio"
-                    ? !newServerCommand.trim()
-                    : !newServerUrl.trim())
-                }
-                onClick={() => void saveServerConfig()}
-              >
-                {configBusy ? "保存中…" : editingServerId ? "保存修改" : "保存配置"}
-              </button>
-            </div>
-          </section>
-        </div>
+        <AddServerModal
+          configBusy={configBusy}
+          connectionTestState={connectionTestState}
+          setConnectionTestState={setConnectionTestState}
+          connectionTestBusy={connectionTestBusy}
+          editingServerId={editingServerId}
+          newServerArgs={newServerArgs}
+          newServerCommand={newServerCommand}
+          newServerCwd={newServerCwd}
+          newServerEnv={newServerEnv}
+          newServerHeaders={newServerHeaders}
+          newServerName={newServerName}
+          newServerSecretEnv={newServerSecretEnv}
+          newServerTransport={newServerTransport}
+          newServerUrl={newServerUrl}
+          saveServerConfig={saveServerConfig}
+          setEditingServerId={setEditingServerId}
+          setNewServerArgs={setNewServerArgs}
+          setNewServerCommand={setNewServerCommand}
+          setNewServerCwd={setNewServerCwd}
+          setNewServerEnv={setNewServerEnv}
+          setNewServerHeaders={setNewServerHeaders}
+          setNewServerName={setNewServerName}
+          setNewServerSecretEnv={setNewServerSecretEnv}
+          setNewServerTransport={setNewServerTransport}
+          setNewServerUrl={setNewServerUrl}
+          setShowAddServer={setShowAddServer}
+          status={status}
+          testServerConnection={testServerConnection}
+        />
       )}
-
       {testTool && (
-        <div className="modalBackdrop" role="presentation" onMouseDown={() => setTestTool(null)}>
-          <section
-            className="modalCard toolTesterCard"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Tool 测试器"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="modalHeader">
-              <div>
-                <h2>Tool 测试器</h2>
-                <p><code>{testTool.publicName}</code> · 调用可能产生真实副作用，请确认参数。</p>
-              </div>
-              <button className="iconButton" onClick={() => setTestTool(null)} aria-label="关闭">
-                <X size={17} />
-              </button>
-            </div>
-            <label className="field">
-              <span>Arguments JSON</span>
-              <textarea
-                value={testToolArgs}
-                onChange={(event) => setTestToolArgs(event.target.value)}
-                rows={7}
-                spellCheck={false}
-              />
-            </label>
-            {testToolResult && (
-              <label className="field">
-                <span>Result</span>
-                <pre className="toolResult">{testToolResult}</pre>
-              </label>
-            )}
-            <div className="modalActions">
-              <button className="secondaryButton" onClick={() => setTestTool(null)}>关闭</button>
-              <button
-                className="actionButton primary"
-                disabled={testToolBusy}
-                onClick={() => void runToolTest()}
-              >
-                {testToolBusy ? "运行中…" : "运行 Tool"}
-              </button>
-            </div>
-          </section>
-        </div>
+        <ToolTesterModal
+          runToolTest={runToolTest}
+          setTestTool={setTestTool}
+          setTestToolArgs={setTestToolArgs}
+          testTool={testTool}
+          testToolArgs={testToolArgs}
+          testToolBusy={testToolBusy}
+          testToolResult={testToolResult}
+        />
       )}
+
+
+
+
 
       <footer>
         <span><Activity size={12} /> Profiles</span>
