@@ -5,7 +5,11 @@ import type { McpServerConfig, ServerRegistry } from "./server-registry.ts";
 import type { McpToolDefinition, ToolRegistry } from "./tool-registry.ts";
 import type { MutationQueue } from "./mutation-queue.ts";
 
-const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
+const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const;
+const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
+const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 5_000;
+const DEFAULT_CIRCUIT_FAILURE_THRESHOLD = 3;
+const DEFAULT_CIRCUIT_RESET_MS = 30_000;
 
 export type UpstreamStatus =
   | "configured"
@@ -14,6 +18,9 @@ export type UpstreamStatus =
   | "stopping"
   | "stopped"
   | "error";
+
+export type UpstreamHealthStatus = "unknown" | "healthy" | "unhealthy";
+export type UpstreamCircuitState = "closed" | "open" | "half-open";
 
 export interface UpstreamLifecycleHandlers {
   onClose?: () => void;
@@ -27,6 +34,7 @@ export interface UpstreamClient {
   disconnect(): Promise<void>;
   listTools(): Promise<McpToolDefinition[]>;
   callTool(name: string, args: unknown): Promise<CallToolResult>;
+  healthCheck?(timeoutMs: number): Promise<void>;
 }
 
 export type UpstreamFactory = (
@@ -43,12 +51,21 @@ export interface UpstreamSnapshot {
   lastError: string | null;
   reconnectAttempt: number;
   nextRetryAt: string | null;
+  healthStatus: UpstreamHealthStatus;
+  lastHealthCheckAt: string | null;
+  consecutiveFailureCount: number;
+  circuitState: UpstreamCircuitState;
+  circuitOpenedAt: string | null;
 }
 
 export interface UpstreamManagerOptions {
   reconnectDelaysMs?: readonly number[];
   audit?: AuditLogger;
   mutations?: MutationQueue;
+  healthCheckIntervalMs?: number;
+  healthCheckTimeoutMs?: number;
+  circuitFailureThreshold?: number;
+  circuitResetMs?: number;
 }
 
 export interface ProfileApplyFailure {
@@ -72,6 +89,11 @@ interface Runtime {
   desiredConnected: boolean;
   reconnectAttempt: number;
   nextRetryAt: string | null;
+  healthStatus: UpstreamHealthStatus;
+  lastHealthCheckAt: string | null;
+  consecutiveFailureCount: number;
+  circuitState: UpstreamCircuitState;
+  circuitOpenedAt: string | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   generation: number;
 }
@@ -83,6 +105,12 @@ export class UpstreamManager {
   #logger: CoreLogger;
   #audit: AuditLogger | null;
   #reconnectDelaysMs: readonly number[];
+  #healthCheckIntervalMs: number;
+  #healthCheckTimeoutMs: number;
+  #circuitFailureThreshold: number;
+  #circuitResetMs: number;
+  #healthTimer: ReturnType<typeof setInterval> | null = null;
+  #healthInFlight = new Set<string>();
   #runtimes = new Map<string, Runtime>();
   #busy = new Set<string>();
   #connectOperations = new Map<string, Promise<UpstreamSnapshot>>();
@@ -105,6 +133,10 @@ export class UpstreamManager {
       options.reconnectDelaysMs && options.reconnectDelaysMs.length > 0
         ? options.reconnectDelaysMs
         : DEFAULT_RECONNECT_DELAYS_MS;
+    this.#healthCheckIntervalMs = Math.max(0, options.healthCheckIntervalMs ?? DEFAULT_HEALTH_CHECK_INTERVAL_MS);
+    this.#healthCheckTimeoutMs = Math.max(1, options.healthCheckTimeoutMs ?? DEFAULT_HEALTH_CHECK_TIMEOUT_MS);
+    this.#circuitFailureThreshold = Math.max(1, options.circuitFailureThreshold ?? DEFAULT_CIRCUIT_FAILURE_THRESHOLD);
+    this.#circuitResetMs = Math.max(1, options.circuitResetMs ?? DEFAULT_CIRCUIT_RESET_MS);
   }
 
   #syncConfiguredRuntimes(): void {
@@ -129,6 +161,11 @@ export class UpstreamManager {
           desiredConnected: false,
           reconnectAttempt: 0,
           nextRetryAt: null,
+          healthStatus: "unknown",
+          lastHealthCheckAt: null,
+          consecutiveFailureCount: 0,
+          circuitState: "closed",
+          circuitOpenedAt: null,
           reconnectTimer: null,
           generation: 0,
         });
@@ -189,6 +226,11 @@ export class UpstreamManager {
           desiredConnected: false,
           reconnectAttempt: 0,
           nextRetryAt: null,
+          healthStatus: "unknown",
+          lastHealthCheckAt: null,
+          consecutiveFailureCount: 0,
+          circuitState: "closed",
+          circuitOpenedAt: null,
           reconnectTimer: null,
           generation: 0,
         });
@@ -201,6 +243,7 @@ export class UpstreamManager {
     const runtime = this.#requireRuntime(id);
     runtime.desiredConnected = true;
     this.#cancelReconnect(runtime, true);
+    if (runtime.status !== "running") this.#resetCircuit(runtime);
     return this.#connectRuntime(runtime, false);
   }
 
@@ -243,6 +286,7 @@ export class UpstreamManager {
       this.#tools.removeServer(id);
       runtime.status = "stopped";
       runtime.lastError = null;
+      this.#resetCircuit(runtime);
       this.#logger.info("upstream", `disconnected ${runtime.config.name}`);
       return this.#snapshot(runtime);
     } catch (error) {
@@ -349,7 +393,21 @@ export class UpstreamManager {
     }
   }
 
+  startHealthMonitoring(): void {
+    if (this.#healthTimer || this.#healthCheckIntervalMs <= 0) return;
+    this.#healthTimer = setInterval(() => void this.#runHealthChecks(), this.#healthCheckIntervalMs);
+    (this.#healthTimer as ReturnType<typeof setInterval> & { unref?: () => void }).unref?.();
+    this.#logger.info("upstream", `health monitoring enabled: interval=${this.#healthCheckIntervalMs}ms timeout=${this.#healthCheckTimeoutMs}ms`);
+  }
+
+  stopHealthMonitoring(): void {
+    if (!this.#healthTimer) return;
+    clearInterval(this.#healthTimer);
+    this.#healthTimer = null;
+  }
+
   async stopAll(): Promise<void> {
+    this.stopHealthMonitoring();
     const ids = [...this.#runtimes.keys()];
     for (const id of ids) {
       try {
@@ -496,6 +554,11 @@ export class UpstreamManager {
       runtime.lastError = null;
       runtime.reconnectAttempt = 0;
       runtime.nextRetryAt = null;
+      runtime.healthStatus = "healthy";
+      runtime.lastHealthCheckAt = new Date().toISOString();
+      runtime.consecutiveFailureCount = 0;
+      runtime.circuitState = "closed";
+      runtime.circuitOpenedAt = null;
 
       this.#logger.info(
         "upstream",
@@ -519,6 +582,8 @@ export class UpstreamManager {
 
       runtime.lastError = message;
       runtime.status = "error";
+      runtime.healthStatus = "unhealthy";
+      runtime.consecutiveFailureCount += 1;
       runtime.toolCount = 0;
       this.#tools.removeServer(id);
 
@@ -536,11 +601,16 @@ export class UpstreamManager {
         }
       }
 
+      if (reconnecting && runtime.consecutiveFailureCount >= this.#circuitFailureThreshold) {
+        this.#openCircuit(runtime, `automatic recovery reached ${runtime.consecutiveFailureCount} consecutive failure(s)`);
+      }
+
       retryAfterFailure =
         reconnecting &&
         runtime.desiredConnected &&
         runtime.config.enabled &&
-        runtime.generation === generation;
+        runtime.generation === generation &&
+        runtime.circuitState !== "open";
 
       this.#logger.error(
         "upstream",
@@ -586,8 +656,10 @@ export class UpstreamManager {
 
     runtime.client = null;
     runtime.status = "error";
+    runtime.healthStatus = "unhealthy";
     runtime.toolCount = 0;
     runtime.lastError ??= "connection closed unexpectedly";
+    runtime.consecutiveFailureCount += 1;
     this.#tools.removeServer(id);
 
     this.#logger.warn(
@@ -614,6 +686,15 @@ export class UpstreamManager {
       !runtime.desiredConnected ||
       !runtime.config.enabled
     ) {
+      return;
+    }
+
+    if (runtime.circuitState === "open") return;
+    if (
+      runtime.circuitState === "half-open" ||
+      runtime.consecutiveFailureCount >= this.#circuitFailureThreshold
+    ) {
+      this.#openCircuit(runtime, "automatic recovery circuit opened after repeated failures");
       return;
     }
 
@@ -661,6 +742,124 @@ export class UpstreamManager {
     if (resetAttempt) runtime.reconnectAttempt = 0;
   }
 
+  async #runHealthChecks(): Promise<void> {
+    const checks = [...this.#runtimes.values()].filter(
+      (runtime) =>
+        runtime.status === "running" &&
+        runtime.desiredConnected &&
+        runtime.client?.healthCheck &&
+        !this.#busy.has(runtime.config.id) &&
+        !this.#healthInFlight.has(runtime.config.id),
+    );
+
+    await Promise.all(checks.map(async (runtime) => {
+      const id = runtime.config.id;
+      const generation = runtime.generation;
+      const client = runtime.client;
+      const healthCheck = client?.healthCheck;
+      if (!client || !healthCheck) return;
+
+      this.#healthInFlight.add(id);
+      try {
+        await healthCheck.call(client, this.#healthCheckTimeoutMs);
+        if (
+          runtime.generation !== generation ||
+          runtime.client !== client ||
+          runtime.status !== "running" ||
+          !runtime.desiredConnected
+        ) return;
+
+        runtime.healthStatus = "healthy";
+        runtime.lastHealthCheckAt = new Date().toISOString();
+        runtime.consecutiveFailureCount = 0;
+        runtime.lastError = null;
+        runtime.circuitState = "closed";
+        runtime.circuitOpenedAt = null;
+      } catch (error) {
+        if (
+          runtime.generation !== generation ||
+          runtime.client !== client ||
+          runtime.status !== "running" ||
+          !runtime.desiredConnected
+        ) return;
+
+        const message = error instanceof Error ? error.message : String(error);
+        runtime.healthStatus = "unhealthy";
+        runtime.lastHealthCheckAt = new Date().toISOString();
+        runtime.lastError = message;
+        runtime.consecutiveFailureCount += 1;
+        this.#logger.warn("upstream", `health check failed for ${runtime.config.name}: ${message}`);
+
+        if (runtime.consecutiveFailureCount >= this.#circuitFailureThreshold) {
+          await this.#isolateUnhealthyRuntime(
+            runtime,
+            `health check failed ${runtime.consecutiveFailureCount} consecutive time(s)`,
+          );
+        }
+      } finally {
+        this.#healthInFlight.delete(id);
+      }
+    }));
+  }
+
+  async #isolateUnhealthyRuntime(runtime: Runtime, reason: string): Promise<void> {
+    const id = runtime.config.id;
+    const client = runtime.client;
+    if (!client) {
+      this.#openCircuit(runtime, reason);
+      return;
+    }
+
+    runtime.generation += 1;
+    runtime.status = "stopping";
+    this.#tools.removeServer(id);
+    this.#busy.add(id);
+    try {
+      await client.disconnect();
+      if (runtime.client === client) runtime.client = null;
+      runtime.toolCount = 0;
+    } catch (error) {
+      runtime.client = client;
+      this.#logger.warn("upstream", `failed to isolate unhealthy upstream ${runtime.config.name}: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.#busy.delete(id);
+      runtime.status = "error";
+      this.#openCircuit(runtime, reason);
+    }
+  }
+
+  #openCircuit(runtime: Runtime, reason: string): void {
+    if (!runtime.desiredConnected || !runtime.config.enabled) return;
+
+    runtime.circuitState = "open";
+    runtime.circuitOpenedAt = new Date().toISOString();
+    runtime.nextRetryAt = new Date(Date.now() + this.#circuitResetMs).toISOString();
+    this.#logger.warn("upstream", `circuit opened for ${runtime.config.name}: ${reason}; recovery probe in ${this.#circuitResetMs}ms`);
+
+    if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
+    const timer = setTimeout(() => {
+      runtime.reconnectTimer = null;
+      runtime.nextRetryAt = null;
+      if (!runtime.desiredConnected || !runtime.config.enabled || runtime.client) return;
+
+      runtime.circuitState = "half-open";
+      this.#logger.info("upstream", `circuit half-open for ${runtime.config.name}; starting recovery probe`);
+      const probe = () => this.#connectRuntime(runtime, true);
+      void (this.#mutations ? this.#mutations.run(probe) : probe()).catch(() => undefined);
+    }, this.#circuitResetMs);
+
+    runtime.reconnectTimer = timer;
+    (timer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
+  }
+
+  #resetCircuit(runtime: Runtime): void {
+    runtime.circuitState = "closed";
+    runtime.circuitOpenedAt = null;
+    runtime.consecutiveFailureCount = 0;
+    runtime.healthStatus = "unknown";
+    runtime.lastHealthCheckAt = null;
+  }
+
   #requireRuntime(id: string): Runtime {
     const runtime = this.#runtimes.get(id);
     if (!runtime) throw new Error("upstream not found");
@@ -678,6 +877,11 @@ export class UpstreamManager {
       lastError: runtime.lastError,
       reconnectAttempt: runtime.reconnectAttempt,
       nextRetryAt: runtime.nextRetryAt,
+      healthStatus: runtime.healthStatus,
+      lastHealthCheckAt: runtime.lastHealthCheckAt,
+      consecutiveFailureCount: runtime.consecutiveFailureCount,
+      circuitState: runtime.circuitState,
+      circuitOpenedAt: runtime.circuitOpenedAt,
     };
   }
 }
