@@ -1083,7 +1083,7 @@ test("circuit recovery retries cleanup of a retained client before reconnecting"
         healthCheckIntervalMs: 5,
         healthCheckTimeoutMs: 20,
         circuitFailureThreshold: 1,
-        circuitResetMs: 25,
+        circuitResetMs: 100,
       },
     );
 
