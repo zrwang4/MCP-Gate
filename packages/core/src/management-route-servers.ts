@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { readOptionalHeaders } from "./http-headers.ts";
 import {
   json,
