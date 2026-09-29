@@ -41,6 +41,7 @@ test("HTTP upstream client connects to a real local MCP server and survives SSE 
   const { randomUUID } = await import("node:crypto");
   const { McpServer } = await import("@modelcontextprotocol/server");
   const { NodeStreamableHTTPServerTransport } = await import("@modelcontextprotocol/node");
+  const { z } = await import("zod");
 
   const server = new McpServer({
     name: "local-http-test-server",
@@ -50,10 +51,7 @@ test("HTTP upstream client connects to a real local MCP server and survives SSE 
     "ping",
     {
       description: "Ping",
-      inputSchema: {
-        type: "object",
-        properties: {},
-      },
+      inputSchema: z.object({}),
     },
     async () => ({
       content: [{ type: "text" as const, text: "pong" }],
@@ -65,7 +63,11 @@ test("HTTP upstream client connects to a real local MCP server and survives SSE 
   });
   await server.connect(transport);
 
+  let headerObserved = false;
   const httpServer = createServer((req, res) => {
+    if (req.headers["x-test-header"] === "mcp-gate") {
+      headerObserved = true;
+    }
     void transport.handleRequest(req, res).catch(() => {
       if (!res.headersSent) res.writeHead(500);
       res.end();
@@ -100,6 +102,7 @@ test("HTTP upstream client connects to a real local MCP server and survives SSE 
     alias: "local-http",
     transport: "http" as const,
     url: `http://127.0.0.1:${address.port}/mcp`,
+    headers: { "X-Test-Header": "mcp-gate" },
     enabled: true,
     autoStart: false,
     createdAt: new Date().toISOString(),
@@ -132,6 +135,7 @@ test("HTTP upstream client connects to a real local MCP server and survives SSE 
     }
 
     assert.ok(getRequests >= 1, "expected the client to establish an SSE GET");
+    assert.equal(headerObserved, true, "expected configured headers on HTTP requests");
 
     transport.closeStandaloneSSEStream();
 
