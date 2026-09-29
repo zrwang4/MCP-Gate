@@ -52,13 +52,14 @@ export const handleTools: RouteHandler = async (req, res, url, ctx) => {
     if (!requireDesktopClient(req, res)) return true;
 
     const [, publicName, action] = toolActionMatch;
-    const tool = ctx.tools.resolve(publicName);
-    if (!tool) {
-      json(res, 404, { error: "tool not found" });
-      return true;
-    }
 
     await ctx.mutations.run(async () => {
+      const tool = ctx.tools.resolve(publicName);
+      if (!tool) {
+        json(res, 404, { error: "tool not found" });
+        return;
+      }
+
       const enabled = action === "enable";
       await ctx.toolPolicy.setEnabled(
         tool.serverId,
