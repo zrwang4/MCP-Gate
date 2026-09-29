@@ -14,6 +14,82 @@
 - Tauri 桌面端自动管理 Core 生命周期（开发态）
 - Tauri Updater 通过 GitHub Release 检查、验签并安装稳定版更新
 
+## Core 架构
+
+Core 按“协议接入、业务编排、运行时、持久化”分层：
+
+\`\`\`text
+Desktop / Management API
+        │
+        ▼
+Management Routes
+        │
+        ├── ServerService
+        ├── ProfileService
+        └── Import / Tool Policy / Gateway Access
+                    │
+                    ▼
+             MutationQueue
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+   RuntimeReconciler     Persistent Stores
+          │              ├─ ServerRegistry
+          │              ├─ ProfileStore
+          │              └─ ToolPolicyStore
+          ▼
+    UpstreamManager
+          │
+     ┌────┴────┐
+     ▼         ▼
+   HTTP      STDIO
+     │         │
+     └────┬────┘
+          ▼
+      ToolRegistry
+          │
+          ▼
+      GatewayServer
+          │
+          ▼
+       MCP Proxy
+NaN核心职责边界：
+
+- `UpstreamManager` 负责单个 upstream 的连接、断开、竞态保护、自动重连和运行态生命周期。
+- `RuntimeReconciler` 负责批量目标集合与实际运行集合之间的 reconcile，Profile、启动恢复和配置变更统一经过这里。
+- `ServerService` / `ProfileService` 负责业务事务编排，HTTP Route 不直接串联多层持久化和运行时操作。
+- `MutationQueue` 串行化跨 Service 的配置变更，避免删除、Profile 切换、Tool Policy、Gateway Access 等操作互相覆盖。
+- `ServerRegistry` / `ProfileStore` / `ToolPolicyStore` 的单文件 mutation 在持久化失败时恢复内存状态；底层文件通过原子替换和备份保护。
+- `ToolRegistry` 发出定向变化事件，Gateway 对 Tool 做增量同步，不再每次全量重建全部 session 的 Tool 注册。
+
+配置/运行时变更遵循：
+
+\`\`\`text
+HTTP mutation
+   ↓
+Service
+   ↓
+MutationQueue
+   ↓
+Store change
+   ↓
+RuntimeReconciler
+   ↓
+UpstreamManager
+   ↓
+ToolRegistry
+   ↓
+Gateway tool update
+NaN读取接口原则上不负责连接清理；`UpstreamManager.list()` 只读取当前 registry 配置并生成运行态快照，实际 orphan/disabled runtime 清理由显式 `reconcile()` 处理。
+
+## 数据与安全边界
+
+- `servers.json` 保存 MCP 配置和非敏感参数。
+- `profiles.json` 保存 Profile 与 active Profile。
+- `tool-policy.json` 保存 Tool 启用/禁用策略。
+- HTTP Authorization 与 STDIO secret environment 值使用安全存储，不进入普通配置 JSON。
+- Core 日志和 Audit 日志对常见 Authorization、Token、Secret、Cookie 等敏感信息进行脱敏。
+
 ## 开发环境
 
 - Node.js 22+
