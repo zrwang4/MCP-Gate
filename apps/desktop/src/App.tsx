@@ -1,21 +1,4 @@
-import {
-  Activity,
-  Check,
-  Copy,
-  Download,
-  FileText,
-  Upload,
-  Layers3,
-  Pencil,
-  Play,
-  Plus,
-  RefreshCw,
-  Server,
-  Settings2,
-  Square,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Activity } from "lucide-react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, DEFAULT_GATEWAY_URL, IS_TAURI } from "./api";
@@ -28,13 +11,10 @@ import type {
   LogLevel,
   McpImportApplyResult,
   McpImportPreview,
-  McpImportPreviewCandidate,
   McpImportSourceInfo,
-  ProfileApplyFailure,
   ProfileApplyResult,
   ProfileInfo,
   ServerConfigInfo,
-  ServerStatus,
   StatusResponse,
   ToolInfo,
   UpdateDownloadEvent,
@@ -42,16 +22,11 @@ import type {
   UpstreamInfo,
 } from "./types";
 import {
-  coreRuntimeLabel,
   environmentToText,
-  formatTime,
   headersToText,
   parseEnvironmentText,
   parseHeadersText,
   secretEnvironmentToText,
-  serverIconFor,
-  statusLabel,
-  upstreamStatusLabel,
 } from "./lib/format";
 import { ProfileEditorModal } from "./components/ProfileEditorModal";
 import { ImportConfigModal } from "./components/ImportConfigModal";

@@ -1,6 +1,5 @@
 import { X } from "lucide-react";
-import type { ProfileInfo, ServerConfigInfo, StatusResponse, UpstreamInfo } from "../types";
-import { serverIconFor } from "../lib/format";
+import type { ServerConfigInfo, StatusResponse, UpstreamInfo } from "../types";
 
 interface ProfileEditorModalProps {
   editingProfileId: string | null;

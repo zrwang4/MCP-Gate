@@ -1,4 +1,4 @@
-import { Check, Copy, Layers3, RefreshCw, X } from "lucide-react";
+import { Check, Copy, Layers3, RefreshCw } from "lucide-react";
 import type { CoreRuntimeStatus, ProfileInfo, ServerConfigInfo, ServerStatus } from "../types";
 import { coreRuntimeLabel, statusLabel } from "../lib/format";
 

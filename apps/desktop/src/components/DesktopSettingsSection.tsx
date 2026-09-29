@@ -1,4 +1,4 @@
-import { Activity, Check, Copy, Download, FileText, RefreshCw, Settings2, Upload, X } from "lucide-react";
+import { Download, Settings2, Upload, X } from "lucide-react";
 import { IS_TAURI } from "../api";
 import type { StatusResponse, UpdateMetadata } from "../types";
 

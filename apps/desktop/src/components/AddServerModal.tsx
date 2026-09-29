@@ -1,6 +1,5 @@
 import { X } from "lucide-react";
 import type { ConnectionTestState, StatusResponse } from "../types";
-import { environmentToText, headersToText, parseEnvironmentText, parseHeadersText, secretEnvironmentToText } from "../lib/format";
 
 interface AddServerModalProps {
   configBusy: boolean;

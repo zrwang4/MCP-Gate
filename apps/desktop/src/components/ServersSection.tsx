@@ -1,7 +1,6 @@
-import { X } from "lucide-react";
 import { Activity, FileText, Pencil, Play, Plus, RefreshCw, Server, Square, Trash2 } from "lucide-react";
-import type { ServerConfigInfo, ServerStatus, StatusResponse, ToolInfo, UpstreamInfo } from "../types";
-import { formatTime, serverIconFor, statusLabel, upstreamStatusLabel } from "../lib/format";
+import type { ServerConfigInfo, StatusResponse, ToolInfo, UpstreamInfo } from "../types";
+import { formatTime, serverIconFor, upstreamStatusLabel } from "../lib/format";
 
 interface ServersSectionProps {
   busy: string | null;

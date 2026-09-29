@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import type { LogEntry, ServerConfigInfo, StatusResponse, UpstreamInfo } from "../types";
-import { formatTime, serverIconFor, upstreamStatusLabel } from "../lib/format";
+import { formatTime, upstreamStatusLabel } from "../lib/format";
 
 interface ServerDetailModalProps {
   logs: LogEntry[];
@@ -21,8 +21,6 @@ export function ServerDetailModal({logs, selectedServerId, serverConfigs, setSel
       )
       .slice(-8)
       .reverse();
-
-    if (!server) return null;
 
   if (!server) return null;
 

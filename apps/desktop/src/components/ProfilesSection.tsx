@@ -1,6 +1,5 @@
-import { Layers3, Pencil, Play, Plus, Square, Trash2, X } from "lucide-react";
+import { Layers3, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import type { ProfileInfo, ServerConfigInfo, StatusResponse, UpstreamInfo } from "../types";
-import { serverIconFor, statusLabel } from "../lib/format";
 
 interface ProfilesSectionProps {
   activeProfileId: string | null;
