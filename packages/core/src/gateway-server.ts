@@ -22,7 +22,10 @@ export interface GatewayToolCaller {
   callTool(publicName: string, args: unknown): Promise<CallToolResult>;
 }
 
-undefined
+const gatewayToolRegistrations = new WeakMap<
+  McpServer,
+  Map<string, { serverId: string; registration: RegisteredTool }>
+>();
 
 export function createGatewayProtocolServer(
   tools: ToolRegistry,
