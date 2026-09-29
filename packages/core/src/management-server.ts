@@ -32,6 +32,7 @@ import type { ToolPolicyStore } from "./tool-policy-store.ts";
 import type { ToolRegistry } from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
+import { normalizeSessionIdleTimeout, saveSessionIdleTimeout, sessionSettingsSnapshot } from "./session-settings.ts";
 
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:1420",
@@ -200,6 +201,39 @@ export class ManagementServer {
           endpoint: `http://${this.#config.managementHost}:${this.#config.managementPort}`,
         },
       });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/session-settings") {
+      json(res, 200, { settings: sessionSettingsSnapshot(this.#config.sessionIdleTimeoutMs) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/session-settings") {
+      if (!isManagementRequestAuthorized(req.headers, this.#config.managementToken)) {
+        json(res, 403, { error: "forbidden" });
+        return;
+      }
+      try {
+        const body = await (async () => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as { idleTimeoutMs?: unknown };
+        })();
+        const idleTimeoutMs = normalizeSessionIdleTimeout(body.idleTimeoutMs);
+        await saveSessionIdleTimeout(
+          this.#config.sessionSettingsFile,
+          idleTimeoutMs,
+          this.#logger,
+        );
+        this.#logger.info(
+          "session",
+          `MCP session idle timeout changed to ${Math.round(idleTimeoutMs / 60_000)} minute(s); Core restart required`,
+        );
+        json(res, 200, { settings: sessionSettingsSnapshot(idleTimeoutMs), restartRequired: true });
+      } catch (error) {
+        json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+      }
       return;
     }
 
