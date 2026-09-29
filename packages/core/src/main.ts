@@ -39,7 +39,6 @@ async function main(): Promise<void> {
     config.gatewayAccessFile,
     secrets,
     logger,
-    mutations,
   );
   await gatewayAccess.init();
   const upstreams = new UpstreamManager(
