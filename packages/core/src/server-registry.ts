@@ -107,7 +107,12 @@ export class ServerRegistry {
     });
 
     this.#servers.push(server);
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      this.#servers.pop();
+      throw error;
+    }
     this.#logger.info(
       "registry",
       `added MCP configuration: ${server.name} (${server.alias}) transport=${server.transport}`,
@@ -158,8 +163,14 @@ export class ServerRegistry {
         : undefined;
     }
 
+    const previous = cloneServer(current);
     this.#servers[index] = updated;
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      this.#servers[index] = previous;
+      throw error;
+    }
     this.#logger.info(
       "registry",
       `updated MCP configuration: ${updated.name} (${updated.alias}) transport=${updated.transport}`,
@@ -185,11 +196,24 @@ export class ServerRegistry {
       throw new Error("environment variables are only supported for stdio MCP servers");
     }
 
+    const previousEnv = server.env ? { ...server.env } : undefined;
+    const previousEnvSecretIds = server.envSecretIds
+      ? { ...server.envSecretIds }
+      : undefined;
+    const previousUpdatedAt = server.updatedAt;
+
     server.env = compactRecord(validateEnvironment(input.env));
     server.envSecretIds = compactRecord(validateSecretIds(input.envSecretIds));
     server.updatedAt = new Date().toISOString();
 
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      server.env = previousEnv;
+      server.envSecretIds = previousEnvSecretIds;
+      server.updatedAt = previousUpdatedAt;
+      throw error;
+    }
     this.#logger.info(
       "registry",
       `updated environment for ${server.name}: plain=${Object.keys(server.env ?? {}).length} secret=${Object.keys(server.envSecretIds ?? {}).length}`,
@@ -218,8 +242,18 @@ export class ServerRegistry {
       server.autoStart = input.autoStart;
     }
 
+    const previousEnabled = server.enabled;
+    const previousAutoStart = server.autoStart;
+    const previousUpdatedAt = server.updatedAt;
     server.updatedAt = new Date().toISOString();
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      server.enabled = previousEnabled;
+      server.autoStart = previousAutoStart;
+      server.updatedAt = previousUpdatedAt;
+      throw error;
+    }
     this.#logger.info(
       "registry",
       `updated MCP settings: ${server.name} enabled=${server.enabled} autoStart=${server.autoStart}`,
@@ -232,7 +266,12 @@ export class ServerRegistry {
     if (index < 0) return false;
 
     const [removed] = this.#servers.splice(index, 1);
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      this.#servers.splice(index, 0, removed);
+      throw error;
+    }
     this.#logger.info("registry", `removed MCP configuration: ${removed.name} (${removed.alias})`);
     return true;
   }
