@@ -12,13 +12,12 @@
 - MCP 自动连接
 - HTTP Authorization → macOS Keychain
 - Tauri 桌面端自动管理 Core 生命周期（开发态）
-- Tauri Updater 通过 GitHub Release 检查、验签并安装稳定版更新
 
 ## Core 架构
 
 Core 按“协议接入、业务编排、运行时、持久化”分层：
 
-\`\`\`text
+```text
 Desktop / Management API
         │
         ▼
@@ -52,8 +51,9 @@ Management Routes
       GatewayServer
           │
           ▼
-       MCP Proxy
-NaN核心职责边界：
+       MCP Proxy```
+
+核心职责边界：
 
 - `UpstreamManager` 负责单个 upstream 的连接、断开、竞态保护、自动重连和运行态生命周期。
 - `RuntimeReconciler` 负责批量目标集合与实际运行集合之间的 reconcile，Profile、启动恢复和配置变更统一经过这里。
@@ -80,7 +80,8 @@ UpstreamManager
 ToolRegistry
    ↓
 Gateway tool update
-NaN读取接口原则上不负责连接清理；`UpstreamManager.list()` 只读取当前 registry 配置并生成运行态快照，实际 orphan/disabled runtime 清理由显式 `reconcile()` 处理。
+读取接口原则上不负责连接清理；
+`UpstreamManager.list()` 只读取当前 registry 配置并生成运行态快照，实际 orphan/disabled runtime 清理由显式 `reconcile()` 处理。
 
 ## 数据与安全边界
 
@@ -161,7 +162,7 @@ packages/core/src/main.ts
 
 HTTP MCP Authorization 不写入 JSON，而是存入 macOS Keychain。
 
-## 发布与自动更新
+## 发布
 
 - macOS 签名、公证与双架构发布：[docs/33-macos-signed-release.md](docs/33-macos-signed-release.md)
-- Tauri Updater 与 GitHub Release 更新源：[docs/35-tauri-updater.md](docs/35-tauri-updater.md)
+- 当前版本暂不启用 Tauri Updater；Release 流程发布签名后的 DMG 与 App ZIP。
