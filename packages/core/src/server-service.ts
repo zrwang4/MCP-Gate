@@ -90,7 +90,7 @@ export class ServerService {
     },
   ): Promise<ServerMutationResult> {
     return this.#mutations.run(async () => {
-    const existing = this.#requireServer(id);
+      const existing = this.#requireServer(id);
     const wasRunning = this.#isRunning(id);
 
     let createdSecretId: string | null = null;
@@ -289,16 +289,32 @@ export class ServerService {
     input: { enabled?: boolean; autoStart?: boolean },
   ): Promise<McpServerConfig> {
     return this.#mutations.run(async () => {
-    const existing = this.#requireServer(id);
-    if (input.enabled === false) {
-      await this.#upstreams.disconnect(id);
-    }
+      const existing = this.#requireServer(id);
+      const wasRunning = this.#isRunning(id);
 
-    const updated = await this.#registry.updateSettings(id, input);
-    if (!updated) throw new Error("server configuration not found");
+      if (input.enabled === false) {
+        await this.#upstreams.disconnect(id);
+      }
 
-    await this.#reconciler.reconcile();
-    return updated;
+      try {
+        const updated = await this.#registry.updateSettings(id, input);
+        if (!updated) throw new Error("server configuration not found");
+
+        await this.#reconciler.reconcile();
+        return updated;
+      } catch (error) {
+        if (wasRunning && existing.enabled) {
+          try {
+            await this.#upstreams.connect(id);
+          } catch (restoreError) {
+            this.#logger.warn(
+              "servers",
+              `failed to restore ${existing.name} after settings error: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`,
+            );
+          }
+        }
+        throw error;
+      }
     });
   }
 
