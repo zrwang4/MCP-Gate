@@ -100,6 +100,11 @@ export class CoreLogger {
     await this.#flushPending();
   }
 
+  async #rotateActiveFile(): Promise<void> {
+    await rename(this.#logFile, this.#logFile + ".1");
+    this.#fileBytes = 0;
+  }
+
   async #rotateIfNeeded(): Promise<void> {
     try {
       const info = await stat(this.#logFile);
@@ -157,7 +162,7 @@ export class CoreLogger {
             this.#fileBytes > 0 &&
             this.#fileBytes + nextBatchBytes > MAX_LOG_FILE_BYTES
           ) {
-            await this.#rotateIfNeeded();
+            await this.#rotateActiveFile();
           }
           await appendFile(this.#logFile, nextBatch, "utf8");
           this.#fileBytes += nextBatchBytes;
