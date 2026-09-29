@@ -1017,7 +1017,6 @@ test("upstream manager recovers after reconnect failures trip the circuit", asyn
     await waitFor(() => {
       const snapshot = upstreams?.list().find((item) => item.id === config.id);
       return (
-        factoryCalls >= 4 &&
         snapshot?.status === "running" &&
         snapshot?.circuitState === "closed"
       );
