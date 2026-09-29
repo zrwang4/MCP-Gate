@@ -38,22 +38,57 @@ function scopedFetch(agent: Agent): FetchLike {
   return impl as unknown as FetchLike;
 }
 
-/**
- * One Agent per timeout value. `UpstreamManager` builds a fresh client for
- * every connect and reconnect attempt, so creating a new Agent each time would
- * accumulate pool objects — and their idle sockets — for the lifetime of the
- * process. Agents hold no per-server state, so sharing one per timeout is safe.
- */
-const agentsByTimeout = new Map<number, Agent>();
-
-function dispatcherFor(connectTimeoutMs: number): Agent {
-  const existing = agentsByTimeout.get(connectTimeoutMs);
-  if (existing) return existing;
-
-  const agent = new Agent({ connect: { timeout: connectTimeoutMs } });
-  agentsByTimeout.set(connectTimeoutMs, agent);
-  return agent;
+interface HttpAgentEntry {
+  agent: Agent;
+  references: number;
 }
+
+export interface HttpAgentLease {
+  agent: Agent;
+  release(): Promise<void>;
+}
+
+/**
+ * Share Agents by connect timeout while at least one HTTP upstream owns a lease.
+ * When the last lease is released, close the Agent and drop it from the pool so
+ * changing timeout values over the lifetime of the process cannot grow the pool
+ * without bound.
+ */
+export class HttpAgentPool {
+  #entries = new Map<number, HttpAgentEntry>();
+
+  acquire(connectTimeoutMs: number): HttpAgentLease {
+    let entry = this.#entries.get(connectTimeoutMs);
+    if (!entry) {
+      entry = {
+        agent: new Agent({ connect: { timeout: connectTimeoutMs } }),
+        references: 0,
+      };
+      this.#entries.set(connectTimeoutMs, entry);
+    }
+
+    entry.references += 1;
+    let released = false;
+    let releasePromise: Promise<void> | null = null;
+
+    return {
+      agent: entry.agent,
+      release: async () => {
+        if (released) return releasePromise ?? Promise.resolve();
+        released = true;
+
+        if (entry.references > 0) entry.references -= 1;
+        if (entry.references > 0) return;
+
+        this.#entries.delete(connectTimeoutMs);
+        releasePromise = entry.agent.close().catch(() => undefined);
+        await releasePromise;
+      },
+    };
+  }
+}
+
+const httpAgentPool = new HttpAgentPool();
 
 export class HttpUpstreamClient implements UpstreamClient {
   #config: HttpServerConfig;
@@ -62,6 +97,7 @@ export class HttpUpstreamClient implements UpstreamClient {
   #secrets: SecretStore;
   /** Connect timeout, in milliseconds. Node's built-in fetch hard-codes 10s. */
   #connectTimeoutMs: number;
+  #agentLease: HttpAgentLease | null = null;
   #lifecycleHandlers: UpstreamLifecycleHandlers = {};
 
   constructor(
@@ -128,11 +164,14 @@ export class HttpUpstreamClient implements UpstreamClient {
       requestInit.headers = headers;
     }
 
+    const agentLease = httpAgentPool.acquire(this.#connectTimeoutMs);
+    this.#agentLease = agentLease;
+
     const transport = new StreamableHTTPClientTransport(
       new URL(this.#config.url),
       {
         requestInit,
-        fetch: scopedFetch(dispatcherFor(this.#connectTimeoutMs)),
+        fetch: scopedFetch(agentLease.agent),
       },
     );
 
@@ -144,8 +183,10 @@ export class HttpUpstreamClient implements UpstreamClient {
     } catch (error) {
       this.#client = null;
       this.#transport = null;
+      this.#agentLease = null;
       await transport.terminateSession().catch(() => undefined);
       await client.close().catch(() => transport.close().catch(() => undefined));
+      await agentLease.release();
       throw error;
     }
   }
@@ -153,14 +194,19 @@ export class HttpUpstreamClient implements UpstreamClient {
   async disconnect(): Promise<void> {
     const client = this.#client;
     const transport = this.#transport;
+    const agentLease = this.#agentLease;
     this.#client = null;
     this.#transport = null;
+    this.#agentLease = null;
 
     if (transport) {
       await transport.terminateSession().catch(() => undefined);
     }
     if (client) {
       await client.close();
+    }
+    if (agentLease) {
+      await agentLease.release();
     }
   }
 
@@ -190,6 +236,11 @@ export class HttpUpstreamClient implements UpstreamClient {
 
   #bindLifecycle(client: Client): void {
     client.onclose = () => {
+      this.#client = null;
+      this.#transport = null;
+      const agentLease = this.#agentLease;
+      this.#agentLease = null;
+      void agentLease?.release();
       this.#lifecycleHandlers.onClose?.();
     };
     client.onerror = (error) => {
