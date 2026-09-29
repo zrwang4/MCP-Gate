@@ -544,7 +544,6 @@ export function App() {
       lastAuditSeqRef.current = auditResult.entries.at(-1)?.seq ?? 0;
       coreStartedAtRef.current = statusResult.core.startedAt;
       managementConnectedRef.current = true;
-      managementConnectedRef.current = true;
       setManagementConnected(true);
       setError(null);
     } catch (cause) {
@@ -612,12 +611,6 @@ export function App() {
       lastLogSeqRef.current = logsResult.entries.at(-1)?.seq ?? lastLogSeqRef.current;
       lastAuditSeqRef.current = auditResult.entries.at(-1)?.seq ?? lastAuditSeqRef.current;
       coreStartedAtRef.current = statusResult.core.startedAt;
-
-      if (!managementConnected) {
-        // A reconnect after a temporary management outage may have missed
-        // events; use the existing full refresh path once to resync all state.
-        await refreshCatalog();
-      }
 
       setManagementConnected(true);
       setError(null);
