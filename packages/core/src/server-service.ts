@@ -10,6 +10,7 @@ import type { SecretStore } from "./secret-store.ts";
 import type { ToolPolicyStore } from "./tool-policy-store.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import type { MutationQueue } from "./mutation-queue.ts";
+import type { RuntimeReconciler } from "./runtime-reconciler.ts";
 
 export interface EnvironmentMutationInput {
   env: Record<string, string>;
@@ -30,6 +31,7 @@ export class ServerService {
   #secrets: SecretStore;
   #logger: CoreLogger;
   #mutations: MutationQueue;
+  #reconciler: RuntimeReconciler;
 
   constructor(
     registry: ServerRegistry,
@@ -39,6 +41,7 @@ export class ServerService {
     secrets: SecretStore,
     logger: CoreLogger,
     mutations: MutationQueue,
+    reconciler: RuntimeReconciler,
   ) {
     this.#registry = registry;
     this.#profiles = profiles;
@@ -47,6 +50,7 @@ export class ServerService {
     this.#secrets = secrets;
     this.#logger = logger;
     this.#mutations = mutations;
+    this.#reconciler = reconciler;
   }
 
   async create(
@@ -66,7 +70,7 @@ export class ServerService {
         ...input,
         authSecretId: createdSecretId ?? undefined,
       });
-      await this.#upstreams.reconcile();
+      await this.#reconciler.reconcile();
       return server;
     } catch (error) {
       if (createdSecretId) {
@@ -137,7 +141,7 @@ export class ServerService {
         }
       }
 
-      await this.#upstreams.reconcile();
+      await this.#reconciler.reconcile();
 
       if (wasRunning && updated.enabled) {
         try {
@@ -238,7 +242,7 @@ export class ServerService {
         }
       }
 
-      await this.#upstreams.reconcile();
+      await this.#reconciler.reconcile();
 
       if (wasRunning && updated.enabled) {
         try {
@@ -287,7 +291,7 @@ export class ServerService {
     const updated = await this.#registry.updateSettings(id, input);
     if (!updated) throw new Error("server configuration not found");
 
-    await this.#upstreams.reconcile();
+    await this.#reconciler.reconcile();
     return updated;
     });
   }
@@ -302,7 +306,7 @@ export class ServerService {
 
     await this.#toolPolicy.removeServer(id);
     await this.#profiles.removeServer(id);
-    await this.#upstreams.reconcile();
+    await this.#reconciler.reconcile();
 
     if (existing.transport === "http" && existing.authSecretId) {
       await this.#secrets.delete(existing.authSecretId).catch(() => false);
