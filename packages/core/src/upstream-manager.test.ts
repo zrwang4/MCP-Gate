@@ -7,6 +7,7 @@ import { CoreLogger } from "./logger.ts";
 import { ServerRegistry } from "./server-registry.ts";
 import { ToolRegistry } from "./tool-registry.ts";
 import { UpstreamManager, type UpstreamClient } from "./upstream-manager.ts";
+import { RuntimeReconciler } from "./runtime-reconciler.ts";
 
 test("upstream manager connects, caches tools, and routes calls", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
@@ -109,7 +110,8 @@ test("upstream manager auto-connects autoStart configurations only", async () =>
       logger,
     );
 
-    await upstreams.connectAutoStart();
+    const reconciler = new RuntimeReconciler(servers, upstreams);
+    await reconciler.connectAutoStart();
 
     assert.deepEqual(connected, [auto.id]);
     assert.equal(upstreams.list().find((item) => item.id === auto.id)?.status, "running");
@@ -871,8 +873,9 @@ test("upstream manager applies an exact profile server set", async () => {
       logger,
     );
 
+    const reconciler = new RuntimeReconciler(servers, upstreams);
     await upstreams.connect(first.id);
-    const result = await upstreams.applyExactSet([second.id]);
+    const result = await reconciler.applyExactSet([second.id]);
 
     assert.deepEqual(result.disconnected, [first.id]);
     assert.deepEqual(result.connected, [second.id]);
