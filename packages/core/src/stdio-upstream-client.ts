@@ -53,9 +53,16 @@ export class StdioUpstreamClient implements UpstreamClient {
     try {
       await client.connect(transport);
     } catch (error) {
-      this.#client = null;
-      this.#transport = null;
-      await client.close().catch(() => transport.close().catch(() => undefined));
+      try {
+        await client.close();
+        this.#client = null;
+        this.#transport = null;
+      } catch {
+        // Keep ownership when cleanup fails so a later disconnect can retry
+        // closing the same client/transport instead of orphaning the process.
+        this.#client = client;
+        this.#transport = transport;
+      }
       throw error;
     }
   }
