@@ -61,7 +61,17 @@ export const handleLogs: RouteHandler = async (req, res, url, ctx) => {
     const audit = ctx.audit.list({ limit: 1000 });
     const upstreams = ctx.upstreams.list();
 
+    const memory = process.memoryUsage();
+
     json(res, 200, {
+      memory: {
+        rssBytes: memory.rss,
+        heapUsedBytes: memory.heapUsed,
+        heapTotalBytes: memory.heapTotal,
+        externalBytes: memory.external,
+        arrayBuffersBytes: memory.arrayBuffers ?? 0,
+        uptimeSeconds: Math.round(process.uptime()),
+      },
       core: {
         startedAt: ctx.startedAt,
         logFile: ctx.logger.filePath,
