@@ -146,9 +146,23 @@ export class ProfileService {
       if (!profile) throw new Error("profile not found");
 
       const wasActive = this.#store.activeProfileId === id;
+      if (!wasActive) {
+        return {
+          ok: true,
+          profile,
+          activeProfileId: this.#store.activeProfileId,
+          result: {
+            connected: [],
+            disconnected: [],
+            alreadyRunning: [],
+            failed: [],
+          },
+        };
+      }
+
       const result = await this.#reconciler.disconnectSet(profile.serverIds);
 
-      if (wasActive && result.failed.length > 0) {
+      if (result.failed.length > 0) {
         return {
           ok: false,
           profile,
