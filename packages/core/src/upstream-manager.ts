@@ -510,7 +510,7 @@ export class UpstreamManager {
     try {
       const client = await this.#factory(config);
 
-      if (!this.#isConnectCurrent(runtime, generation))
+      if (!this.#isConnectCurrent(runtime, generation)) {
         await client.disconnect().catch(() => undefined);
         throw new Error("upstream connect superseded");
       }
