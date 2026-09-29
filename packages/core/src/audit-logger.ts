@@ -1,4 +1,4 @@
-import { appendFile, mkdir, rename, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { redactSecrets } from "./logger.ts";
 
@@ -37,12 +37,13 @@ export class AuditLogger {
 
   constructor(filePath: string, maxEntries = 1000) {
     this.#filePath = filePath;
-    this.#maxEntries = maxEntries;
+    this.#maxEntries = Math.max(1, maxEntries);
   }
 
   async init(): Promise<void> {
     await mkdir(dirname(this.#filePath), { recursive: true });
     await this.#rotateIfNeeded();
+    await this.#loadExisting();
   }
 
   record(input: AuditRecordInput): AuditEntry {
@@ -82,17 +83,22 @@ export class AuditLogger {
     limit?: number;
     success?: boolean;
     source?: AuditSource;
+    serverId?: string;
+    publicName?: string;
   }): AuditEntry[] {
     const after = options?.after ?? 0;
     const limit = Math.min(Math.max(options?.limit ?? 100, 1), 1000);
+    const serverId = options?.serverId?.trim();
+    const publicName = options?.publicName?.trim();
 
     return this.#entries
       .filter(
         (entry) =>
           entry.seq > after &&
-          (options?.success === undefined ||
-            entry.success === options.success) &&
-          (!options?.source || entry.source === options.source),
+          (options?.success === undefined || entry.success === options.success) &&
+          (!options?.source || entry.source === options.source) &&
+          (!serverId || entry.serverId === serverId) &&
+          (!publicName || entry.publicName === publicName),
       )
       .slice(-limit)
       .map((entry) => ({ ...entry }));
@@ -104,6 +110,58 @@ export class AuditLogger {
 
   async flush(): Promise<void> {
     await this.#writeQueue;
+  }
+
+  async #loadExisting(): Promise<void> {
+    try {
+      const raw = await readFile(this.#filePath, "utf8");
+      const entries: AuditEntry[] = [];
+
+      for (const line of raw.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line) as Partial<AuditEntry>;
+          if (
+            Number.isInteger(parsed.seq) &&
+            typeof parsed.timestamp === "string" &&
+            (parsed.source === "gateway" || parsed.source === "tester") &&
+            typeof parsed.publicName === "string" &&
+            typeof parsed.serverId === "string" &&
+            typeof parsed.serverAlias === "string" &&
+            typeof parsed.originalName === "string" &&
+            typeof parsed.success === "boolean" &&
+            typeof parsed.durationMs === "number"
+          ) {
+            entries.push({
+              seq: parsed.seq,
+              timestamp: parsed.timestamp,
+              source: parsed.source,
+              publicName: parsed.publicName,
+              serverId: parsed.serverId,
+              serverAlias: parsed.serverAlias,
+              originalName: parsed.originalName,
+              success: parsed.success,
+              durationMs: parsed.durationMs,
+              ...(typeof parsed.error === "string"
+                ? { error: parsed.error }
+                : {}),
+            });
+          }
+        } catch {
+          // Ignore malformed JSONL lines while preserving valid audit history.
+        }
+      }
+
+      this.#entries = entries.slice(-this.#maxEntries);
+      const maxSeq = this.#entries.reduce(
+        (max, entry) => Math.max(max, entry.seq),
+        0,
+      );
+      this.#nextSeq = maxSeq + 1;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw error;
+    }
   }
 
   async #rotateIfNeeded(): Promise<void> {
