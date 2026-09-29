@@ -99,3 +99,72 @@ test("profile service restores active runtime after profile delete persistence f
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test("deactivating an inactive profile does not disconnect shared active servers", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-profile-inactive-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const registry = new ServerRegistry(join(dir, "servers.json"), logger);
+    await registry.init();
+    const profiles = new ProfileStore(join(dir, "profiles.json"), logger);
+    await profiles.init();
+    const policy = new ToolPolicyStore(join(dir, "tool-policy.json"), logger);
+    await policy.init();
+    const tools = new ToolRegistry(policy);
+    const mutations = new MutationQueue();
+
+    const server = await registry.create({
+      name: "Shared",
+      transport: "stdio",
+      command: "fake",
+      args: [],
+    });
+
+    let connectCalls = 0;
+    let disconnectCalls = 0;
+    const upstreams = new UpstreamManager(
+      registry,
+      tools,
+      () => ({
+        async connect() {
+          connectCalls += 1;
+        },
+        async disconnect() {
+          disconnectCalls += 1;
+        },
+        async listTools() {
+          return [];
+        },
+        async callTool() {
+          return { content: [] };
+        },
+      }),
+      logger,
+      { mutations },
+    );
+    const reconciler = new RuntimeReconciler(registry, upstreams);
+    const service = new ProfileService(profiles, registry, reconciler, mutations);
+
+    const active = await service.create("Active", [server.id]);
+    const inactive = await service.create("Inactive", [server.id]);
+    await service.activate(active.id);
+
+    const outcome = await service.deactivate(inactive.id);
+
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.activeProfileId, active.id);
+    assert.equal(disconnectCalls, 0);
+    assert.equal(connectCalls, 1);
+    assert.equal(
+      upstreams.list().find((item) => item.id === server.id)?.status,
+      "running",
+    );
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
