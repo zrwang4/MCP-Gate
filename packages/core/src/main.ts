@@ -16,12 +16,17 @@ import { createPlatformSecretStore } from "./secret-store.ts";
 import { ToolPolicyStore } from "./tool-policy-store.ts";
 import { ToolRegistry } from "./tool-registry.ts";
 import { StdioUpstreamClient } from "./stdio-upstream-client.ts";
+import { loadSessionIdleTimeout } from "./session-settings.ts";
 import { UpstreamManager } from "./upstream-manager.ts";
 
 let shuttingDown = false;
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  config.sessionIdleTimeoutMs = await loadSessionIdleTimeout(
+    config.sessionSettingsFile,
+    config.sessionIdleTimeoutMs,
+  );
   await mkdir(config.filesystemRoot, { recursive: true });
   const logger = new CoreLogger(config.logFile);
   await logger.init();
