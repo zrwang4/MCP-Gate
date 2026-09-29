@@ -195,9 +195,6 @@ export class HttpUpstreamClient implements UpstreamClient {
     const client = this.#client;
     const transport = this.#transport;
     const agentLease = this.#agentLease;
-    this.#client = null;
-    this.#transport = null;
-    this.#agentLease = null;
 
     if (transport) {
       await transport.terminateSession().catch(() => undefined);
@@ -208,6 +205,13 @@ export class HttpUpstreamClient implements UpstreamClient {
     if (agentLease) {
       await agentLease.release();
     }
+
+    // Only clear ownership after the close sequence succeeds. When close
+    // fails, keeping these references allows UpstreamManager to retry rather
+    // than orphaning the transport and its Agent lease.
+    this.#client = null;
+    this.#transport = null;
+    this.#agentLease = null;
   }
 
   async listTools(): Promise<McpToolDefinition[]> {
