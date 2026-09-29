@@ -42,6 +42,7 @@ async function main(): Promise<void> {
     logger,
   );
   await gatewayAccess.init();
+  const mutations = new MutationQueue();
   const upstreams = new UpstreamManager(
     registry,
     toolRegistry,
@@ -50,11 +51,10 @@ async function main(): Promise<void> {
         ? new HttpUpstreamClient(serverConfig, secrets, config.connectionTimeoutMs)
         : new StdioUpstreamClient(serverConfig, secrets),
     logger,
-    { audit },
+    { audit, mutations },
   );
   await upstreams.reconcile();
   const reconciler = new RuntimeReconciler(registry, upstreams);
-  const mutations = new MutationQueue();
   const serverService = new ServerService(
     registry,
     profiles,
