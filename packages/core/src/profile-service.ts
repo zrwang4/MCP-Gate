@@ -1,6 +1,7 @@
 import type { ServerRegistry } from "./server-registry.ts";
 import type { McpProfile, ProfileStore } from "./profile-store.ts";
 import type { UpstreamManager, ProfileApplyResult } from "./upstream-manager.ts";
+import type { MutationQueue } from "./mutation-queue.ts";
 
 export interface ProfileMutationOutcome {
   ok: boolean;
@@ -14,16 +15,18 @@ export class ProfileService {
   #store: ProfileStore;
   #registry: ServerRegistry;
   #upstreams: UpstreamManager;
-  #mutationTail: Promise<void> = Promise.resolve();
+  #mutations: MutationQueue;
 
   constructor(
     store: ProfileStore,
     registry: ServerRegistry,
     upstreams: UpstreamManager,
+    mutations: MutationQueue,
   ) {
     this.#store = store;
     this.#registry = registry;
     this.#upstreams = upstreams;
+    this.#mutations = mutations;
   }
 
   list(): McpProfile[] {
@@ -35,7 +38,7 @@ export class ProfileService {
   }
 
   async create(name: string, serverIds: string[]): Promise<McpProfile> {
-    return this.#serialize(async () => {
+    return this.#mutations.run(async () => {
       this.#assertKnownServers(serverIds);
       return this.#store.create(name, serverIds);
     });
@@ -45,7 +48,7 @@ export class ProfileService {
     id: string,
     input: { name: string; serverIds: string[] },
   ): Promise<ProfileMutationOutcome> {
-    return this.#serialize(async () => {
+    return this.#mutations.run(async () => {
       const previous = this.#store.get(id);
       if (!previous) throw new Error("profile not found");
       this.#assertKnownServers(input.serverIds);
@@ -92,7 +95,7 @@ export class ProfileService {
   }
 
   async activate(id: string): Promise<ProfileMutationOutcome> {
-    return this.#serialize(async () => {
+    return this.#mutations.run(async () => {
       const profile = this.#store.get(id);
       if (!profile) throw new Error("profile not found");
 
@@ -137,7 +140,7 @@ export class ProfileService {
   }
 
   async deactivate(id: string): Promise<ProfileMutationOutcome> {
-    return this.#serialize(async () => {
+    return this.#mutations.run(async () => {
       const profile = this.#store.get(id);
       if (!profile) throw new Error("profile not found");
 
@@ -174,7 +177,7 @@ export class ProfileService {
   }
 
   async remove(id: string): Promise<ProfileMutationOutcome> {
-    return this.#serialize(async () => {
+    return this.#mutations.run(async () => {
       const profile = this.#store.get(id);
       if (!profile) throw new Error("profile not found");
 
@@ -202,21 +205,6 @@ export class ProfileService {
         ...(result ? { result } : {}),
       };
     });
-  }
-
-  async #serialize<T>(operation: () => Promise<T>): Promise<T> {
-    const previous = this.#mutationTail;
-    let release!: () => void;
-    this.#mutationTail = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-    }
   }
 
   #assertKnownServers(serverIds: string[]): void {
