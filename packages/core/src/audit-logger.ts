@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { redactSecrets } from "./logger.ts";
 
 const MAX_AUDIT_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_PENDING_AUDIT_BYTES = 2 * 1024 * 1024;
 
 export type AuditSource = "gateway" | "tester";
 
@@ -40,6 +41,7 @@ export class AuditLogger {
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
   #flushPromise: Promise<void> | null = null;
   #fileBytes = 0;
+  #pendingOverflowWarned = false;
 
   constructor(filePath: string, maxEntries = 1000) {
     this.#filePath = filePath;
@@ -82,6 +84,7 @@ export class AuditLogger {
     const line = `${JSON.stringify(entry)}\n`;
     this.#pendingLines.push(line);
     this.#pendingBytes += Buffer.byteLength(line, "utf8");
+    this.#trimPendingBuffer();
     if (this.#pendingBytes >= 64 * 1024) {
       void this.#flushPending();
     } else {
@@ -129,6 +132,21 @@ export class AuditLogger {
     await this.#flushPending();
   }
 
+  #trimPendingBuffer(): void {
+    while (
+      this.#pendingLines.length > 1 &&
+      this.#pendingBytes > MAX_PENDING_AUDIT_BYTES
+    ) {
+      const dropped = this.#pendingLines.shift();
+      this.#pendingBytes -= dropped ? Buffer.byteLength(dropped, "utf8") : 0;
+    }
+
+    if (this.#pendingBytes > MAX_PENDING_AUDIT_BYTES && !this.#pendingOverflowWarned) {
+      this.#pendingOverflowWarned = true;
+      console.warn("[audit] pending audit buffer exceeded 2 MiB; dropping oldest pending entries");
+    }
+  }
+
   #scheduleFlush(): void {
     if (this.#flushTimer) return;
     this.#flushTimer = setTimeout(() => {
@@ -157,6 +175,7 @@ export class AuditLogger {
           }
           await appendFile(this.#filePath, nextBatch, "utf8");
           this.#fileBytes += nextBatchBytes;
+          this.#pendingOverflowWarned = false;
         } catch (error) {
           console.error(`[audit] failed to write audit file: ${String(error)}`);
         }
