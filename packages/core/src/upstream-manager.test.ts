@@ -741,6 +741,56 @@ async function waitFor(
 }
 
 
+test("upstream list is read-only and reconcile owns removed runtime cleanup", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
+  let logger: CoreLogger | null = null;
+  try {
+    logger = new CoreLogger(join(dir, "core.jsonl"));
+    await logger.init();
+
+    const servers = new ServerRegistry(join(dir, "servers.json"), logger);
+    await servers.init();
+    const config = await servers.create({ name: "Orphan", command: "fake" });
+
+    const tools = new ToolRegistry();
+    let disconnectCalls = 0;
+    const upstreams = new UpstreamManager(
+      servers,
+      tools,
+      () => ({
+        async connect() {},
+        async disconnect() {
+          disconnectCalls += 1;
+        },
+        async listTools() {
+          return [{ name: "ping" }];
+        },
+        async callTool() {
+          return { content: [{ type: "text" as const, text: "pong" }] };
+        },
+      }),
+      logger,
+    );
+
+    await upstreams.connect(config.id);
+    await servers.remove(config.id);
+
+    assert.equal(disconnectCalls, 0);
+    assert.equal(upstreams.list().length, 0);
+    assert.equal(disconnectCalls, 0);
+
+    await upstreams.reconcile();
+
+    assert.equal(disconnectCalls, 1);
+    assert.equal(upstreams.list().length, 0);
+    assert.equal(tools.list().length, 0);
+  } finally {
+    await logger?.flush();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+
 test("upstream manager applies an exact profile server set", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-upstream-"));
   let logger: CoreLogger | null = null;
