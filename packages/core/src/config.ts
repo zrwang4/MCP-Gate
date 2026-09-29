@@ -17,6 +17,7 @@ export interface CoreConfig {
   profileFile: string;
   gatewayAccessFile: string;
   auditFile: string;
+  sessionSettingsFile: string;
 }
 
 function readPositiveInt(name: string, fallback: number): number {
@@ -64,5 +65,8 @@ export function loadConfig(): CoreConfig {
     auditFile:
       process.env.MCP_GATE_AUDIT_FILE ??
       join(homedir(), "Library", "Logs", "MCP Gate", "audit.jsonl"),
+    sessionSettingsFile:
+      process.env.MCP_GATE_SESSION_SETTINGS_FILE ??
+      join(appSupportDir, "session-settings.json"),
   };
 }
