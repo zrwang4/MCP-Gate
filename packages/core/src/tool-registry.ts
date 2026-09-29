@@ -6,7 +6,11 @@ export interface McpToolDefinition {
   inputSchema?: unknown;
 }
 
-export type ToolRegistryListener = () => void;
+export type ToolRegistryChange =
+  | { type: "reset"; serverId?: string }
+  | { type: "tool-enabled"; publicName: string };
+
+export type ToolRegistryListener = (change: ToolRegistryChange) => void;
 
 export interface ToolRoute {
   publicName: string;
@@ -78,14 +82,14 @@ export class ToolRegistry {
       created.push(cloneRoute(route));
     }
 
-    this.#emitIfChanged(before);
+    this.#emitIfChanged(before, { type: "reset", serverId });
     return created;
   }
 
   removeServer(serverId: string): void {
     const before = this.#fingerprint();
     this.#removeServerRoutes(serverId);
-    this.#emitIfChanged(before);
+    this.#emitIfChanged(before, { type: "reset", serverId });
   }
 
   list(options?: { includeDisabled?: boolean }): ToolRoute[] {
@@ -107,14 +111,14 @@ export class ToolRegistry {
     if (route.enabled === enabled) return true;
 
     route.enabled = enabled;
-    this.#emitChanged();
+    this.#emitChanged({ type: "tool-enabled", publicName });
     return true;
   }
 
   clear(): void {
     if (this.#routes.size === 0) return;
     this.#routes.clear();
-    this.#emitChanged();
+    this.#emitChanged({ type: "reset" });
   }
 
   #removeServerRoutes(serverId: string): void {
@@ -140,16 +144,19 @@ export class ToolRegistry {
     );
   }
 
-  #emitIfChanged(before: string): void {
+  #emitIfChanged(
+    before: string,
+    change: ToolRegistryChange,
+  ): void {
     if (before !== this.#fingerprint()) {
-      this.#emitChanged();
+      this.#emitChanged(change);
     }
   }
 
-  #emitChanged(): void {
+  #emitChanged(change: ToolRegistryChange): void {
     for (const listener of this.#listeners) {
       try {
-        listener();
+        listener(change);
       } catch {
         // Listeners must not break registry mutations.
       }
