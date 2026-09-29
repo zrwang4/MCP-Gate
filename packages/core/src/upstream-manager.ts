@@ -840,12 +840,43 @@ export class UpstreamManager {
     const timer = setTimeout(() => {
       runtime.reconnectTimer = null;
       runtime.nextRetryAt = null;
-      if (!runtime.desiredConnected || !runtime.config.enabled || runtime.client) return;
+      if (!runtime.desiredConnected || !runtime.config.enabled) return;
 
-      runtime.circuitState = "half-open";
-      this.#logger.info("upstream", `circuit half-open for ${runtime.config.name}; starting recovery probe`);
-      const probe = () => this.#connectRuntime(runtime, true);
-      void (this.#mutations ? this.#mutations.run(probe) : probe()).catch(() => undefined);
+      const recover = async (): Promise<void> => {
+        if (runtime.client) {
+          const retainedClient = runtime.client;
+          try {
+            await retainedClient.disconnect();
+          } catch (error) {
+            this.#logger.warn(
+              "upstream",
+              `circuit recovery cleanup failed for ${runtime.config.name}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            this.#openCircuit(runtime, "retained client could not be closed");
+            return;
+          }
+
+          if (runtime.client === retainedClient) {
+            runtime.client = null;
+          }
+          runtime.toolCount = 0;
+          this.#tools.removeServer(runtime.config.id);
+        }
+
+        if (!runtime.desiredConnected || !runtime.config.enabled) return;
+
+        runtime.circuitState = "half-open";
+        this.#logger.info(
+          "upstream",
+          `circuit half-open for ${runtime.config.name}; starting recovery probe`,
+        );
+        await this.#connectRuntime(runtime, true);
+      };
+
+      const operation = this.#mutations
+        ? this.#mutations.run(recover)
+        : recover();
+      void operation.catch(() => undefined);
     }, this.#circuitResetMs);
 
     runtime.reconnectTimer = timer;
