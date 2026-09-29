@@ -129,7 +129,9 @@ async function main(): Promise<void> {
     await gateway.start();
     const activeProfile = profiles.getActive();
     if (activeProfile) {
-      const result = await reconciler.applyExactSet(activeProfile.serverIds);
+      const result = await mutations.run(() =>
+        reconciler.applyExactSet(activeProfile.serverIds),
+      );
       if (result.failed.length > 0) {
         logger.warn(
           "profiles",
@@ -137,7 +139,7 @@ async function main(): Promise<void> {
         );
       }
     } else {
-      await reconciler.connectAutoStart();
+      await mutations.run(() => reconciler.connectAutoStart());
     }
     logger.info("core", "Core is ready");
   } catch (error) {
