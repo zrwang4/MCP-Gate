@@ -17,6 +17,9 @@ export class CoreLogger {
   #maxEntries: number;
   #logFile: string;
   #writeQueue: Promise<void> = Promise.resolve();
+  #pendingLines: string[] = [];
+  #pendingBytes = 0;
+  #flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(logFile: string, maxEntries = 1000) {
     this.#logFile = logFile;
@@ -86,9 +89,35 @@ export class CoreLogger {
   }
 
   async flush(): Promise<void> {
+    if (this.#flushTimer) {
+      clearTimeout(this.#flushTimer);
+      this.#flushTimer = null;
+    }
+    await this.#flushPending();
     await this.#writeQueue;
   }
 
+  #scheduleFlush(): void {
+    if (this.#flushTimer) return;
+    this.#flushTimer = setTimeout(() => {
+      this.#flushTimer = null;
+      void this.#flushPending();
+    }, 250);
+    (this.#flushTimer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
+  }
+
+  async #flushPending(): Promise<void> {
+    if (this.#pendingLines.length === 0) return;
+    const batch = this.#pendingLines.join("");
+    this.#pendingLines = [];
+    this.#pendingBytes = 0;
+    this.#writeQueue = this.#writeQueue
+      .then(() => appendFile(this.#logFile, batch, "utf8"))
+      .catch((error) => {
+        console.error(`[logger] failed to write log file: ${String(error)}`);
+      });
+    await this.#writeQueue;
+  }
   async #loadExisting(): Promise<void> {
     try {
       const raw = await readFile(this.#logFile, "utf8");
@@ -160,11 +189,14 @@ export class CoreLogger {
     else if (level === "warn") console.warn(printable);
     else console.info(printable);
 
-    this.#writeQueue = this.#writeQueue
-      .then(() => appendFile(this.#logFile, `${JSON.stringify(entry)}\n`, "utf8"))
-      .catch((error) => {
-        console.error(`[logger] failed to write log file: ${String(error)}`);
-      });
+    const line = `${JSON.stringify(entry)}\n`;
+    this.#pendingLines.push(line);
+    this.#pendingBytes += Buffer.byteLength(line, "utf8");
+    if (this.#pendingBytes >= 64 * 1024) {
+      void this.#flushPending();
+    } else {
+      this.#scheduleFlush();
+    }
   }
 }
 
