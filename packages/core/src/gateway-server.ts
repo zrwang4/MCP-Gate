@@ -10,7 +10,11 @@ import type { CoreConfig } from "./config.ts";
 import type { GatewayAccessController } from "./gateway-access.ts";
 import type { CoreLogger } from "./logger.ts";
 import { McpProxyGateway } from "./mcp-proxy-gateway.ts";
-import type { ToolRegistry, ToolRoute } from "./tool-registry.ts";
+import type {
+  ToolRegistry,
+  ToolRegistryChange,
+  ToolRoute,
+} from "./tool-registry.ts";
 import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
 
@@ -18,10 +22,7 @@ export interface GatewayToolCaller {
   callTool(publicName: string, args: unknown): Promise<CallToolResult>;
 }
 
-const gatewayToolRegistrations = new WeakMap<
-  McpServer,
-  Map<string, RegisteredTool>
->();
+undefined
 
 export function createGatewayProtocolServer(
   tools: ToolRegistry,
@@ -52,13 +53,58 @@ function syncGatewayTools(
   server: McpServer,
   tools: ToolRegistry,
   caller: GatewayToolCaller,
+  change?: ToolRegistryChange,
 ): void {
-  const registrations = gatewayToolRegistrations.get(server) ?? new Map();
-  for (const registration of registrations.values()) registration.remove();
+  const registrations =
+    gatewayToolRegistrations.get(server) ??
+    new Map<string, { serverId: string; registration: RegisteredTool }>();
+
+  if (change?.type === "tool-enabled") {
+    const route = tools.resolve(change.publicName);
+    const existing = registrations.get(change.publicName);
+
+    if (!route || !route.enabled) {
+      existing?.registration.remove();
+      registrations.delete(change.publicName);
+    } else if (!existing) {
+      registrations.set(change.publicName, {
+        serverId: route.serverId,
+        registration: registerTool(server, route, caller),
+      });
+    }
+
+    gatewayToolRegistrations.set(server, registrations);
+    return;
+  }
+
+  const serverId = change?.type === "reset" ? change.serverId : undefined;
+  if (serverId) {
+    for (const [publicName, entry] of registrations) {
+      if (entry.serverId === serverId) {
+        entry.registration.remove();
+        registrations.delete(publicName);
+      }
+    }
+
+    for (const route of tools.list().filter((item) => item.serverId === serverId)) {
+      registrations.set(route.publicName, {
+        serverId: route.serverId,
+        registration: registerTool(server, route, caller),
+      });
+    }
+
+    gatewayToolRegistrations.set(server, registrations);
+    return;
+  }
+
+  for (const entry of registrations.values()) entry.registration.remove();
   registrations.clear();
 
   for (const route of tools.list()) {
-    registrations.set(route.publicName, registerTool(server, route, caller));
+    registrations.set(route.publicName, {
+      serverId: route.serverId,
+      registration: registerTool(server, route, caller),
+    });
   }
 
   gatewayToolRegistrations.set(server, registrations);
@@ -185,9 +231,9 @@ export class GatewayServer {
       });
 
       this.#boundHost = bindHost;
-      this.#unsubscribeToolChanges = this.#tools.onChanged(() => {
+      this.#unsubscribeToolChanges = this.#tools.onChanged((change) => {
         for (const server of this.#protocolServers) {
-          syncGatewayTools(server, this.#tools, this.#upstreams);
+          syncGatewayTools(server, this.#tools, this.#upstreams, change);
         }
         this.#proxy.notifyToolsChanged();
       });
