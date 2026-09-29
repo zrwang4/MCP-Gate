@@ -494,6 +494,9 @@ export function App() {
   const [logFollow, setLogFollow] = useState(true);
   const liveRefreshInFlight = useRef(false);
   const catalogRefreshInFlight = useRef(false);
+  const lastLogSeqRef = useRef(0);
+  const lastAuditSeqRef = useRef(0);
+  const coreStartedAtRef = useRef<string | null>(null);
 
   const refreshDesktopPreferences = useCallback(async () => {
     if (!IS_TAURI) return;
@@ -536,6 +539,9 @@ export function App() {
       setTools(toolsResult.tools);
       setLogs(logsResult.entries);
       setAuditEntries(auditResult.entries);
+      lastLogSeqRef.current = logsResult.entries.at(-1)?.seq ?? 0;
+      lastAuditSeqRef.current = auditResult.entries.at(-1)?.seq ?? 0;
+      coreStartedAtRef.current = statusResult.core.startedAt;
       setManagementConnected(true);
       setError(null);
     } catch (cause) {
@@ -552,16 +558,53 @@ export function App() {
     liveRefreshInFlight.current = true;
 
     try {
-      const [statusResult, upstreamsResult, logsResult, auditResult] = await Promise.all([
+      const [statusResult, upstreamsResult] = await Promise.all([
         api<StatusResponse>("/api/status"),
         api<{ upstreams: UpstreamInfo[] }>("/api/upstreams"),
-        api<{ entries: LogEntry[] }>("/api/logs?limit=500"),
-        api<{ entries: AuditEntry[] }>("/api/audit?limit=120"),
       ]);
+
+      const coreRestarted =
+        coreStartedAtRef.current !== null &&
+        coreStartedAtRef.current !== statusResult.core.startedAt;
+
+      const [logsResult, auditResult] = await Promise.all([
+        api<{ entries: LogEntry[] }>(
+          coreRestarted
+            ? "/api/logs?limit=500"
+            : `/api/logs?after=${lastLogSeqRef.current}&limit=200`,
+        ),
+        api<{ entries: AuditEntry[] }>(
+          coreRestarted
+            ? "/api/audit?limit=120"
+            : `/api/audit?after=${lastAuditSeqRef.current}&limit=120`,
+        ),
+      ]);
+
       setStatus(statusResult);
       setUpstreams(upstreamsResult.upstreams);
-      setLogs(logsResult.entries);
-      setAuditEntries(auditResult.entries);
+
+      if (coreRestarted) {
+        setLogs(logsResult.entries);
+        setAuditEntries(auditResult.entries);
+      } else {
+        if (logsResult.entries.length > 0) {
+          setLogs((current) => [...current, ...logsResult.entries].slice(-500));
+        }
+        if (auditResult.entries.length > 0) {
+          setAuditEntries((current) => [...current, ...auditResult.entries].slice(-120));
+        }
+      }
+
+      lastLogSeqRef.current = logsResult.entries.at(-1)?.seq ?? lastLogSeqRef.current;
+      lastAuditSeqRef.current = auditResult.entries.at(-1)?.seq ?? lastAuditSeqRef.current;
+      coreStartedAtRef.current = statusResult.core.startedAt;
+
+      if (!managementConnected) {
+        // A reconnect after a temporary management outage may have missed
+        // events; use the existing full refresh path once to resync all state.
+        await refreshCatalog();
+      }
+
       setManagementConnected(true);
       setError(null);
     } catch (cause) {
@@ -571,8 +614,7 @@ export function App() {
       liveRefreshInFlight.current = false;
       void refreshCoreRuntime();
     }
-  }, [refreshCoreRuntime]);
-
+  }, [refreshCatalog, refreshCoreRuntime, managementConnected]);
   const refreshCatalog = useCallback(async () => {
     if (catalogRefreshInFlight.current) return;
     catalogRefreshInFlight.current = true;
