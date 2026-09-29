@@ -19,3 +19,13 @@ test("redacts authorization headers and query parameters", () => {
     "Authorization: Bearer [REDACTED] https://example.test/?token=[REDACTED]&x=1",
   );
 });
+
+
+test("redacts OAuth-style token names", () => {
+  assert.equal(
+    redactSecrets(
+      "access_token=access123 refresh_token=refresh123 id_token=id123 client_secret=secret123",
+    ),
+    "access_token=[REDACTED] refresh_token=[REDACTED] id_token=[REDACTED] client_secret=[REDACTED]",
+  );
+});
