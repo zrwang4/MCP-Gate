@@ -208,6 +208,29 @@ test("mcp-proxy hosts the secured gateway and routes aggregated tools", async ()
     });
     assert.equal(hostileOriginStatus, 403);
 
+    // The legacy SSE endpoint builds sessions through `createServer`, which
+    // must enforce the gateway access check exactly like the streamable
+    // endpoint's `authenticate` hook — a key-less client gets 401 before any
+    // SSE byte is written, and `/messages` inside a session is no bypass.
+    const sseUnauthorized = await fetch(`http://127.0.0.1:${port}/sse`);
+    assert.equal(sseUnauthorized.status, 401);
+    assert.match(
+      await sseUnauthorized.text(),
+      /missing or invalid bearer token/,
+    );
+
+    const messagesStatus = await postInitialize(port, {
+      path: "/messages?sessionId=00000000-0000-4000-8000-000000000000",
+      authorization: `Bearer ${apiKey}`,
+    });
+    assert.equal(messagesStatus, 400);
+
+    const messagesUnauthorized = await fetch(
+      `http://127.0.0.1:${port}/messages?sessionId=00000000-0000-4000-8000-000000000000`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+    );
+    assert.equal(messagesUnauthorized.status, 401);
+
     await client.connect(
       new StreamableHTTPClientTransport(
         new URL(`http://127.0.0.1:${port}/mcp`),
@@ -283,18 +306,20 @@ async function postInitialize(
     },
   });
 
+  const { path = "/mcp", ...rest } = headers;
+
   return new Promise((resolve, reject) => {
     const request = httpRequest(
       {
         host: "127.0.0.1",
         port,
-        path: "/mcp",
+        path,
         method: "POST",
         headers: {
           accept: "application/json, text/event-stream",
           "content-type": "application/json",
           "content-length": Buffer.byteLength(body),
-          ...headers,
+          ...rest,
         },
       },
       (response) => {

@@ -130,7 +130,15 @@ export class GatewayServer {
         host: bindHost,
         port: this.#config.port,
         sessionIdleTimeoutMs: this.#config.sessionIdleTimeoutMs,
-        createServer: async () => {
+        createServer: async (req) => {
+          // mcp-proxy only runs `authenticate` on the streamable endpoint; the
+          // legacy SSE path builds its protocol server without ever consulting
+          // it, which let a key-less client open `/sse` sessions while `/mcp`
+          // was locked down (and then post to `/messages` inside the session).
+          // Every transport funnels through this callback before any byte is
+          // written, and mcp-proxy writes a thrown `Response` back verbatim,
+          // so enforcing the check here closes the gap with a clean 401/403.
+          this.#authorizeRequest(req, lanEnabled, allowedHostnames);
           const server = this.#buildMcpServer();
           this.#protocolServers.add(server);
           return server;
@@ -150,6 +158,21 @@ export class GatewayServer {
           // swallow every SSE POST. Leave those requests unanswered so the
           // proxy's own handler still sees them.
           if (new URL(req.url ?? "/", "http://localhost").pathname === "/messages") {
+            // The proxy's `/messages` branch never runs `authenticate`, so the
+            // gateway access check would be skipped for legacy SSE posts
+            // entirely. Enforce it here; on failure the response is written
+            // and the proxy's handler never runs.
+            try {
+              this.#authorizeRequest(req, lanEnabled, allowedHostnames);
+            } catch (error) {
+              if (error instanceof Response) {
+                res.statusCode = error.status;
+                error.headers.forEach((value, key) => res.setHeader(key, value));
+                res.end(await error.text());
+                return;
+              }
+              throw error;
+            }
             return;
           }
 
