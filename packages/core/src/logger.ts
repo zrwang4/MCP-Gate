@@ -108,9 +108,12 @@ export class CoreLogger {
 export function redactSecrets(value: string): string {
   const secretKey =
     "(?:authorization|api[_-]?key|token|access[_-]?token|refresh[_-]?token|id[_-]?token|password|secret|client[_-]?secret|cookie)";
+  // `authorization` is handled by its own rule below (which preserves the
+  // Bearer prefix); including it here would redact that prefix as the value.
+  const plainSecretKey = secretKey.replace("authorization|", "");
   return value
     .replace(
-      new RegExp(`("(?:${secretKey})"\\s*:\\s*")([^"]*)("`), "gi"),
+      new RegExp(`("(?:${secretKey})"\\s*:\\s*")([^"]*)(")`, "gi"),
       "$1[REDACTED]$3",
     )
     .replace(
@@ -118,7 +121,7 @@ export function redactSecrets(value: string): string {
       "$1$2[REDACTED]",
     )
     .replace(
-      new RegExp(`(${secretKey}\\s*[:=]\\s*)[^\\s,;&]+`, "gi"),
+      new RegExp(`(${plainSecretKey}\\s*[:=]\\s*)[^\\s,;&]+`, "gi"),
       "$1[REDACTED]",
     )
     .replace(
