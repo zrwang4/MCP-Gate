@@ -33,6 +33,8 @@ export interface DiagnosticSnapshotInput {
 }
 
 export function buildDiagnosticSnapshot(input: DiagnosticSnapshotInput) {
+  const memory = process.memoryUsage();
+
   return {
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     runtime: {
