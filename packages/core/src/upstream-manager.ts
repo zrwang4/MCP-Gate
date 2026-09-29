@@ -102,7 +102,7 @@ export class UpstreamManager {
         : DEFAULT_RECONNECT_DELAYS_MS;
   }
 
-  syncConfigs(): void {
+  #syncConfiguredRuntimes(): void {
     const configs = this.#registry.list();
     const activeIds = new Set(configs.map((config) => config.id));
 
@@ -130,29 +130,68 @@ export class UpstreamManager {
       }
     }
 
-    for (const [id, runtime] of this.#runtimes) {
-      if (!activeIds.has(id)) {
-        runtime.desiredConnected = false;
-        runtime.generation += 1;
-        this.#cancelReconnect(runtime, true);
-        if (runtime.client) {
-          void runtime.client.disconnect().catch(() => undefined);
+  async reconcile(): Promise<void> {
+    this.#syncConfiguredRuntimes();
+
+    const activeIds = new Set(this.#registry.list().map((config) => config.id));
+    const removedIds = [...this.#runtimes.keys()].filter((id) => !activeIds.has(id));
+
+    for (const id of removedIds) {
+      const runtime = this.#runtimes.get(id);
+      if (!runtime) continue;
+
+      try {
+        await this.#disconnectRuntimeForReconcile(id, runtime);
+      } catch (error) {
+        this.#logger.warn(
+          "upstream",
+          `reconcile failed for removed upstream ${runtime.config.name}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        continue;
+      }
+
+      this.#tools.removeServer(id);
+      this.#runtimes.delete(id);
+    }
+
+    for (const runtime of this.#runtimes.values()) {
+      if (!runtime.config.enabled && (runtime.client || runtime.desiredConnected || runtime.reconnectTimer)) {
+        try {
+          await this.disconnect(runtime.config.id);
+        } catch (error) {
+          this.#logger.warn(
+            "upstream",
+            `reconcile failed for disabled upstream ${runtime.config.name}: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
-        this.#tools.removeServer(id);
-        this.#runtimes.delete(id);
       }
     }
   }
 
   list(): UpstreamSnapshot[] {
-    this.syncConfigs();
-    return [...this.#runtimes.values()]
-      .map((runtime) => this.#snapshot(runtime))
+    const configs = this.#registry.list();
+    return configs
+      .map((config) => {
+        const runtime = this.#runtimes.get(config.id);
+        if (runtime) return this.#snapshot(runtime);
+        return this.#snapshot({
+          config,
+          status: "configured",
+          client: null,
+          toolCount: 0,
+          lastError: null,
+          desiredConnected: false,
+          reconnectAttempt: 0,
+          nextRetryAt: null,
+          reconnectTimer: null,
+          generation: 0,
+        });
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async connect(id: string): Promise<UpstreamSnapshot> {
-    this.syncConfigs();
+    this.#syncConfiguredRuntimes();
     const runtime = this.#requireRuntime(id);
     runtime.desiredConnected = true;
     this.#cancelReconnect(runtime, true);
@@ -160,7 +199,7 @@ export class UpstreamManager {
   }
 
   async disconnect(id: string): Promise<UpstreamSnapshot> {
-    this.syncConfigs();
+    this.#syncConfiguredRuntimes();
     const runtime = this.#requireRuntime(id);
 
     // Invalidate an in-flight connect before checking the action lock. This is
@@ -218,7 +257,7 @@ export class UpstreamManager {
   }
 
   async refreshTools(id: string): Promise<UpstreamSnapshot> {
-    this.syncConfigs();
+    this.#syncConfiguredRuntimes();
     const runtime = this.#requireRuntime(id);
     if (runtime.status !== "running" || !runtime.client) {
       throw new Error("upstream is not running");
@@ -305,7 +344,7 @@ export class UpstreamManager {
   }
 
   async applyExactSet(serverIds: string[]): Promise<ProfileApplyResult> {
-    this.syncConfigs();
+    this.#syncConfiguredRuntimes();
 
     const desired = new Set(serverIds);
     const knownIds = new Set(this.#registry.list().map((config) => config.id));
@@ -387,7 +426,7 @@ export class UpstreamManager {
   }
 
   async disconnectSet(serverIds: string[]): Promise<ProfileApplyResult> {
-    this.syncConfigs();
+    this.#syncConfiguredRuntimes();
     const target = new Set(serverIds);
     const result: ProfileApplyResult = {
       connected: [],
@@ -430,7 +469,7 @@ export class UpstreamManager {
   }
 
   async connectAutoStart(): Promise<void> {
-    this.syncConfigs();
+    this.#syncConfiguredRuntimes();
     const ids = this.#registry
       .list()
       .filter((config) => config.enabled && config.autoStart)
@@ -459,6 +498,31 @@ export class UpstreamManager {
         // Best effort during shutdown.
       }
     }
+  }
+
+  async #disconnectRuntimeForReconcile(
+    id: string,
+    runtime: Runtime,
+  ): Promise<void> {
+    runtime.desiredConnected = false;
+    runtime.generation += 1;
+    this.#cancelReconnect(runtime, true);
+
+    if (this.#busy.has(id)) {
+      const connecting = this.#connectOperations.get(id);
+      if (connecting) await connecting.catch(() => undefined);
+      if (this.#busy.has(id)) {
+        throw new Error("upstream action already in progress");
+      }
+    }
+
+    const client = runtime.client;
+    if (client) await client.disconnect();
+
+    runtime.client = null;
+    runtime.toolCount = 0;
+    runtime.status = "stopped";
+    runtime.lastError = null;
   }
 
   async #connectRuntime(
