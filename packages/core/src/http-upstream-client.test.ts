@@ -34,3 +34,121 @@ test("HTTP Agent pool keeps different timeout values isolated", async () => {
   await short.release();
   await long.release();
 });
+
+
+test("HTTP upstream client connects to a real local MCP server and survives SSE recycle", async () => {
+  const { createServer } = await import("node:http");
+  const { randomUUID } = await import("node:crypto");
+  const { McpServer } = await import("@modelcontextprotocol/server");
+  const { NodeStreamableHTTPServerTransport } = await import("@modelcontextprotocol/node");
+
+  const server = new McpServer({
+    name: "local-http-test-server",
+    version: "1.0.0",
+  });
+  server.registerTool(
+    "ping",
+    {
+      description: "Ping",
+      inputSchema: {
+        type: "object",
+        properties: {},
+      },
+    },
+    async () => ({
+      content: [{ type: "text" as const, text: "pong" }],
+    }),
+  );
+
+  const transport = new NodeStreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+  });
+  await server.connect(transport);
+
+  const httpServer = createServer((req, res) => {
+    void transport.handleRequest(req, res).catch(() => {
+      if (!res.headersSent) res.writeHead(500);
+      res.end();
+    });
+  });
+
+  let getRequests = 0;
+  httpServer.prependListener("request", (req) => {
+    if (req.method === "GET") getRequests += 1;
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(0, "127.0.0.1", resolve);
+  });
+
+  const address = httpServer.address();
+  if (!address || typeof address === "string") {
+    throw new Error("failed to start local MCP server");
+  }
+
+  const logger = {
+    info() {},
+    warn() {},
+    error() {},
+    debug() {},
+  } as never;
+
+  const config = {
+    id: randomUUID(),
+    name: "Local HTTP",
+    alias: "local-http",
+    transport: "http" as const,
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    enabled: true,
+    autoStart: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const secrets = {
+    async get() {
+      return null;
+    },
+    async set() {},
+    async delete() {
+      return true;
+    },
+  } as never;
+
+  const client = new HttpUpstreamClient(config, secrets, 5_000);
+  try {
+    await client.connect();
+
+    assert.deepEqual(
+      (await client.listTools()).map((tool) => tool.name),
+      ["ping"],
+    );
+
+    const result = await client.callTool("ping", {});
+    assert.equal(result.content[0]?.type, "text");
+    if (result.content[0]?.type === "text") {
+      assert.equal(result.content[0].text, "pong");
+    }
+
+    assert.ok(getRequests >= 1, "expected the client to establish an SSE GET");
+
+    transport.closeStandaloneSSEStream();
+
+    await waitFor(
+      () => getRequests >= 2,
+      2_000,
+    );
+
+    assert.deepEqual(
+      (await client.listTools()).map((tool) => tool.name),
+      ["ping"],
+    );
+  } finally {
+    await client.disconnect().catch(() => undefined);
+    await transport.close().catch(() => undefined);
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => resolve());
+    });
+  }
+});
