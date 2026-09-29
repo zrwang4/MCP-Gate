@@ -1906,3 +1906,112 @@ footer {
     flex: 1 1 160px;
   }
 }
+
+
+.serverHealth {
+  margin-top: 5px;
+  font-size: 10px;
+  font-weight: 650;
+}
+.serverHealth.healthy { color: #197653; }
+.serverHealth.unhealthy { color: #b04a3a; }
+
+.serverDetailModal {
+  width: min(720px, calc(100vw - 32px));
+}
+.serverDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+.serverDetailGrid > div,
+.serverDetailBlock,
+.serverDetailError {
+  padding: 11px 12px;
+  border: 1px solid rgba(0,0,0,.07);
+  border-radius: 11px;
+  background: rgba(0,0,0,.025);
+}
+.serverDetailGrid > div {
+  display: grid;
+  gap: 4px;
+}
+.serverDetailGrid span,
+.serverDetailBlock > span {
+  color: #858580;
+  font-size: 10px;
+}
+.serverDetailGrid strong {
+  font-size: 12px;
+}
+.serverDetailBlock {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+.serverDetailBlock code {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 11px;
+}
+.serverDetailError {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  border-color: rgba(176,74,58,.15);
+}
+.serverDetailError strong {
+  color: #b04a3a;
+  font-size: 11px;
+}
+.serverDetailError span {
+  color: #7b4a43;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.serverDetailLogs {
+  display: grid;
+  gap: 5px;
+  max-height: 180px;
+  overflow: auto;
+}
+.serverDetailLogs > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 10px;
+}
+.serverDetailLogs time {
+  color: #999;
+}
+.serverDetailLogs span {
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-color-scheme: dark) {
+  .serverHealth.healthy { color: #82d7b2; }
+  .serverHealth.unhealthy { color: #ef9b8c; }
+  .serverDetailGrid > div,
+  .serverDetailBlock,
+  .serverDetailError {
+    background: rgba(255,255,255,.035);
+    border-color: rgba(255,255,255,.08);
+  }
+  .serverDetailGrid span,
+  .serverDetailBlock > span {
+    color: #999;
+  }
+  .serverDetailError strong {
+    color: #ef9b8c;
+  }
+  .serverDetailError span {
+    color: #d7a8a0;
+  }
+}
+
+@media (max-width: 760px) {
+  .serverDetailGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
