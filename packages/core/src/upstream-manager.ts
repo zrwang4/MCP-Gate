@@ -823,6 +823,7 @@ export class UpstreamManager {
       this.#logger.warn("upstream", `failed to isolate unhealthy upstream ${runtime.config.name}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       this.#busy.delete(id);
+      runtime.toolCount = 0;
       runtime.status = "error";
       this.#openCircuit(runtime, reason);
     }
