@@ -47,7 +47,13 @@ async function main(): Promise<void> {
     logger,
   );
   await gatewayAccess.init();
-  const mutations = new MutationQueue();
+  const mutations = new MutationQueue({
+    onSlowOperation: ({ waitMs, operationMs }) =>
+      logger.warn(
+        "mutations",
+        `slow queued mutation: wait=${waitMs}ms operation=${operationMs}ms`,
+      ),
+  });
   const upstreams = new UpstreamManager(
     registry,
     toolRegistry,
@@ -83,23 +89,24 @@ async function main(): Promise<void> {
     gatewayAccess,
     logger,
   );
-  const management = new ManagementServer(
+  const management = new ManagementServer({
     config,
     gateway,
     gatewayAccess,
     registry,
-    serverService,
+    servers: serverService,
     profiles,
     profileService,
     mutations,
     reconciler,
     upstreams,
-    toolRegistry,
+    tools: toolRegistry,
     toolPolicy,
     secrets,
     audit,
     logger,
-  );
+    startedAt: new Date().toISOString(),
+  });
 
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;

@@ -101,25 +101,31 @@ test("withTimeout surfaces the operation error when it fails before the timeout"
   );
 });
 
-test("stdio connect fails fast when the spawned process never completes the handshake", async (t) => {
-  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+test("stdio connect timeout closes the spawned process", async (t) => {
+  const { mkdtemp, readFile, writeFile, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { StdioUpstreamClient } = await import("./stdio-upstream-client.ts");
 
   const dir = await mkdtemp(join(tmpdir(), "mcp-gate-stdio-hang-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
+  const closedMarker = join(dir, "closed");
   // A process that reads stdin forever and never answers the initialize
   // request: exactly the shape that used to pin the mutation queue for the
   // SDK's full default timeout.
   const script = join(dir, "hang.js");
-  await writeFile(script, "process.stdin.resume();\nsetInterval(() => {}, 1 << 30);\n");
+  await writeFile(
+    script,
+    "const fs = require('node:fs');\n" +
+      "process.on('SIGTERM', () => { fs.writeFileSync(process.argv[2], 'closed'); process.exit(0); });\n" +
+      "process.stdin.resume();\nsetInterval(() => {}, 1 << 30);\n",
+  );
 
   const hangConfig: StdioServerConfig = {
     ...config(),
     env: undefined,
     envSecretIds: undefined,
     command: process.execPath,
-    args: [script],
+    args: [script, closedMarker],
   };
   const client = new StdioUpstreamClient(
     hangConfig,
@@ -132,8 +138,21 @@ test("stdio connect fails fast when the spawned process never completes the hand
   const elapsed = Date.now() - startedAt;
   assert.ok(elapsed < 5_000, `connect should fail near 500ms, took ${elapsed}ms`);
 
-  // The failed connect must release the client reference so a later
-  // disconnect/reconnect is possible.
+  // The failed connect must terminate the child, not merely reject the
+  // handshake promise and leave a detached process behind.
+  const closeDeadline = Date.now() + 2_000;
+  let marker = "";
+  while (Date.now() < closeDeadline) {
+    try {
+      marker = await readFile(closedMarker, "utf8");
+      break;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  assert.equal(marker, "closed", "timed-out child should receive SIGTERM and exit");
+
+  // A subsequent explicit disconnect remains safe after failed startup.
   await client.disconnect();
 });
 

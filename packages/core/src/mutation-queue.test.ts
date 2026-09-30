@@ -52,3 +52,27 @@ test("mutation queue releases the lock after a failed operation", async () => {
 
   assert.deepEqual(events, ["failed", "recovered"]);
 });
+
+test("mutation queue reports slow wait or operation time without affecting results", async () => {
+  const timings: { waitMs: number; operationMs: number }[] = [];
+  const queue = new MutationQueue({
+    slowOperationMs: 0,
+    onSlowOperation: (timing) => timings.push(timing),
+  });
+
+  assert.equal(await queue.run(async () => 42), 42);
+  assert.equal(timings.length, 1);
+  assert.ok(timings[0].waitMs >= 0);
+  assert.ok(timings[0].operationMs >= 0);
+});
+
+test("mutation queue ignores errors from slow-operation diagnostics", async () => {
+  const queue = new MutationQueue({
+    slowOperationMs: 0,
+    onSlowOperation: () => {
+      throw new Error("diagnostic failure");
+    },
+  });
+
+  assert.equal(await queue.run(async () => "still works"), "still works");
+});

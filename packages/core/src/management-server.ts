@@ -1,7 +1,8 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { AuditLogger } from "./audit-logger.ts";
-import type { CoreConfig } from "./config.ts";
-import type { CoreLogger } from "./logger.ts";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import {
   isManagementRequestAuthorized,
   MANAGEMENT_TOKEN_HEADER,
@@ -20,20 +21,12 @@ import { handleServers } from "./management-route-servers.ts";
 import { handleTools } from "./management-route-tools.ts";
 import { handleLogs } from "./management-route-logs.ts";
 import { handleBackup } from "./management-route-backup.ts";
-import type { GatewayAccessController } from "./gateway-access.ts";
-import type { GatewayServer } from "./gateway-server.ts";
-import type { ServerRegistry } from "./server-registry.ts";
-import type { ServerService } from "./server-service.ts";
-import type { ProfileService } from "./profile-service.ts";
-import type { MutationQueue } from "./mutation-queue.ts";
-import type { RuntimeReconciler } from "./runtime-reconciler.ts";
-import type { ProfileStore } from "./profile-store.ts";
-import type { SecretStore } from "./secret-store.ts";
-import type { ToolPolicyStore } from "./tool-policy-store.ts";
-import type { ToolRegistry } from "./tool-registry.ts";
-import type { UpstreamManager } from "./upstream-manager.ts";
 import { CORE_VERSION } from "./version.ts";
-import { normalizeSessionIdleTimeout, saveSessionIdleTimeout, sessionSettingsSnapshot } from "./session-settings.ts";
+import {
+  normalizeSessionIdleTimeout,
+  saveSessionIdleTimeout,
+  sessionSettingsSnapshot,
+} from "./session-settings.ts";
 
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:1420",
@@ -70,56 +63,11 @@ const ROUTES: RouteHandler[] = [
 ];
 
 export class ManagementServer {
-  #config: CoreConfig;
-  #gateway: GatewayServer;
-  #gatewayAccess: GatewayAccessController;
-  #registry: ServerRegistry;
-  #servers: ServerService;
-  #profileService: ProfileService;
-  #mutations: MutationQueue;
-  #reconciler: RuntimeReconciler;
-  #profiles: ProfileStore;
-  #upstreams: UpstreamManager;
-  #tools: ToolRegistry;
-  #toolPolicy: ToolPolicyStore;
-  #secrets: SecretStore;
-  #audit: AuditLogger;
-  #logger: CoreLogger;
+  #context: ManagementContext;
   #server: ReturnType<typeof createServer> | null = null;
-  #startedAt = new Date().toISOString();
 
-  constructor(
-    config: CoreConfig,
-    gateway: GatewayServer,
-    gatewayAccess: GatewayAccessController,
-    registry: ServerRegistry,
-    servers: ServerService,
-    profiles: ProfileStore,
-    profileService: ProfileService,
-    mutations: MutationQueue,
-    reconciler: RuntimeReconciler,
-    upstreams: UpstreamManager,
-    tools: ToolRegistry,
-    toolPolicy: ToolPolicyStore,
-    secrets: SecretStore,
-    audit: AuditLogger,
-    logger: CoreLogger,
-  ) {
-    this.#config = config;
-    this.#gateway = gateway;
-    this.#gatewayAccess = gatewayAccess;
-    this.#registry = registry;
-    this.#servers = servers;
-    this.#profiles = profiles;
-    this.#profileService = profileService;
-    this.#mutations = mutations;
-    this.#reconciler = reconciler;
-    this.#upstreams = upstreams;
-    this.#tools = tools;
-    this.#toolPolicy = toolPolicy;
-    this.#secrets = secrets;
-    this.#audit = audit;
-    this.#logger = logger;
+  constructor(context: ManagementContext) {
+    this.#context = context;
   }
 
   async start(): Promise<void> {
@@ -127,7 +75,10 @@ export class ManagementServer {
 
     const server = createServer((req, res) => {
       void this.#handle(req, res).catch((error) => {
-        this.#logger.error("management", error instanceof Error ? error.message : String(error));
+        this.#context.logger.error(
+          "management",
+          error instanceof Error ? error.message : String(error),
+        );
         if (!res.headersSent) json(res, 500, { error: "internal error" });
         else res.end();
       });
@@ -135,16 +86,20 @@ export class ManagementServer {
 
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
-      server.listen(this.#config.managementPort, this.#config.managementHost, () => {
-        server.off("error", reject);
-        resolve();
-      });
+      server.listen(
+        this.#context.config.managementPort,
+        this.#context.config.managementHost,
+        () => {
+          server.off("error", reject);
+          resolve();
+        },
+      );
     });
 
     this.#server = server;
-    this.#logger.info(
+    this.#context.logger.info(
       "management",
-      `API listening on http://${this.#config.managementHost}:${this.#config.managementPort}`,
+      `API listening on http://${this.#context.config.managementHost}:${this.#context.config.managementPort}`,
     );
   }
 
@@ -169,20 +124,23 @@ export class ManagementServer {
       return;
     }
 
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const url = new URL(
+      req.url ?? "/",
+      `http://${req.headers.host ?? "localhost"}`,
+    );
 
     if (req.method === "GET" && url.pathname === "/api/health") {
       json(res, 200, { ok: true });
       return;
     }
 
-    if (!isManagementRequestAuthorized(req.headers, this.#config.managementToken)) {
-      this.#logger.warn(
+    if (!isManagementRequestAuthorized(req.headers, this.#context.config.managementToken)) {
+      this.#context.logger.warn(
         "management",
         `management access denied: ${req.method ?? "UNKNOWN"} ${url.pathname}`,
       );
       json(res, 403, {
-        error: this.#config.managementToken
+        error: this.#context.config.managementToken
           ? `missing or invalid ${MANAGEMENT_TOKEN_HEADER}`
           : "missing desktop client header",
       });
@@ -193,70 +151,60 @@ export class ManagementServer {
       json(res, 200, {
         core: {
           version: CORE_VERSION,
-          startedAt: this.#startedAt,
-          logFile: this.#logger.filePath,
-          sessionIdleTimeoutMs: this.#config.sessionIdleTimeoutMs,
+          startedAt: this.#context.startedAt,
+          logFile: this.#context.logger.filePath,
+          sessionIdleTimeoutMs: this.#context.config.sessionIdleTimeoutMs,
         },
-        gateway: this.#gateway.snapshot(),
+        gateway: this.#context.gateway.snapshot(),
         management: {
-          endpoint: `http://${this.#config.managementHost}:${this.#config.managementPort}`,
+          endpoint: `http://${this.#context.config.managementHost}:${this.#context.config.managementPort}`,
         },
       });
       return;
     }
 
     if (req.method === "GET" && url.pathname === "/api/session-settings") {
-      json(res, 200, { settings: sessionSettingsSnapshot(this.#config.sessionIdleTimeoutMs) });
+      json(res, 200, {
+        settings: sessionSettingsSnapshot(
+          this.#context.config.sessionIdleTimeoutMs,
+        ),
+      });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/session-settings") {
       try {
-        const body = await readJsonBody(req) as { idleTimeoutMs?: unknown };
+        const body = (await readJsonBody(req)) as {
+          idleTimeoutMs?: unknown;
+        };
         const idleTimeoutMs = normalizeSessionIdleTimeout(body.idleTimeoutMs);
-        await this.#mutations.run(async () => {
+        await this.#context.mutations.run(async () => {
           await saveSessionIdleTimeout(
-            this.#config.sessionSettingsFile,
+            this.#context.config.sessionSettingsFile,
             idleTimeoutMs,
-            this.#logger,
+            this.#context.logger,
           );
           // Keep the in-memory config in step with the file so subsequent
           // GETs (and /api/status) reflect the new value immediately instead
           // of serving the stale startup value until a restart.
-          this.#config.sessionIdleTimeoutMs = idleTimeoutMs;
-          this.#logger.info(
+          this.#context.config.sessionIdleTimeoutMs = idleTimeoutMs;
+          this.#context.logger.info(
             "session",
             `MCP session idle timeout changed to ${Math.round(idleTimeoutMs / 60_000)} minute(s); restart required for existing gateway sessions`,
           );
         });
-        json(res, 200, { settings: sessionSettingsSnapshot(idleTimeoutMs), restartRequired: true });
+        json(res, 200, {
+          settings: sessionSettingsSnapshot(idleTimeoutMs),
+          restartRequired: true,
+        });
       } catch (error) {
         json(res, 400, { error: error instanceof Error ? error.message : String(error) });
       }
       return;
     }
 
-    const ctx: ManagementContext = {
-      config: this.#config,
-      gateway: this.#gateway,
-      gatewayAccess: this.#gatewayAccess,
-      registry: this.#registry,
-      servers: this.#servers,
-      profiles: this.#profiles,
-      profileService: this.#profileService,
-      mutations: this.#mutations,
-      reconciler: this.#reconciler,
-      upstreams: this.#upstreams,
-      tools: this.#tools,
-      toolPolicy: this.#toolPolicy,
-      secrets: this.#secrets,
-      audit: this.#audit,
-      logger: this.#logger,
-      startedAt: this.#startedAt,
-    };
-
     for (const route of ROUTES) {
-      if (await route(req, res, url, ctx)) return;
+      if (await route(req, res, url, this.#context)) return;
     }
 
     json(res, 404, { error: "not found" });
