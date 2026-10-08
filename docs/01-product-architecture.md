@@ -17,24 +17,46 @@ The app manages multiple upstream MCP servers behind that endpoint.
 - Core: Node.js + TypeScript
 - Protocol engine: `mcp-proxy`
 - MCP upstream clients: MCP TypeScript SDK
-- Storage: SQLite
+- Storage: versioned JSON files with atomic replacement and rotating backups
 - Secrets: macOS Keychain
 
 ## Layering
 
 ```text
 React UI
-   ↓ Tauri IPC
-Tauri / Rust
-   ↓ local IPC
-MCP Gate Core
-   ↓
-Gateway / Tool Registry / Router
-   ↓
-MCP upstream servers
+   ├─ Tauri IPC → Rust desktop shell / CoreSupervisor
+   └─ authenticated HTTP → Core Management API (:24889)
+                              ↓
+                    Services / MutationQueue
+                              ↓
+                  RuntimeReconciler / Stores
+                              ↓
+                       UpstreamManager
+                              ↓
+                     STDIO / HTTP clients
+
+AI clients → Gateway (:24888/mcp) → ToolRegistry routes
+                                      ↓
+                              UpstreamManager.callTool()
+                                      ↓
+                                 MCP upstreams
 ```
 
 Rust owns desktop concerns. Core owns MCP concerns. UI must not directly depend on `mcp-proxy`.
+
+The installed app bundles Node and the compiled Core. Rust supervises only the
+Core process it starts; an external Core is not taken over or terminated.
+The UI obtains the management token through Tauri IPC, then calls the management
+HTTP API directly. See [Core supervision](17-tauri-core-supervisor.md) and
+[production runtime staging](19-production-core-runtime.md).
+
+`ServerService` and `ProfileService` coordinate persistence, runtime changes and
+failure compensation. `RuntimeReconciler` orchestrates batch connection sets;
+`UpstreamManager` owns individual connections, generation guards, health checks,
+reconnects and circuit recovery. Reads do not perform runtime cleanup.
+Cross-service configuration changes and automatic recovery operations share a
+serial `MutationQueue`; ordinary gateway tool calls do not enter that queue.
+Do not re-enter the queue from an already queued operation.
 
 The Core uses a version-pinned `McpProxyGateway` adapter around
 `mcp-proxy`'s programmatic `startHTTPServer()` API. That adapter owns the
@@ -48,6 +70,27 @@ upstream upgrade is isolated and can be gated by compatibility tests.
 - localhost-only by default
 - one public `/mcp` endpoint
 - hide protocol complexity from normal users
-- secrets never stored in plaintext config
-- Core can upgrade independently from the App
+- Gateway keys and secret environment values use Keychain; legacy HTTP
+  `authSecretId` values also use Keychain. Custom HTTP headers, including
+  Authorization configured in the current UI, are plaintext config. Backup
+  exports redact Authorization/Cookie-style headers, not arbitrary custom secrets.
+- Core is a separate process and runtime directory; automatic independent Core
+  upgrades and rollback are a [future design](02-core-update.md), not implemented.
 - V1 focuses on Tools before Resources/Prompts/Roots/Sampling/Elicitation
+
+## Current boundaries and known issues
+
+Personal use does not currently require SQLite, a concurrent management queue or
+an UpstreamRuntime FSM rewrite. Single-file writes are atomic; cross-file and
+Keychain operations use compensation rather than a shared database transaction.
+Backup restore reloads in-memory stores, but a Core restart is still required for
+existing connections and gateway sessions to fully adopt restored settings.
+
+Review of the current implementation identified two unresolved cases:
+
+- A queued circuit recovery task can act on a replacement client after a manual
+  disconnect/reconnect because it lacks execution-time generation/client checks.
+- Failed Profile activation restores the previous Profile's set (or an empty set),
+  not necessarily the actual connection targets before the operation.
+
+These are implementation issues, not reasons to replace the overall layering.

@@ -10,8 +10,9 @@
 - Tool 启用/禁用与持久化
 - Tool 测试器
 - MCP 自动连接
-- HTTP Authorization → macOS Keychain
-- Tauri 桌面端自动管理 Core 生命周期（开发态）
+- Gateway API Key、STDIO secret environment 与旧 HTTP authSecretId → macOS Keychain
+- 自定义 HTTP headers（包括当前 UI 配置的 Authorization）保存于本机 JSON
+- Tauri 桌面端自动管理 Core 生命周期（开发态及捆绑 Node/Core 的安装版）
 
 ## Core 架构
 
@@ -65,7 +66,7 @@ Management Routes
 
 配置/运行时变更遵循：
 
-\`\`\`text
+```text
 HTTP mutation
    ↓
 Service
@@ -81,6 +82,8 @@ UpstreamManager
 ToolRegistry
    ↓
 Gateway tool update
+```
+
 读取接口原则上不负责连接清理；
 `UpstreamManager.list()` 只读取当前 registry 配置并生成运行态快照，实际 orphan/disabled runtime 清理由显式 `reconcile()` 处理。
 
@@ -99,10 +102,13 @@ MCP Gate 当前按个人长期使用场景收口，重点保留高频运维能�
 
 ## 数据与安全边界
 
-- `servers.json` 保存 MCP 配置和非敏感参数。
+- `servers.json` 保存 MCP 配置、普通环境变量、自定义 HTTP headers 和凭据引用。
 - `profiles.json` 保存 Profile 与 active Profile。
 - `tool-policy.json` 保存 Tool 启用/禁用策略。
-- HTTP Authorization 与 STDIO secret environment 值使用安全存储，不进入普通配置 JSON。
+- Gateway API Key、STDIO secret environment 和旧 HTTP `authSecretId` 对应的值使用 Keychain。
+- 自定义 headers 可包含明文 Authorization 等凭据，配置文件应保持 `0600` 权限。
+  备份导出会脱敏 Authorization/Proxy-Authorization/Cookie/Set-Cookie headers，
+  恢复时删除 `[REDACTED]` 占位值；不保证识别任意自定义 header 或普通环境变量中的秘密。
 - Core 日志和 Audit 日志对常见 Authorization、Token、Secret、Cookie 等敏感信息进行脱敏。
 
 ## 开发环境
@@ -130,6 +136,9 @@ Tauri 启动时会检查 `127.0.0.1:24889`：
 - 如果已有 Core 在运行，直接复用，不接管它。
 - 如果没有 Core，桌面端自动启动 Node Core。
 - App 退出时只终止自己启动的 Core。
+
+当前检测仅确认 TCP 端口可达，不验证 Core 身份或管理鉴权；外部 Core 的
+token 不会自动接管。UI 通过 Tauri IPC 获取桌面 token，再直接调用管理 HTTP API。
 
 因此正常桌面开发不再需要额外执行 `pnpm core:dev`。
 
@@ -164,17 +173,28 @@ MCP_GATE_CORE_ENTRY
 packages/core/src/main.ts
 ```
 
-正式 DMG 阶段会把 `MCP_GATE_CORE_EXECUTABLE` 指向签名后的独立 Core sidecar，而不是依赖用户系统 Node。
+安装版已捆绑 Node sidecar 和编译后的 Core，不依赖用户系统 Node。
+启动优先级为可执行文件覆盖 → 捆绑 Node/Core → 开发态 Node/源码，详见
+[生产运行时打包](docs/19-production-core-runtime.md)。
+
+独立 Core 下载、候选版本验证和自动回滚尚未实现，见
+[Core 更新规划](docs/02-core-update.md)。本次架构审阅确认的熔断恢复过期任务、
+Profile 激活失败回滚边界见 [架构与已知问题](docs/01-product-architecture.md)。
 
 ## 本地数据
 
 ```text
 ~/Library/Application Support/MCP Gate/servers.json
+~/Library/Application Support/MCP Gate/profiles.json
 ~/Library/Application Support/MCP Gate/tool-policy.json
+~/Library/Application Support/MCP Gate/gateway-access.json
+~/Library/Application Support/MCP Gate/session-settings.json
 ~/Library/Logs/MCP Gate/core.jsonl
+~/Library/Logs/MCP Gate/audit.jsonl
 ```
 
-HTTP MCP Authorization 不写入 JSON，而是存入 macOS Keychain。
+具体路径可通过 Core 配置覆盖。Keychain-backed 凭据不写入 JSON；自定义 HTTP
+headers 是明文配置，两种路径需区分。写入有原子替换和轮转备份，但不是跨文件事务数据库。
 
 ## 发布
 

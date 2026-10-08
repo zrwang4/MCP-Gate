@@ -2,6 +2,10 @@
 
 MCP Gate now has two macOS packaging workflows.
 
+This describes the configured workflows, not proof of a completed signed release.
+Formal builds require Apple credentials and successful artifact verification.
+Tauri Updater is intentionally disabled; releases distribute DMG and App ZIP assets.
+
 ## Release Preview
 
 `.github/workflows/release-preview.yml`
@@ -37,13 +41,12 @@ APPLE_ID
 APPLE_PASSWORD
 APPLE_TEAM_ID
 KEYCHAIN_PASSWORD
-TAURI_SIGNING_PRIVATE_KEY
-TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
 `APPLE_CERTIFICATE` is the base64-encoded Developer ID Application `.p12` certificate. `APPLE_PASSWORD` should be an Apple app-specific password.
 
-`TAURI_SIGNING_PRIVATE_KEY` contains the complete Tauri Updater private key. It is independent from the Apple certificate and must be backed up permanently. `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is optional and may be omitted for an unencrypted key.
+Updater signing keys are not required by the current workflow. Requirements for
+restoring that feature are documented in [Tauri Updater](35-tauri-updater.md).
 
 ## Architectures
 
@@ -68,17 +71,18 @@ version consistency + tests + typecheck + build
 │ Developer ID signing     │ Developer ID signing     │
 │ notarization + stapling  │ notarization + stapling  │
 │ DMG + app.zip            │ DMG + app.zip            │
-│ updater tar.gz + .sig    │ updater tar.gz + .sig    │
 └──────────────────────────┴──────────────────────────┘
                   ↓
        download both artifacts
                   ↓
-       latest.json + SHA256SUMS.txt
+             SHA256SUMS.txt
                   ↓
           draft GitHub Release
 ```
 
-The GitHub Release is intentionally created as a draft so the assets can be tested before publishing publicly. The updater cannot see a draft: `releases/latest` changes only after the stable release is published. Prerelease tags remain outside the stable update channel.
+New GitHub Releases are intentionally created as drafts so the assets can be
+tested before publishing publicly. Prerelease tags are marked as prereleases.
+The current workflow does not generate updater archives, `.sig` files or `latest.json`.
 
 ## Example
 

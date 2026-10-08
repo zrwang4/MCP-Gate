@@ -10,19 +10,24 @@ MG-006 的第一步是把 MCP 配置从写死的 Filesystem PoC 中拆出来。
 ~/Library/Application Support/MCP Gate/servers.json
 ```
 
-当前使用 JSON 是为了减少 MVP 依赖；多 MCP 聚合稳定后再迁移 SQLite。
+当前个人使用采用 JSON 存储，没有计划为了聚合功能迁移 SQLite。
 
-写入采用同目录临时文件 + rename，文件权限为 `0600`。
+写入采用同目录临时文件 + rename，文件权限为 `0600`，覆盖前保存轮转备份。
+持久化失败时恢复 Store 内存；备份恢复后通过 `reload()` 重读配置，
+不在 reload 中修复或重建文件。
 
 ## API
 
 ```text
 GET    /api/server-configs
 POST   /api/server-configs
+POST   /api/server-configs/:id
+POST   /api/server-configs/:id/environment
+POST   /api/server-configs/:id/settings
 DELETE /api/server-configs/:id
 ```
 
-POST 当前支持 stdio 配置：
+POST 支持 stdio 与 HTTP 配置，以下为 stdio 示例：
 
 ```json
 {
@@ -35,6 +40,7 @@ POST 当前支持 stdio 配置：
 
 ## 当前边界
 
-这些配置已经可以在桌面端新增和删除，但暂时不会各自启动独立公开 proxy。
-
-下一步将由 `UpstreamManager` 读取 Server Registry，用 MCP client transport 连接各个 stdio upstream，再由统一 GatewayServer 聚合 Tools。
+配置可通过桌面端增删改；`ServerService` 协调配置、凭据和运行时变更。
+`UpstreamManager` 使用 stdio 或 HTTP MCP transport 连接上游，再由统一
+GatewayServer 聚合 Tools，不为每个配置启动独立公开 proxy。
+连接/断开/刷新工具使用 `/api/upstreams/:id/connect|disconnect|refresh-tools`。

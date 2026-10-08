@@ -1,5 +1,15 @@
 # MCP Gate — Development Plan
 
+## Status
+
+The lists below are the original roadmap, not a current backlog. Aggregation,
+server/tool management, profiles, Keychain, tray/autostart and bundled Node/Core
+are implemented. Signing/notarization and dual-architecture release workflows
+are configured; successful signed publication still depends on credentials and
+artifact validation. Current personal-use storage remains JSON; SQLite migration
+is not scheduled. Independent Core updates/rollback are future designs, and
+Tauri Updater is intentionally disabled. See [current architecture](01-product-architecture.md).
+
 ## P0: Technical PoC
 
 - MG-001 Monorepo

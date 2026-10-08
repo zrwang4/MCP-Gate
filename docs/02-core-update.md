@@ -1,6 +1,15 @@
 # MCP Gate — Core Upgrade Design
 
-App, Core, and `mcp-proxy` versions are independent.
+## Status: future design, not implemented
+
+The current app bundles Node and a compiled Core runtime. It does not download
+candidate Core versions, switch `current.json`, self-test an update or
+automatically roll back. Tauri Updater is also intentionally disabled; see
+[current updater status](35-tauri-updater.md).
+
+The sections below describe the proposed independent Core updater. App and Core
+release versions are currently checked for consistency by `release:check`;
+`mcp-proxy` is separately version-pinned.
 
 ```text
 App Version
@@ -8,7 +17,7 @@ Core Version
 mcp-proxy Version
 ```
 
-Target Core layout:
+Proposed Core layout (not the current installed layout):
 
 ```text
 ~/Library/Application Support/MCP Gate/core/
