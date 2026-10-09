@@ -65,9 +65,10 @@ export class ProfileService {
         };
       }
 
+      const previousTargets = this.#reconciler.connectionTargets();
       const result = await this.#reconciler.applyExactSet(input.serverIds);
       if (result.failed.length > 0) {
-        const rollback = await this.#reconciler.applyExactSet(previous.serverIds);
+        const rollback = await this.#reconciler.applyExactSet(previousTargets);
         return {
           ok: false,
           profile: previous,
@@ -87,7 +88,7 @@ export class ProfileService {
           result,
         };
       } catch (error) {
-        const rollback = await this.#reconciler.applyExactSet(previous.serverIds);
+        const rollback = await this.#reconciler.applyExactSet(previousTargets);
         throw new Error(
           `profile update persisted failed: ${error instanceof Error ? error.message : String(error)}; runtime rollback failed/succeeded with ${rollback.failed.length} failure(s)`,
         );
@@ -101,16 +102,11 @@ export class ProfileService {
       if (!profile) throw new Error("profile not found");
 
       const previousActiveProfileId = this.#store.activeProfileId;
-      const previousActiveProfile =
-        previousActiveProfileId && previousActiveProfileId !== id
-          ? this.#store.get(previousActiveProfileId)
-          : null;
+      const previousTargets = this.#reconciler.connectionTargets();
 
       const result = await this.#reconciler.applyExactSet(profile.serverIds);
       if (result.failed.length > 0) {
-        const rollback = previousActiveProfile
-          ? await this.#reconciler.applyExactSet(previousActiveProfile.serverIds)
-          : await this.#reconciler.applyExactSet([]);
+        const rollback = await this.#reconciler.applyExactSet(previousTargets);
         return {
           ok: false,
           profile,
@@ -123,9 +119,7 @@ export class ProfileService {
       try {
         await this.#store.setActive(id);
       } catch (error) {
-        const rollback = previousActiveProfile
-          ? await this.#reconciler.applyExactSet(previousActiveProfile.serverIds)
-          : await this.#reconciler.applyExactSet([]);
+        const rollback = await this.#reconciler.applyExactSet(previousTargets);
         throw new Error(
           `profile activation persistence failed: ${error instanceof Error ? error.message : String(error)}; runtime rollback failures=${rollback.failed.length}`,
         );

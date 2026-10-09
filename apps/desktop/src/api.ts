@@ -19,7 +19,13 @@ async function getManagementToken(): Promise<string | null> {
   return managementTokenPromise;
 }
 
-export async function api<T>(path: string, init?: RequestInit, timeoutMs = 4000): Promise<T> {
+export const MANAGEMENT_MUTATION_TIMEOUT_MS = 180_000;
+
+export async function api<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = init?.method && init.method !== "GET" ? MANAGEMENT_MUTATION_TIMEOUT_MS : 4000,
+): Promise<T> {
   const headers = new Headers(init?.headers);
   const managementToken = await getManagementToken();
   if (managementToken) {
@@ -40,13 +46,24 @@ export async function api<T>(path: string, init?: RequestInit, timeoutMs = 4000)
       signal: controller.signal,
     });
 
-    const body = (await response.json()) as T & { error?: string };
+    const body = (await response.json()) as T & { error?: string; reconnectError?: string };
     if (!response.ok) {
+      if (body.reconnectError) {
+        throw new Error(`配置已保存，但重新连接失败：${body.reconnectError}`);
+      }
       throw new Error(body.error ?? `HTTP ${response.status}`);
     }
     return body;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        init?.method && init.method !== "GET"
+          ? "等待操作结果超时，后台可能仍在执行。请刷新确认实际状态后再操作，不要立即重复提交。"
+          : "读取状态超时，请稍后刷新。",
+      );
+    }
+    throw error;
   } finally {
     globalThis.clearTimeout(timeout);
   }
 }
-

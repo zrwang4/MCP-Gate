@@ -43,6 +43,10 @@ export interface ServerConfigInput {
   url?: string;
   headers?: Record<string, string>;
   authSecretId?: string | null;
+  environment?: {
+    env: Record<string, string>;
+    envSecretIds: Record<string, string>;
+  };
 }
 
 interface RegistryFile {
@@ -171,7 +175,7 @@ export class ServerRegistry {
       }
     }
 
-    if (updated.transport === "stdio" && current.transport === "stdio") {
+    if (!input.environment && updated.transport === "stdio" && current.transport === "stdio") {
       updated.env = current.env ? { ...current.env } : undefined;
       updated.envSecretIds = current.envSecretIds
         ? { ...current.envSecretIds }
@@ -300,6 +304,7 @@ export class ServerRegistry {
     const transport = input.transport ?? "stdio";
 
     if (transport === "http") {
+      if (input.environment) throw new Error("environment is only available for stdio servers");
       return {
         ...meta,
         name,
@@ -325,6 +330,10 @@ export class ServerRegistry {
       command,
       args: validateArgs(input.args ?? []),
       cwd,
+      ...(input.environment ? {
+        env: compactRecord(validateEnvironment(input.environment.env)),
+        envSecretIds: compactRecord(validateSecretIds(input.environment.envSecretIds)),
+      } : {}),
     };
   }
 
@@ -373,7 +382,7 @@ function validateArgs(values: string[]): string[] {
   });
 }
 
-function validateEnvironment(values: Record<string, string>): Record<string, string> {
+export function validateEnvironment(values: Record<string, string>): Record<string, string> {
   return validateStringRecord(values, "environment value", 65_536);
 }
 

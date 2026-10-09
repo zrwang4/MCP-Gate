@@ -1,7 +1,7 @@
 import { Activity } from "lucide-react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, DEFAULT_GATEWAY_URL, IS_TAURI } from "./api";
+import { api, DEFAULT_GATEWAY_URL, IS_TAURI, MANAGEMENT_MUTATION_TIMEOUT_MS } from "./api";
 import type {
   AuditEntry,
   ConnectionTestResult,
@@ -813,7 +813,7 @@ export function App() {
                 expectedModifiedAt: importSourceSnapshot?.modifiedAt,
               }),
             },
-            60_000,
+            MANAGEMENT_MUTATION_TIMEOUT_MS,
           )
         : await api<{ result: McpImportApplyResult }>(
             "/api/import/mcp-config/apply",
@@ -821,7 +821,7 @@ export function App() {
               method: "POST",
               body: JSON.stringify({ config: parseImportConfig() }),
             },
-            60_000,
+            MANAGEMENT_MUTATION_TIMEOUT_MS,
           );
 
       setImportApplyResult(response.result);
@@ -902,6 +902,7 @@ export function App() {
       setProfileServerIds([]);
       await refresh();
     } catch (cause) {
+      await refresh();
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setProfileBusy(false);
@@ -924,7 +925,7 @@ export function App() {
           method: "POST",
           body: "{}",
         },
-        120_000,
+        MANAGEMENT_MUTATION_TIMEOUT_MS,
       );
 
       setActiveProfileId(response.activeProfileId);
@@ -940,8 +941,8 @@ export function App() {
       }
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
       await refresh();
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(null);
     }
@@ -978,6 +979,7 @@ export function App() {
       }
       await refresh();
     } catch (cause) {
+      await refresh();
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setProfileBusy(false);
@@ -1101,7 +1103,6 @@ export function App() {
   async function saveServerConfig() {
     setConfigBusy(true);
     setError(null);
-    let createdServerId: string | null = null;
 
     try {
       const plainEnv =
@@ -1120,7 +1121,7 @@ export function App() {
         }
       }
 
-      const response = await api<{ server: ServerConfigInfo }>(
+      await api<{ server: ServerConfigInfo }>(
         editingServerId
           ? `/api/server-configs/${editingServerId}`
           : "/api/server-configs",
@@ -1139,27 +1140,14 @@ export function App() {
               newServerTransport === "http"
                 ? parseHeadersText(newServerHeaders)
                 : undefined,
-          }),
-        },
-      );
-
-      if (!editingServerId) {
-        createdServerId = response.server.id;
-      }
-
-      if (newServerTransport === "stdio") {
-        await api<{ server: ServerConfigInfo }>(
-          `/api/server-configs/${response.server.id}/environment`,
-          {
-            method: "POST",
-            body: JSON.stringify({
+            ...(newServerTransport === "stdio" ? {
               env: plainEnv,
               secretEnvKeys,
               secretEnv,
-            }),
-          },
-        );
-      }
+            } : {}),
+          }),
+        },
+      );
 
       setShowAddServer(false);
       setEditingServerId(null);
@@ -1175,13 +1163,8 @@ export function App() {
       setConnectionTestState(null);
       await refresh();
     } catch (cause) {
-      if (createdServerId) {
-        await api(`/api/server-configs/${createdServerId}`, {
-          method: "DELETE",
-        }).catch(() => undefined);
-      }
-      setError(cause instanceof Error ? cause.message : String(cause));
       await refresh();
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setConfigBusy(false);
     }
@@ -1200,12 +1183,12 @@ export function App() {
           method: "POST",
           body: "{}",
         },
-        action === "connect" ? 65_000 : 15_000,
+        MANAGEMENT_MUTATION_TIMEOUT_MS,
       );
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
       await refresh();
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(null);
     }
@@ -1227,6 +1210,7 @@ export function App() {
       );
       await refresh();
     } catch (cause) {
+      await refresh();
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(null);
@@ -1240,6 +1224,7 @@ export function App() {
       await api(`/api/server-configs/${serverId}`, { method: "DELETE" });
       await refresh();
     } catch (cause) {
+      await refresh();
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setConfigBusy(false);

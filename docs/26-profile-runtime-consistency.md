@@ -19,8 +19,8 @@ return updated profile and runtime result
 
 普通未激活 Profile 的编辑不会改变运行状态。
 
-运行集合应用失败时，不保存新成员，并尝试恢复旧成员集合；持久化失败时，
-Store 恢复内存状态，Service 尝试恢复旧成员集合。回滚本身也可能失败。
+运行集合应用失败时，不保存新成员，并尝试恢复操作前的期望连接集合；持久化失败时，
+Store 恢复内存状态，Service 尝试恢复同一目标快照。回滚本身也可能失败。
 
 ## Delete active profile
 
@@ -41,11 +41,13 @@ activeProfileId = null
 ## Activation and rollback boundary
 
 激活时先 `applyExactSet()`，全部成功后才保存 active Profile ID。
-当前失败补偿目标是此前 active Profile 的成员；没有旧 active Profile 时使用空集合。
-重复激活同一 active Profile 时，当前实现也会选用空集合回滚。
+失败补偿目标是在 mutation slot 内、执行前保存的期望连接快照，而不是旧 Profile
+的静态成员列表。快照包括手动连接，以及正在重连或熔断等待中的上游。
+没有旧 active Profile 或重复激活当前 Profile，也使用同一快照进行回滚。
+active Profile ID 只有应用和持久化成功后才改变。
 
-因此失败补偿尚不能保证恢复操作前的实际连接目标：手动连接、或与 active Profile
-成员不一致的运行状态可能丢失。后续应在操作前保存连接目标快照，再用于失败恢复。
+快照恢复的是目标集合，不是旧客户端实例、熔断计数或重试时间；恢复连接可能失败，
+失败明细通过 rollback 结果或错误消息报告。
 
 ## Quick selection
 

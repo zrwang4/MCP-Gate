@@ -78,7 +78,7 @@ upstream upgrade is isolated and can be gated by compatibility tests.
   upgrades and rollback are a [future design](02-core-update.md), not implemented.
 - V1 focuses on Tools before Resources/Prompts/Roots/Sampling/Elicitation
 
-## Current boundaries and known issues
+## Current boundaries and recovery rules
 
 Personal use does not currently require SQLite, a concurrent management queue or
 an UpstreamRuntime FSM rewrite. Single-file writes are atomic; cross-file and
@@ -86,11 +86,20 @@ Keychain operations use compensation rather than a shared database transaction.
 Backup restore reloads in-memory stores, but a Core restart is still required for
 existing connections and gateway sessions to fully adopt restored settings.
 
-Review of the current implementation identified two unresolved cases:
+Queued reconnect and circuit recovery tasks revalidate their runtime/generation
+at execution time; circuit recovery also verifies client identity and circuit state.
+Tasks superseded by manual operations are skipped rather than acting on a new client.
+Profile activation and active Profile editing snapshot the previous connection
+targets, including upstreams awaiting recovery, and use that set for failure compensation.
+Compensation can itself fail; it does not promise to restore identical transports
+or the exact retry/circuit timing of the previous state.
 
-- A queued circuit recovery task can act on a replacement client after a manual
-  disconnect/reconnect because it lacks execution-time generation/client checks.
-- Failed Profile activation restores the previous Profile's set (or an empty set),
-  not necessarily the actual connection targets before the operation.
+The desktop submits server configuration and environment edits in one request.
+Core writes both into the same registry update and reconnects at most once.
+The legacy environment-only endpoint remains available. Keychain entries are
+staged before persistence; newly created entries are cleaned up on failure and
+obsolete entries are removed after a successful save.
 
-These are implementation issues, not reasons to replace the overall layering.
+Management mutations default to a three-minute desktop wait budget, while reads
+default to four seconds. A UI timeout means the result is uncertain, not that
+the backend mutation was cancelled; refresh actual state before retrying.

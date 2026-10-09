@@ -7,6 +7,7 @@ import {
   type RouteHandler,
 } from "./management-context.ts";
 import { testMcpConnection } from "./test-mcp-connection.ts";
+import type { EnvironmentMutationInput } from "./server-service.ts";
 
 export const handleServers: RouteHandler = async (req, res, url, ctx) => {
   if (req.method === "GET" && url.pathname === "/api/servers") {
@@ -132,6 +133,9 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         url?: unknown;
         headers?: unknown;
         authorization?: unknown;
+        env?: unknown;
+        secretEnvKeys?: unknown;
+        secretEnv?: unknown;
       };
 
       const transport = body.transport === "http" ? "http" : "stdio";
@@ -145,6 +149,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         url: typeof body.url === "string" ? body.url : undefined,
         headers: readOptionalHeaders(body.headers),
         authorization,
+        environment: readEnvironmentMutation(body),
       });
 
       json(res, 201, { server: toPublicServerConfig(server) });
@@ -179,6 +184,9 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         headers?: unknown;
         authorization?: unknown;
         clearAuthorization?: unknown;
+        env?: unknown;
+        secretEnvKeys?: unknown;
+        secretEnv?: unknown;
       };
 
       const transport =
@@ -199,6 +207,7 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
         headersProvided: Object.prototype.hasOwnProperty.call(body, "headers"),
         authorization: normalizeOptionalAuthorization(body.authorization),
         clearAuthorization: body.clearAuthorization === true,
+        environment: readEnvironmentMutation(body),
       });
 
       json(res, result.reconnectError ? 409 : 200, {
@@ -276,6 +285,19 @@ export const handleServers: RouteHandler = async (req, res, url, ctx) => {
 
   return false;
 };
+
+function readEnvironmentMutation(body: {
+  env?: unknown; secretEnvKeys?: unknown; secretEnv?: unknown;
+}): EnvironmentMutationInput | undefined {
+  if (!["env", "secretEnvKeys", "secretEnv"].some((key) => Object.prototype.hasOwnProperty.call(body, key))) {
+    return undefined;
+  }
+  return {
+    env: normalizeEnvironmentRecord(body.env),
+    secretEnvKeys: normalizeEnvironmentKeys(body.secretEnvKeys),
+    secretEnv: normalizeEnvironmentRecord(body.secretEnv),
+  };
+}
 
 function normalizeOptionalAuthorization(value: unknown): string | undefined {
   if (value === undefined || value === null || value === "") return undefined;

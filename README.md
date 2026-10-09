@@ -178,8 +178,8 @@ packages/core/src/main.ts
 [生产运行时打包](docs/19-production-core-runtime.md)。
 
 独立 Core 下载、候选版本验证和自动回滚尚未实现，见
-[Core 更新规划](docs/02-core-update.md)。本次架构审阅确认的熔断恢复过期任务、
-Profile 激活失败回滚边界见 [架构与已知问题](docs/01-product-architecture.md)。
+[Core 更新规划](docs/02-core-update.md)。恢复任务有效期校验、Profile 目标快照补偿及
+管理操作超时语义见 [架构与恢复规则](docs/01-product-architecture.md)。
 
 ## 本地数据
 

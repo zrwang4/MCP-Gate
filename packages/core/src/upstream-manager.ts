@@ -238,6 +238,13 @@ export class UpstreamManager {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  /** Connection intent, including upstreams currently awaiting recovery. */
+  connectionTargets(): string[] {
+    return [...this.#runtimes.values()]
+      .filter((runtime) => runtime.desiredConnected && runtime.config.enabled)
+      .map((runtime) => runtime.config.id);
+  }
+
   async connect(id: string): Promise<UpstreamSnapshot> {
     this.#syncConfiguredRuntimes();
     const runtime = this.#requireRuntime(id);
@@ -714,13 +721,22 @@ export class UpstreamManager {
       `retry #${runtime.reconnectAttempt} for ${runtime.config.name} in ${delay}ms`,
     );
 
+    const generation = runtime.generation;
     runtime.reconnectTimer = setTimeout(() => {
       runtime.reconnectTimer = null;
       runtime.nextRetryAt = null;
 
       if (!runtime.desiredConnected || !runtime.config.enabled) return;
 
-      const retry = () => this.#connectRuntime(runtime, true);
+      const retry = async () => {
+        if (
+          this.#runtimes.get(runtime.config.id) !== runtime ||
+          runtime.generation !== generation ||
+          !runtime.desiredConnected || !runtime.config.enabled ||
+          runtime.status === "running"
+        ) return;
+        await this.#connectRuntime(runtime, true);
+      };
       void (this.#mutations
         ? this.#mutations.run(retry)
         : retry()
@@ -867,12 +883,22 @@ export class UpstreamManager {
     this.#logger.warn("upstream", `circuit opened for ${runtime.config.name}: ${reason}; recovery probe in ${this.#circuitResetMs}ms`);
 
     if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
+    const generation = runtime.generation;
+    const expectedClient = runtime.client;
     const timer = setTimeout(() => {
       runtime.reconnectTimer = null;
       runtime.nextRetryAt = null;
       if (!runtime.desiredConnected || !runtime.config.enabled) return;
 
       const recover = async (): Promise<void> => {
+        if (
+          this.#runtimes.get(runtime.config.id) !== runtime ||
+          runtime.generation !== generation ||
+          runtime.client !== expectedClient ||
+          runtime.circuitState !== "open" ||
+          !runtime.desiredConnected || !runtime.config.enabled ||
+          this.#busy.has(runtime.config.id)
+        ) return;
         if (runtime.client) {
           const retainedClient = runtime.client;
           try {

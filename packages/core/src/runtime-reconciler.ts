@@ -17,6 +17,10 @@ export class RuntimeReconciler {
     await this.#upstreams.reconcile();
   }
 
+  connectionTargets(): string[] {
+    return this.#upstreams.connectionTargets();
+  }
+
   async applyExactSet(serverIds: string[]): Promise<ProfileApplyResult> {
     await this.#upstreams.reconcile();
 

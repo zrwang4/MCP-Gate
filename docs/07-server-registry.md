@@ -38,6 +38,11 @@ POST 支持 stdio 与 HTTP 配置，以下为 stdio 示例：
 }
 ```
 
+创建和编辑 stdio 配置时可同时提交 `env`、`secretEnvKeys`、`secretEnv`，
+Service 将基础配置与环境保存为一次 registry 写入；运行中的编辑仅重连一次。
+省略这些字段时保留既有环境，显式提交空对象/空数组时清空环境。
+旧 environment-only endpoint 仍兼容。Secret 明文只进入安全存储，不写入 registry。
+
 ## 当前边界
 
 配置可通过桌面端增删改；`ServerService` 协调配置、凭据和运行时变更。
