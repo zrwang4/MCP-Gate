@@ -1,6 +1,17 @@
-import { Activity, FileText, Pencil, Play, Plus, RefreshCw, Server, Square, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Activity, FileText, GripVertical, Pencil, Play, Plus, RefreshCw, Server, Square, Trash2 } from "lucide-react";
 import type { ServerConfigInfo, StatusResponse, ToolInfo, UpstreamInfo } from "../types";
 import { formatTime, serverIconFor, upstreamStatusLabel } from "../lib/format";
+import { moveServer, orderServers, parseServerOrder, SERVER_ORDER_KEY } from "../lib/server-order";
+
+interface ServerDrag {
+  id: string;
+  pointerId: number;
+  startY: number;
+  active: boolean;
+  target: string | null;
+  after: boolean;
+}
 
 interface ServersSectionProps {
   busy: string | null;
@@ -20,6 +31,31 @@ interface ServersSectionProps {
 }
 
 export function ServersSection({busy, configBusy, openCreateServer, openEditServer, openImportConfig, refresh, serverConfigs, setDeletingServerId, setSelectedServerId, status, tools, updateServerSettings, upstreamAction, upstreams}: ServersSectionProps) {
+  const [displayOrder, setDisplayOrder] = useState<string[]>(() => {
+    try { return parseServerOrder(localStorage.getItem(SERVER_ORDER_KEY)); }
+    catch { return []; }
+  });
+  const [drag, setDrag] = useState<ServerDrag | null>(null);
+  const dragRef = useRef<ServerDrag | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [orderMessage, setOrderMessage] = useState("");
+  const sortedServers = orderServers(serverConfigs, displayOrder);
+
+  function saveOrder(next: string[]) {
+    setDisplayOrder(next);
+    try {
+      localStorage.setItem(SERVER_ORDER_KEY, JSON.stringify(next));
+      setOrderMessage("排序已保存");
+    } catch {
+      setOrderMessage("排序已调整，但本机存储不可用，重启后可能恢复原顺序。");
+    }
+  }
+
+  function cancelDrag() {
+    dragRef.current = null;
+    setDrag(null);
+  }
+
   return (
 <section className="section">
   <div className="sectionTitle">
@@ -44,18 +80,64 @@ export function ServersSection({busy, configBusy, openCreateServer, openEditServ
       <span>添加一个 stdio MCP 后即可连接并聚合 Tools。</span>
     </div>
   ) : (
-    <div className="configuredServers">
-      {serverConfigs.map((server) => {
+    <div className="configuredServers" ref={listRef}>
+      {sortedServers.map((server) => {
         const upstream = upstreams.find((item) => item.id === server.id);
         const upstreamStatus = upstream?.status ?? "configured";
         const changing = busy?.startsWith(`${server.id}:`) ?? false;
         const connected = upstreamStatus === "running" || upstreamStatus === "connecting";
+        const launchDescription = server.transport === "http"
+          ? server.url ?? ""
+          : `${server.command ?? ""} ${(server.args ?? []).join(" ")}`.trim();
 
         return (
           <article
-            className={`serverCard configuredCard ${server.enabled ? "" : "serverDisabled"}`}
+            className={`serverCard configuredCard ${server.enabled ? "" : "serverDisabled"} ${drag?.active && drag.id === server.id ? "serverDragging" : ""} ${drag?.active && drag.target === server.id ? (drag.after ? "serverDropAfter" : "serverDropBefore") : ""}`}
             key={server.id}
+            data-server-id={server.id}
           >
+            <button
+              type="button"
+              className="serverDragHandle"
+              aria-label={`拖拽排序 ${server.name}`}
+              title="拖拽排序；也可使用上下方向键调整"
+              disabled={sortedServers.length < 2}
+              onPointerDown={(event) => {
+                if (event.button !== 0 || !event.isPrimary) return;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                dragRef.current = { id: server.id, pointerId: event.pointerId, startY: event.clientY, active: false, target: null, after: false };
+              }}
+              onPointerMove={(event) => {
+                const current = dragRef.current;
+                if (!current || current.pointerId !== event.pointerId) return;
+                if (!current.active && Math.abs(event.clientY - current.startY) < 5) return;
+                const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-server-id]");
+                const valid = target && listRef.current?.contains(target) && target.dataset.serverId !== current.id;
+                const next = { ...current, active: true, target: valid ? target.dataset.serverId ?? null : null, after: valid ? event.clientY > target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2 : false };
+                dragRef.current = next;
+                setDrag(next);
+              }}
+              onPointerUp={(event) => {
+                const current = dragRef.current;
+                if (!current || current.pointerId !== event.pointerId) return;
+                if (current.active && current.target) {
+                  saveOrder(moveServer(sortedServers.map((item) => item.id), current.id, current.target, current.after));
+                }
+                cancelDrag();
+              }}
+              onPointerCancel={cancelDrag}
+              onLostPointerCapture={cancelDrag}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") { cancelDrag(); return; }
+                if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                event.preventDefault();
+                const index = sortedServers.findIndex((item) => item.id === server.id);
+                const target = sortedServers[index + (event.key === "ArrowUp" ? -1 : 1)];
+                if (target) saveOrder(moveServer(sortedServers.map((item) => item.id), server.id, target.id, event.key === "ArrowDown"));
+              }}
+            >
+              <GripVertical size={16} />
+            </button>
             <div className="serverIcon">
               {(() => {
                 const ServerIcon = serverIconFor(server);
@@ -64,7 +146,7 @@ export function ServersSection({busy, configBusy, openCreateServer, openEditServ
             </div>
             <div className="serverInfo">
               <div className="serverNameRow">
-                <strong>{server.name}</strong>
+                <strong title={server.name}>{server.name}</strong>
                 <span
                   className={`pill ${
                     !server.enabled
@@ -77,10 +159,8 @@ export function ServersSection({busy, configBusy, openCreateServer, openEditServ
                   {server.enabled ? upstreamStatusLabel(upstreamStatus) : "已禁用"}
                 </span>
               </div>
-              <span>
-                {server.transport === "http"
-                  ? server.url
-                  : `${server.command ?? ""} ${(server.args ?? []).join(" ")}`}
+              <span title={launchDescription}>
+                {launchDescription}
               </span>
               <div className="serverMeta">
                 <span>{server.transport.toUpperCase()}</span>
@@ -92,7 +172,7 @@ export function ServersSection({busy, configBusy, openCreateServer, openEditServ
             Object.keys(server.headers ?? {}).length > 0 && (
               <span>{Object.keys(server.headers ?? {}).length} 个自定义 Header</span>
             )}
-                <span>{server.cwd || "默认工作目录"}</span>
+                <span title={server.cwd || "默认工作目录"}>{server.cwd || "默认工作目录"}</span>
                 {server.transport === "stdio" && (
                   <span>
                     {Object.keys(server.env ?? {}).length + (server.secretEnvKeys?.length ?? 0)} 个环境变量
@@ -191,6 +271,7 @@ export function ServersSection({busy, configBusy, openCreateServer, openEditServ
       })}
     </div>
   )}
+  <span className="serverOrderMessage" role="status">{orderMessage}</span>
 </section>
   );
 }
