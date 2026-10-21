@@ -1,8 +1,9 @@
 mod core_supervisor;
+mod bundled_runtime;
 
 use core_supervisor::{CoreRuntimeStatus, CoreSupervisor};
+use bundled_runtime::{find_bundled_node, simplify_windows_path};
 use tauri::{
-    ipc::Channel,
     menu::{Menu, MenuItem},
     path::BaseDirectory,
     tray::TrayIconBuilder,
@@ -75,26 +76,28 @@ pub fn run() {
             Some(vec!["--hidden"]),
         ))
         .setup(|app| {
+            #[cfg(target_os = "macos")]
             let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let start_hidden = std::env::args().any(|arg| arg == "--hidden");
 
-            let bundled_node = std::env::current_exe()
+            let executable_dir = std::env::current_exe()
                 .ok()
-                .and_then(|path| path.parent().map(|parent| parent.join("mcp-gate-node")))
-                .filter(|path| path.exists())
-                .or_else(|| {
-                    app.path()
-                        .resolve("core-runtime/node", BaseDirectory::Resource)
-                        .ok()
-                        .filter(|path| path.exists())
-                });
+                .and_then(|path| path.parent().map(|parent| parent.to_path_buf()));
+            let resource_dir = app.path().resource_dir().ok();
+            let bundled_node = find_bundled_node(
+                executable_dir.as_deref(),
+                resource_dir.as_deref(),
+                env!("MCP_GATE_TARGET_TRIPLE"),
+                cfg!(windows),
+            ).map(simplify_windows_path);
 
             let bundled_core_entry = app
                 .path()
                 .resolve("core-runtime/dist/main.js", BaseDirectory::Resource)
                 .ok()
-                .filter(|path| path.exists());
+                .filter(|path| path.is_file())
+                .map(simplify_windows_path);
 
             let supervisor = CoreSupervisor::new(
                 bundled_node,

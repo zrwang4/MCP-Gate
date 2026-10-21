@@ -77,3 +77,35 @@ jobs:
 
       - name: Check Tauri Rust shell
         run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+  windows-runtime:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          corepack prepare pnpm@10.17.1 --activate
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Test staging helpers
+        run: npm run test:staging
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build TypeScript and UI
+        run: npm run build
+      - name: Prepare sidecar runtime
+        run: npm run desktop:sidecar:prepare
+      - name: Verify final desktop runtime
+        run: node scripts/prepare-desktop-runtime.mjs
+      - name: Test Tauri shell and runtime selection
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib

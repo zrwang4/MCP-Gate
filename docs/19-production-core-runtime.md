@@ -57,6 +57,9 @@ apps/desktop/src-tauri/tauri.production.conf.json
 
 ## Runtime selection
 
+Windows 资源副本使用 `core-runtime/node.exe`，sidecar 使用 `.exe` 后缀。
+构建限制和验证清单见 [Windows compatibility](36-windows-compatibility.md)。
+
 CoreSupervisor 的优先级：
 
 ```text

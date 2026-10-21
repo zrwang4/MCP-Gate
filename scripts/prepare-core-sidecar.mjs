@@ -2,17 +2,15 @@ import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
-  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
-  realpathSync,
   rmSync,
   statSync,
 } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { packageManagerCandidates, materializeRuntimeSymlinks, verifyRuntimeDependencies } from "./runtime-staging.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(scriptDir, "..");
@@ -50,13 +48,7 @@ function assertSupportedNode() {
  */
 function resolvePackageManager() {
   const pinned = readPinnedPackageManager();
-  const candidates = [
-    // `corepack pnpm@<version>` resolves the pinned release without requiring
-    // `corepack enable` or a shim on PATH.
-    ...(pinned ? [{ command: "corepack", prefix: [`pnpm@${pinned}`] }] : []),
-    { command: "pnpm", prefix: [] },
-    ...(pinned ? [] : [{ command: "corepack", prefix: ["pnpm"] }]),
-  ];
+  const candidates = packageManagerCandidates(pinned);
 
   for (const candidate of candidates) {
     if (supportsLegacyDeploy(candidate)) return candidate;
@@ -146,7 +138,10 @@ run(
     "--legacy",
     coreRuntimeDir,
   ],
-  { npm_config_node_linker: "hoisted" },
+  {
+    npm_config_node_linker: "hoisted",
+    ...(process.platform === "win32" ? { npm_config_package_import_method: "copy" } : {}),
+  },
 );
 
 const nodeSidecar = join(
@@ -169,13 +164,13 @@ if (!entryStat.isFile()) {
   throw new Error(`Core entry is not a file: ${coreEntry}`);
 }
 
-const dereferenced = dereferenceSymlinks(coreRuntimeDir);
+const dereferenced = materializeRuntimeSymlinks(coreRuntimeDir, root);
 console.log(
   `[sidecar] materialised ${dereferenced.replaced} symlink(s)` +
     `${dereferenced.dropped > 0 ? `, dropped ${dereferenced.dropped} external` : ""}`,
 );
 
-verifyResolvableDependencies();
+verifyRuntimeDependencies(coreRuntimeDir);
 
 console.log(
   JSON.stringify(
@@ -192,96 +187,3 @@ console.log(
     2,
   ),
 );
-
-/**
- * `pnpm deploy` produces a symlink-based `node_modules`
- * (`node_modules/zod -> .pnpm/zod@…/…`, `node_modules/@mcp-gate/core -> <repo>/packages/core`).
- *
- * Two problems for a shipped app:
- *  - Tauri copies bundle resources without following symlinks, so every top-level
- *    dependency ends up missing and the Core dies on its first import.
- *  - a signed app must never contain links pointing outside its own bundle.
- *
- * Links that resolve outside the staged tree are the workspace self-reference
- * that `pnpm deploy` always creates; they are dead weight once packaged, so they
- * are dropped. Everything inside the tree is materialised as real files.
- */
-function dereferenceSymlinks(rootDir) {
-  let replaced = 0;
-  let dropped = 0;
-
-  const visit = (dir) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-
-      if (entry.isSymbolicLink()) {
-        let target;
-        try {
-          target = realpathSync(full);
-        } catch {
-          // Broken link: nothing to materialise, and it must not ship.
-          rmSync(full, { recursive: true, force: true });
-          dropped += 1;
-          continue;
-        }
-
-        if (target === rootDir || full.startsWith(`${target}${sep}`)) {
-          throw new Error(
-            `refusing to materialise a self-referential symlink: ${full} -> ${target}`,
-          );
-        }
-
-        if (!target.startsWith(`${rootDir}${sep}`)) {
-          // Workspace self-reference (`@mcp-gate/core` -> ../../packages/core);
-          // it cannot survive packaging and the real code is already in dist/.
-          rmSync(full, { recursive: true, force: true });
-          dropped += 1;
-          continue;
-        }
-
-        rmSync(full, { recursive: true, force: true });
-        cpSync(target, full, { recursive: true, dereference: true });
-        replaced += 1;
-        if (statSync(full).isDirectory()) visit(full);
-        continue;
-      }
-
-      if (entry.isDirectory()) visit(full);
-    }
-  };
-
-  visit(rootDir);
-  return { replaced, dropped };
-}
-
-/**
- * The whole point of staging is a self-contained runtime. Fail the build here
- * instead of shipping an app whose Core dies on its first import.
- */
-function verifyResolvableDependencies() {
-  const probe = [
-    "const out = [];",
-    'for (const name of ["@modelcontextprotocol/server", "@modelcontextprotocol/node", "@modelcontextprotocol/client", "zod"]) {',
-    "  try { await import(name); out.push(`${name}:ok`); }",
-    "  catch (error) { out.push(`${name}:FAIL:${error.code ?? error.message}`); }",
-    "}",
-    "console.log(out.join(' '));",
-  ].join("\n");
-
-  const output = execFileSync(
-    process.execPath,
-    ["--input-type=module", "-e", probe],
-    { cwd: coreRuntimeDir, encoding: "utf8", env: process.env },
-  );
-
-  const failures = output
-    .trim()
-    .split(/\s+/)
-    .filter((line) => line.includes(":FAIL:"));
-
-  if (failures.length > 0) {
-    throw new Error(
-      `staged Core runtime cannot resolve its dependencies: ${failures.join(", ")}`,
-    );
-  }
-}

@@ -6,10 +6,11 @@
 //     package.json    # so ESM resolution works inside the bundle
 //     node_modules/** # production deps only (includes optional @github/keytar)
 
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { copyRuntimePath, npmCommand, materializeRuntimeSymlinks, verifyRuntimeDependencies } from "./runtime-staging.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..");
@@ -30,7 +31,7 @@ function fail(message) {
 
 function copyPath(from, to) {
   if (!existsSync(from)) fail(`missing source: ${from}`);
-  cpSync(from, to, { recursive: true, dereference: true });
+  copyRuntimePath(from, to);
 }
 
 function sizeOf(path) {
@@ -59,12 +60,15 @@ if (!existsSync(join(coreDir, "dist", "main.js"))) {
 
 copyPath(join(coreDir, "dist"), join(staging, "dist"));
 copyPath(join(coreDir, "package.json"), join(staging, "package.json"));
-copyPath(process.execPath, join(staging, "node"));
-chmodSync(join(staging, "node"), 0o755);
+const nodeResourceName = process.platform === "win32" ? "node.exe" : "node";
+copyPath(process.execPath, join(staging, nodeResourceName));
+if (process.platform !== "win32") chmodSync(join(staging, nodeResourceName), 0o755);
 
+const npm = npmCommand();
 execFileSync(
-  "npm",
+  npm.command,
   [
+    ...npm.prefix,
     "install",
     "--omit=dev",
     "--no-audit",
@@ -74,7 +78,10 @@ execFileSync(
   { cwd: staging, stdio: "inherit" },
 );
 
-if (!existsSync(join(staging, "node_modules", "@github", "keytar"))) {
+materializeRuntimeSymlinks(staging, repoRoot);
+verifyRuntimeDependencies(staging);
+
+if (process.platform === "darwin" && !existsSync(join(staging, "node_modules", "@github", "keytar"))) {
   console.warn(
     "[prepare-desktop-runtime] warning: @github/keytar missing; Keychain-backed secrets will be unavailable in the bundled app",
   );

@@ -198,5 +198,7 @@ headers 是明文配置，两种路径需区分。写入有原子替换和轮转
 
 ## 发布
 
+- Windows 构建兼容范围与验证要求：[docs/36-windows-compatibility.md](docs/36-windows-compatibility.md)
+
 - macOS 签名、公证与双架构发布：[docs/33-macos-signed-release.md](docs/33-macos-signed-release.md)
 - 当前版本暂不启用 Tauri Updater；Release 流程发布签名后的 DMG 与 App ZIP。
