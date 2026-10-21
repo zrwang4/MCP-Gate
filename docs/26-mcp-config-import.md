@@ -1,6 +1,8 @@
 # MCP Config Import
 
 MCP Gate 支持粘贴 Claude Desktop / Cursor 风格的 MCP JSON 配置。
+这是格式兼容能力；当前桌面只提供粘贴 JSON，不再显示上述格式说明或本机配置源检测区。
+参见 [导入界面](27-mcp-config-import-ui.md)。
 
 ## Supported shape
 

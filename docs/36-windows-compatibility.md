@@ -9,6 +9,10 @@ Windows 差异包基于 `87cad81`，主要修复安装器构建和捆绑 Core �
 这不是“Windows 全功能支持”的声明。Windows 原生打包、安装、启动和真实 MCP
 调用需要在 Windows 环境验证；macOS 上的分支测试不能替代该验证。
 
+当前 `.github/workflows/ci.yml` 仅保留 Ubuntu 测试和 macOS Rust 检查。
+之前新增的 `windows-runtime` job 已还原，未提供 Windows CI 验证结果，
+也未完成 Windows 原生安装验证。详见 [CI 现状](13-ci.md)。
+
 ## 实现边界
 
 - `scripts/runtime-staging.mjs` 供两个 staging 脚本共用。
@@ -39,7 +43,7 @@ node scripts/prepare-desktop-runtime.mjs
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 ```
 
-`npm test` 包含 Core 测试和 staging 脚本测试。脚本测试覆盖重复链接、目录循环、
+`npm test` 包含 Core 测试、staging 脚本测试和桌面列表排序逻辑测试。staging 测试覆盖重复链接、目录循环、
 断链、外部依赖物化、包管理器入口和最终依赖导入；Windows 文件 symlink 测试在缺少权限时
 会明确 skip，建议开启 Developer Mode 后复测，不能把 skip 当成已验证。
 

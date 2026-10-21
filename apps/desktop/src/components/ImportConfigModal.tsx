@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import type { McpImportApplyResult, McpImportPreview, McpImportSourceInfo } from "../types";
+import type { McpImportApplyResult, McpImportPreview } from "../types";
 
 interface ImportConfigModalProps {
   applyImportConfig: () => Promise<void>;
@@ -7,20 +7,14 @@ interface ImportConfigModalProps {
   importBusy: boolean;
   importConfigText: string;
   importPreview: McpImportPreview | null;
-  importSourceId: string | null;
-  importSources: McpImportSourceInfo[];
   previewImportConfig: () => Promise<void>;
-  previewImportSource: (sourceId: string) => Promise<void>;
-  refreshImportSources: () => Promise<void>;
   setImportApplyResult: (value: McpImportApplyResult | null) => void;
   setImportConfigText: (value: string) => void;
   setImportPreview: (value: McpImportPreview | null) => void;
-  setImportSourceId: (value: string | null) => void;
-  setImportSourceSnapshot: (value: McpImportSourceInfo | null) => void;
   setShowImportConfig: (value: boolean) => void;
 }
 
-export function ImportConfigModal({applyImportConfig, importApplyResult, importBusy, importConfigText, importPreview, importSourceId, importSources, previewImportConfig, previewImportSource, refreshImportSources, setImportApplyResult, setImportConfigText, setImportPreview, setImportSourceId, setImportSourceSnapshot, setShowImportConfig}: ImportConfigModalProps) {
+export function ImportConfigModal({applyImportConfig, importApplyResult, importBusy, importConfigText, importPreview, previewImportConfig, setImportApplyResult, setImportConfigText, setImportPreview, setShowImportConfig}: ImportConfigModalProps) {
   return (
   <div
     className="modalBackdrop"
@@ -30,8 +24,6 @@ export function ImportConfigModal({applyImportConfig, importApplyResult, importB
       setShowImportConfig(false);
       setImportPreview(null);
       setImportApplyResult(null);
-      setImportSourceId(null);
-      setImportSourceSnapshot(null);
     }}
   >
     <section
@@ -44,9 +36,6 @@ export function ImportConfigModal({applyImportConfig, importApplyResult, importB
       <div className="modalHeader">
         <div>
           <h2>导入 MCP 配置</h2>
-          <p>
-            支持 Claude / Cursor 风格 mcpServers JSON。先预览，再写入 Registry 和 Keychain。
-          </p>
         </div>
         <button
           className="iconButton"
@@ -62,43 +51,6 @@ export function ImportConfigModal({applyImportConfig, importApplyResult, importB
         </button>
       </div>
 
-      <div className="importSources">
-        <div className="importSourcesHeader">
-          <div>
-            <strong>本机配置</strong>
-            <span>Core 直接读取，原始 JSON 和 Secret 不会发给 WebView</span>
-          </div>
-          <button
-            type="button"
-            className="profilePickerButton"
-            disabled={importBusy}
-            onClick={() => void refreshImportSources()}
-          >
-            刷新检测
-          </button>
-        </div>
-
-        {importSources.map((source) => (
-          <button
-            type="button"
-            className={`importSourceRow ${importSourceId === source.id ? "selected" : ""}`}
-            key={source.id}
-            disabled={importBusy || !source.exists}
-            onClick={() => void previewImportSource(source.id)}
-          >
-            <div>
-              <strong>{source.label}</strong>
-              <code>{source.displayPath}</code>
-            </div>
-            <span className={source.exists ? "sourceFound" : "sourceMissing"}>
-              {source.exists ? "预览" : "未发现"}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <div className="importDivider"><span>或粘贴 JSON</span></div>
-
       <label className="field">
         <span>JSON 配置</span>
         <textarea
@@ -108,8 +60,6 @@ export function ImportConfigModal({applyImportConfig, importApplyResult, importB
             setImportConfigText(event.target.value);
             setImportPreview(null);
             setImportApplyResult(null);
-            setImportSourceId(null);
-            setImportSourceSnapshot(null);
           }}
           rows={10}
           spellCheck={false}
@@ -201,7 +151,7 @@ export function ImportConfigModal({applyImportConfig, importApplyResult, importB
         </button>
         <button
           className="secondaryButton"
-          disabled={importBusy || !importConfigText.trim() || Boolean(importSourceId)}
+          disabled={importBusy || !importConfigText.trim()}
           onClick={() => void previewImportConfig()}
         >
           {importBusy ? "处理中…" : "预览"}

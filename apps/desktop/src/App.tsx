@@ -11,7 +11,6 @@ import type {
   LogLevel,
   McpImportApplyResult,
   McpImportPreview,
-  McpImportSourceInfo,
   ProfileApplyResult,
   ProfileInfo,
   ServerConfigInfo,
@@ -78,9 +77,6 @@ export function App() {
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [showAddServer, setShowAddServer] = useState(false);
   const [showImportConfig, setShowImportConfig] = useState(false);
-  const [importSources, setImportSources] = useState<McpImportSourceInfo[]>([]);
-  const [importSourceId, setImportSourceId] = useState<string | null>(null);
-  const [importSourceSnapshot, setImportSourceSnapshot] = useState<McpImportSourceInfo | null>(null);
   const [importConfigText, setImportConfigText] = useState("");
   const [importPreview, setImportPreview] = useState<McpImportPreview | null>(null);
   const [importApplyResult, setImportApplyResult] = useState<McpImportApplyResult | null>(null);
@@ -350,8 +346,6 @@ export function App() {
         setShowImportConfig(false);
         setImportPreview(null);
         setImportApplyResult(null);
-        setImportSourceId(null);
-        setImportSourceSnapshot(null);
       } else if (showAddServer) {
         setShowAddServer(false);
         setEditingServerId(null);
@@ -706,61 +700,11 @@ export function App() {
     }
   }
 
-  async function refreshImportSources() {
-    try {
-      const response = await api<{ sources: McpImportSourceInfo[] }>(
-        "/api/import/mcp-config/sources",
-        {
-          method: "POST",
-          body: "{}",
-        },
-        10_000,
-      );
-      setImportSources(response.sources);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }
-
   function openImportConfig() {
     setImportConfigText("");
     setImportPreview(null);
     setImportApplyResult(null);
-    setImportSourceId(null);
-    setImportSourceSnapshot(null);
     setShowImportConfig(true);
-    void refreshImportSources();
-  }
-
-  async function previewImportSource(sourceId: string) {
-    setImportBusy(true);
-    setError(null);
-    setImportApplyResult(null);
-    try {
-      const response = await api<{
-        source: McpImportSourceInfo;
-        preview: McpImportPreview;
-      }>(
-        "/api/import/mcp-config/source-preview",
-        {
-          method: "POST",
-          body: JSON.stringify({ sourceId }),
-        },
-        15_000,
-      );
-      setImportConfigText("");
-      setImportSourceId(sourceId);
-      setImportSourceSnapshot(response.source);
-      setImportPreview(response.preview);
-      await refreshImportSources();
-    } catch (cause) {
-      setImportSourceId(null);
-      setImportSourceSnapshot(null);
-      setImportPreview(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setImportBusy(false);
-    }
   }
 
   function parseImportConfig(): unknown {
@@ -803,26 +747,14 @@ export function App() {
     setImportBusy(true);
     setError(null);
     try {
-      const response = importSourceId
-        ? await api<{ result: McpImportApplyResult }>(
-            "/api/import/mcp-config/source-apply",
-            {
-              method: "POST",
-              body: JSON.stringify({
-                sourceId: importSourceId,
-                expectedModifiedAt: importSourceSnapshot?.modifiedAt,
-              }),
-            },
-            MANAGEMENT_MUTATION_TIMEOUT_MS,
-          )
-        : await api<{ result: McpImportApplyResult }>(
-            "/api/import/mcp-config/apply",
-            {
-              method: "POST",
-              body: JSON.stringify({ config: parseImportConfig() }),
-            },
-            MANAGEMENT_MUTATION_TIMEOUT_MS,
-          );
+      const response = await api<{ result: McpImportApplyResult }>(
+        "/api/import/mcp-config/apply",
+        {
+          method: "POST",
+          body: JSON.stringify({ config: parseImportConfig() }),
+        },
+        MANAGEMENT_MUTATION_TIMEOUT_MS,
+      );
 
       setImportApplyResult(response.result);
       await refresh();
@@ -1408,16 +1340,10 @@ export function App() {
           importBusy={importBusy}
           importConfigText={importConfigText}
           importPreview={importPreview}
-          importSourceId={importSourceId}
-          importSources={importSources}
           previewImportConfig={previewImportConfig}
-          previewImportSource={previewImportSource}
-          refreshImportSources={refreshImportSources}
           setImportApplyResult={setImportApplyResult}
           setImportConfigText={setImportConfigText}
           setImportPreview={setImportPreview}
-          setImportSourceId={setImportSourceId}
-          setImportSourceSnapshot={setImportSourceSnapshot}
           setShowImportConfig={setShowImportConfig}
         />
       )}

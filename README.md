@@ -94,11 +94,15 @@ MCP Gate 当前按个人长期使用场景收口，重点保留高频运维能�
 - MCP Server 增删改、连接/断开、自动重连、健康检查、熔断恢复与 Tool 刷新。
 - Server 详情可查看连接状态、健康状态、熔断状态、工具数量、连续失败和最近运行日志。
 - 支持 Profile 场景切换，以及 Tool 启用/禁用和测试。
+- MCP 管理列表支持拖拽手柄排序，也可聚焦手柄后用上下方向键调整；顺序仅保存于本机 WebView，不改变连接或启动顺序。
+- 长命令和 URL 使用省略号显示，悬停可查看完整内容；长名称、工作目录不会撑开卡片。
+- “导入配置”仅保留粘贴 JSON、预览和导入，不再显示或自动检测本机 Cursor / Claude 配置。详见 [导入界面](docs/27-mcp-config-import-ui.md)。
 - 支持配置备份与恢复。备份包含 Server、Profile、Tool Policy、Gateway Access 和会话生命周期配置，但不会导出 Keychain 中的 Secret 值。
 - Gateway MCP Session 支持空闲自动过期，可在桌面端设置 5 分钟到 24 小时的生命周期；修改后自动重启 Core 生效。
 - Core 日志与 Tool Audit 使用 JSONL 持久化，Core 重启后仍可查询历史记录。
 
 配置备份适合在同一台 Mac 上恢复。由于 Secret 值保存在 macOS Keychain，跨机器恢复后需要重新配置缺失的 Secret。
+列表显示顺序不属于 Core 配置备份，详见 [MCP 管理界面](docs/37-mcp-management-ui.md)。
 
 ## 数据与安全边界
 
