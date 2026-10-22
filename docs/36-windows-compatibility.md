@@ -30,6 +30,21 @@ Windows 差异包基于 `87cad81`，主要修复安装器构建和捆绑 Core �
 - Windows Node/Core 路径去掉驱动器/UNC verbatim 前缀，保留 UTF-16，不做有损字符转换。
   macOS 路径保持原样；ActivationPolicy API 仅在 macOS 编译。
 
+## Windows release 控制台
+
+基于 `f5bf9cc` 的第二份差异包（`windows-no-console-f5dea0d.patch`）整合为：
+
+- Windows release 主程序声明 GUI 子系统，debug 及非 Windows 目标不变。
+- 桌面 supervisor 启动 Core 时，仅在 Windows release 添加 `CREATE_NO_WINDOW`。
+  stdin 仍为 null；stdout/stderr 改为 null，避免依赖 GUI 父进程的控制台句柄。
+- 不引入补丁中的 `core-stdout.log`。CoreLogger 仍使用现有脱敏、轮转的 `core.jsonl`；
+  未经 CoreLogger 的原始输出（包括早期启动异常及 upstream 直接继承的 stderr）
+  不会额外保存。需要原始控制台诊断时使用 Windows debug 构建。
+- 此改动不调整 Core 终止策略、连接逻辑、凭据存储或 macOS 日志路径。
+
+包内 Windows 测试记录属于补丁作者提供的结果，不等同于整合后版本的实机验证。
+当前无 Windows CI；macOS Rust 检查不会编译 `CREATE_NO_WINDOW` 条件分支。
+
 ## 本地验证
 
 使用 Node 22：
@@ -41,6 +56,7 @@ npm run build
 npm run desktop:sidecar:prepare
 node scripts/prepare-desktop-runtime.mjs
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+cargo check --release --manifest-path apps/desktop/src-tauri/Cargo.toml --bins
 ```
 
 `npm test` 包含 Core 测试、staging 脚本测试和桌面列表排序逻辑测试。staging 测试覆盖重复链接、目录循环、
@@ -59,6 +75,11 @@ npm run desktop:bundle:local
 2. 管理端点为 `/api/health`；携带桌面 token 后可读取 `/api/status`。
 3. 实际连接无 Secret 的 stdio/HTTP MCP，执行一次工具调用，并验证重启/退出。
 4. 复测含空格、中文和 OneDrive 的路径。长路径/网络共享路径仍需实机检查。
+5. 从开始菜单启动 release 安装版，确认主程序及 Core 没有弹出控制台；连接 stdio MCP、
+   重启 Core 和退出 App 时再次检查。debug 保留控制台属于预期行为。
+6. `/api/health` 应返回 200；`/health` 不是健康端点，返回 403 不能证明 Core 健康。
+   携带管理 token 和 `x-mcp-gate-client: desktop` 请求 `/api/status`，并检查
+   `core.jsonl` 写入正常；不应生成新的 `core-stdout.log`。
 
 ## 尚未覆盖的产品能力
 

@@ -78,6 +78,9 @@ impl CoreSupervisor {
             .env("MCP_GATE_MANAGED_BY_DESKTOP", "1")
             .env("MCP_GATE_MANAGEMENT_TOKEN", &self.management_token);
 
+        #[cfg(all(windows, not(debug_assertions)))]
+        detach_from_console(&mut command);
+
         let child = command
             .spawn()
             .map_err(|error| format!("failed to start MCP Gate Core: {error}"))?;
@@ -294,6 +297,20 @@ impl CoreSupervisor {
 
         Ok((command, "managed-node"))
     }
+}
+
+/// The GUI-subsystem parent has no console for Node to inherit. Suppress a new
+/// console and discard raw output; CoreLogger still writes redacted, rotating
+/// core.jsonl. Do not create an unbounded, unredacted stdout/stderr log alongside it.
+#[cfg(all(windows, not(debug_assertions)))]
+fn detach_from_console(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 }
 
 fn default_dev_core_entry() -> PathBuf {
