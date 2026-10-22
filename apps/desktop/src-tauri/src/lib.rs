@@ -116,10 +116,21 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "退出 MCP Gate", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_item, &restart_item, &quit_item])?;
 
-            TrayIconBuilder::with_id("mcp-gate-tray")
+            let tray = TrayIconBuilder::with_id("mcp-gate-tray")
                 .title("MCP")
                 .tooltip("MCP Gate")
-                .menu(&menu)
+                .menu(&menu);
+
+            // Windows ignores the tray title and needs an explicit image.
+            // Keep the existing text-only menu bar item on macOS.
+            #[cfg(windows)]
+            let tray = if let Some(icon) = app.default_window_icon().cloned() {
+                tray.icon(icon)
+            } else {
+                tray
+            };
+
+            tray
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open" => show_main_window(app),
                     "restart-core" => {

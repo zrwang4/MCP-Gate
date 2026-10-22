@@ -45,6 +45,23 @@ Windows 差异包基于 `87cad81`，主要修复安装器构建和捆绑 Core �
 包内 Windows 测试记录属于补丁作者提供的结果，不等同于整合后版本的实机验证。
 当前无 Windows CI；macOS Rust 检查不会编译 `CREATE_NO_WINDOW` 条件分支。
 
+## Windows 托盘图标
+
+基于 `c7892e5` 的托盘图标差异包整合后，仅在 Windows 为手动创建的
+`TrayIconBuilder` 显式设置 `app.default_window_icon()`。
+Builder 不会自动回退到应用图标，而 Windows 不支持 `.title("MCP")`；
+缺少图片时底层不设置 `NIF_ICON`，可能出现空白或不可见托盘项。
+当前 Windows 图标来自 `icons/icon.ico`，不新增图标资源或依赖。
+
+macOS 保持原来的纯文字 `MCP` 菜单栏项；菜单中的打开、重启 Core、退出行为不变。
+关闭主窗口会隐藏到托盘，最小化仍走系统默认行为，不会自动隐藏到托盘。
+
+Windows 11 可能将图标放入“隐藏的图标”溢出区，这与图标未正确设置不同。
+需要常驻任务栏时，可在系统任务栏设置中开启或手动拖到通知区，不由应用修改注册表。
+
+补丁作者提供了 Windows 实测记录；当前整合版仍需按下方清单进行 Windows 原生验证。
+macOS Rust 检查不覆盖这段 Windows 专用设置。
+
 ## 本地验证
 
 使用 Node 22：
@@ -80,6 +97,8 @@ npm run desktop:bundle:local
 6. `/api/health` 应返回 200；`/health` 不是健康端点，返回 403 不能证明 Core 健康。
    携带管理 token 和 `x-mcp-gate-client: desktop` 请求 `/api/status`，并检查
    `core.jsonl` 写入正常；不应生成新的 `core-stdout.log`。
+7. 检查通知区及隐藏图标溢出区中的 MCP Gate 图标不是空白；关闭窗口后，
+   通过托盘菜单重新打开窗口、重启 Core 和退出，确认对应行为正常。
 
 ## 尚未覆盖的产品能力
 
